@@ -1,0 +1,93 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap");
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: "Inter", sans-serif;
+}
+
+:root {
+  --background: #fff7ed;
+  --surface: #ffedd5;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --primary: #f97316;
+  --primary-hover: #fb923c;
+  --secondary: #fdba74;
+  --secondary-hover: #fed7aa;
+  --border: #fcd34d;
+}
+
+.dark {
+  --background: #111827;
+  --surface: #1f2937;
+  --text-primary: #fef3c7;
+  --text-secondary: #fcd34d;
+  --primary: #fb923c;
+  --primary-hover: #fdba74;
+  --secondary: #fed7aa;
+  --secondary-hover: #ffedd5;
+  --border: #f97316;
+}
+
+/* ========= GLOBAL SCROLLBAR (LIGHT + DARK MODE) ========= */
+
+/* Applies to entire page scroll */
+html,
+body {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent; /* Firefox Light Mode */
+}
+
+/* Chrome, Safari, Edge */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* LIGHT MODE thumb */
+body:not(.dark) ::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+  border: 2px solid #ffffff;
+}
+
+body:not(.dark) ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.4);
+}
+
+/* DARK MODE for Firefox */
+body.dark {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+/* DARK MODE thumb (Chrome/Safari/Edge) */
+body.dark ::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  border: 2px solid #1f1f1f;
+}
+
+body.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.4);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}

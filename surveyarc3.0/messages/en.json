@@ -1,0 +1,138 @@
+{
+  "loan": {
+    "heading": "Go Solar Smart, with an Easy Loan to Start!",
+    "subheading": "Install Solar, Powered by Easy Bank Loans",
+    "description": "Switching to solar has never been easier or more affordable! With interest rates starting at just 6.7%, you can now install a solar plant at your home with a loan of up to ₹6 lakhs. No heavy upfront costs - just easy EMIs and long-term savings. We’ve partnered with trusted banks to make the loan process simple, transparent, and stress-free.",
+    "investmentNote": "Think of it as an investment in your future. With a solar system that runs for 25+ years, your electricity bills come down drastically - often to zero - while your savings rise month after month.",
+    "cta": "Apply for the solar loan today and take your first step towards smart, sustainable living."
+  },
+  "home": {
+    "hover1": "SOLAR",
+    "hover2": "ENERGY",
+    "heading": "Solar Panels for Your House",
+    "subheading": "we making solar easy.Every step of the way.",
+    "button": "Free Consultancy",
+    "card": [
+      {
+        "id": 1,
+        "image": "/tower.svg",
+        "title": "Green Energy",
+        "topOffset": "-20px"
+      },
+      {
+        "id": 2,
+        "image": "/blub.svg",
+        "title": "Predictable Payments",
+        "topOffset": "-60px"
+      },
+      {
+        "id": 3,
+        "image": "/earth.svg",
+        "title": "25-Year Warranty",
+        "topOffset": "-20px"
+      },
+      {
+        "id": 4,
+        "image": "/solarpanel.svg",
+        "title": "Installation Included",
+        "topOffset": "-60px"
+      }
+    ]
+  },
+  "about": {
+    "strokHeading": "ABOUT",
+    "heading": "Go Solar",
+    "subheading":"Uttarakhand’s trusted choice for solar panels and brighter homes.",
+    "description": "At Go Solar, we believe solar energy isn't just the future, it's the smart choice for today. With 12+ years of experience, we've been helping families, housing societies, and businesses make the switch to clean, renewable energy with ease. From panels to installation, wiring to metering, and even helping you claim the PM Surya Ghar Muft Bijli Yojana subsidy, we handle it all, seamlessly.",
+    "button": "Read More"
+  },
+  "phone": {
+    "heading": "Have Questions? Call Us ",
+    "description": "Go Solar stands as the sun-kissed maestro in Uttarakhands symphony of renewable energy solutions."
+  },
+  "product": {
+    "heading": "Our Products",
+    "TOPCon": {
+      "tagline": "Double the power. Smarter performance. Built to last.",
+      "heading": "Next-Gen TOPCon Technology",
+      "title": "144 HC Cells",
+      "power": "565-575 Wp",
+      "series": "SHINE TOPCon Series",
+      "features": [
+        "N-Type TOPCon Cells - Next-gen efficiency with up to 22.3% module output",
+        "High Bifaciality (Up to 85%) - Captures sunlight from both sides",
+        "Performs Better in Heat - Enhanced output even in high-temperature zones",
+        "Low Degradation - Just 0.40% YoY degradation with a 30-year power warranty",
+        "16 Busbar & 144 Half-Cut Cells - Stable, high-current delivery",
+        "PID & LeTID Resistant - Built to fight long-term power loss",
+        "Lightweight Build - Quick, safe rooftop installations"
+      ]
+    },
+    "Monobifacial": {
+      "tagline": "Reliable, cost-effective, and engineered for everyday homes.",
+      "heading": "Smarter Solar with Monobifacial",
+      "title": "Monocrystalline Cells",
+      "power": "Based on Config",
+      "series": "SHINE Monobifacial Series",
+      "features": [
+        "Efficient Monocrystalline Cells - Consistent energy production",
+        "Single-Sided Power, Smart Design - Ideal for typical rooftops",
+        "Optimized for Indian Climate - Performs reliably across seasons",
+        "Low Maintenance - Plug-and-Play solar you can count on",
+        "Perfect for Residential & Small Commercial Use - Compact & efficient",
+        "Backed by 25+ Years Warranty - Guaranteed long-term savings"
+      ]
+    }
+  },
+  "whysection": {
+    "strokHeading": "WHY US",
+    "heading": "our benefits",
+    "subheading": "Why Go Solar?",
+    "description": "Why Go Solar?.",
+    "button": "Get Started",
+    "card1": {
+      "title": "Free Expert Consultation",
+      "description": "No pressure, no hidden costs – just honest solar advice."
+    },
+    "card2": {
+      "title": "Customized Plans",
+      "description": "We don’t just install, we personalize as per your power needs."
+    },
+    "card3": {
+      "title": "Subsidy Assistance",
+      "description": "We help you claim what’s rightfully yours with zero hassle."
+    },
+    "card4": {
+      "title": "Hassle-Free Installation",
+      "description": "Installed in just 3–4 days with full safety and support."
+    },
+    "card5": {
+      "title": "25+ Years Panel Guarantee",
+      "description": "One-time install, the lifetime of savings — we stand by our quality."
+    },
+    "card6": {
+      "title": "After-Sales Support",
+      "description": "Our job doesn't end after installation – we’re always just a call away."
+    }
+  },
+  "workprocess": {
+    "title": "How Go Solar Works for You",
+    "description": "Our high-efficiency on-grid solar panels capture the sun’s power and turn it into clean electricity for your home. With Go Solar, you can cut your bills significantly even down to zero! Enjoy government subsidies, fast installation, and over 25 years of solid performance.",
+    "card1": {
+      "title": "Feasibility Check",
+      "description": "Just register with us we’ll check your rooftop and get approvals started."
+    },
+    "card2": {
+      "title": "Fast Installation",
+      "description": "Our trained team installs the panels within 3–4 days. Quick, safe, and stress-free."
+    },
+    "card3": {
+      "title": "Grid Connection",
+      "description": "We help you complete the metering process and get connected to the grid."
+    },
+    "card4": {
+      "title": "Government Subsidy",
+      "description": "Once your system is up, we guide you step-by-step to claim your solar subsidy."
+    }
+  }
+}

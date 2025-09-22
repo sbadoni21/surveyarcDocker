@@ -1,0 +1,24 @@
+services:
+  backend:
+    build: ./fastapi-backend
+    container_name: fastapi-backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      - key-server
+    environment:
+      KEY_SERVER_URL: "http://key-server:8001"
+
+  key-server:
+    build: ./key-server
+    container_name: key-server
+    ports:
+      - "8001:8001"
+
+  frontend:
+    build: ./surveyarc3.0
+    container_name: surveyarc3.0
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: "http://fastapi-backend:8000"

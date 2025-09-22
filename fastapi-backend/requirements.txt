@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+httpx
+sqlalchemy
+cryptography
+pydantic[email]
+psycopg2-binary 
