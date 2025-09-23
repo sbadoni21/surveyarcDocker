@@ -1,4 +1,4 @@
-// models/organisationModel.js
+// models/organisationModel.js 
 const BASE = "/api/post-gres-apis/organisation";
 
 const toJson = async (res) => {
