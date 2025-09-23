@@ -9,9 +9,7 @@ export default async function RootLayout(props) {
   const { children } = props;
   const { locale } = await props.params;
 
-  if (!routing.locales.includes(locale)) {
-    notFound();
-  }
+
 
   return (
     <html lang={locale}>
