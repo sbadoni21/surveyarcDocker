@@ -2,15 +2,19 @@ import { decryptGetResponse } from "@/utils/crypto_client";
 import { NextResponse } from "next/server";
 
 const BASE = "http://localhost:8000" || "http://fastapi-backend:8000";
+
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   const url = id
     ? `${BASE}/pricing-plan/${encodeURIComponent(id)}`
     : `${BASE}/pricing-plan`;
+
   const res = await fetch(url, { cache: "no-store" });
 
   const text = await res.text();
+
+
   let body;
   try {
     body = text ? JSON.parse(text) : null;
@@ -28,7 +32,8 @@ export async function GET(req) {
   } catch (err) {
     console.error("Decryption failed:", err);
     return NextResponse.json({ error: "Decryption failed" }, { status: 500 });
+  
+  
   }
-
   return NextResponse.json(data, { status: res.status });
 }

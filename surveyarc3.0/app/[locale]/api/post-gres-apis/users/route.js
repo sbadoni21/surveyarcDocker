@@ -2,7 +2,7 @@ import { decryptGetResponse } from "@/utils/crypto_client";
 import { encryptPayload } from "@/utils/crypto_utils";
 import { NextResponse } from "next/server";
 
-const BASE_URL = "http://localhost:8000" || "http://fastapi-backend:8000";
+const BASE_URL =  "http://fastapi-backend:8000";
 
 export async function POST(req) {
   const body = await req.json();
@@ -11,6 +11,7 @@ export async function POST(req) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(encryptedBody),
+
   });
   const data = await res.json();
   return NextResponse.json(data, { status: res.status });
