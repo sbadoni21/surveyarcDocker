@@ -1,6 +1,7 @@
 // app/en/api/invites/remove/route.ts
 import { NextResponse } from "next/server";
-const BASE_URL = "http://localhost:8000" || "http://fastapi-backend:8000";
+// const BASE_URL = "http://localhost:8000" || "http://fastapi-backend:8000";
+const BASE_URL = "http://localhost:8000" ;
 
 export async function POST(req) {
   const { orgId, uid } = await req.json();

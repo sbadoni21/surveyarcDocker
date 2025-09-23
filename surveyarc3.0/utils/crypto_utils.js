@@ -2,7 +2,8 @@ import crypto from "crypto";
 
 export async function encryptPayload(payload) {
   const key_id = "req_" + Date.now();
-  const keyRes = await fetch(`http://key-server:8001/get-key/${key_id}`);
+  // const keyRes = await fetch(`http://key-server:8001/get-key/${key_id}`);
+  const keyRes = await fetch(`http://localhost:8001/get-key/${key_id}`);
   const { encrypted_key, aes_key_b64 } = await keyRes.json();
   const aesKey = Buffer.from(aes_key_b64, "base64");
   const iv = crypto.randomBytes(12);

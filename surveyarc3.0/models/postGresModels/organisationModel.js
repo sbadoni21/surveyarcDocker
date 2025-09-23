@@ -116,6 +116,8 @@ const organisationModel = {
       cache: "no-store",
       body: JSON.stringify(payload),
     });
+
+    console.log("res", res);
     return toJson(res);
   },
 
