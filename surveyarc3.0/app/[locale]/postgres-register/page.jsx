@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import RegisterPage from "@/page/postgres-pages/RegisterPage";
@@ -11,20 +12,24 @@ import { useOrganisation } from "@/providers/postGresPorviders/organisationProvi
 export default function RegistrationFlow() {
   const searchParams = useSearchParams();
   const router = useRouter();
+
   const [step, setStep] = useState(1);
   const [userData, setUserData] = useState(null);
   const [orgData, setOrgData] = useState(null);
   const [inviteOrgId, setInviteOrgId] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const mounted = useRef(true);
+  const isSubmittingRef = useRef(false);
+
   const { create, update, getById } = useOrganisation();
 
-  const [busy, setBusy] = useState(false);
-  const mounted = useRef(true);
-
+  // Read invite orgId from query (?orgId=...)
   useEffect(() => {
     mounted.current = true;
     const orgId = searchParams.get("orgId");
     if (orgId) {
-      setInviteOrgId(orgId);
+      setInviteOrgId(String(orgId));
       setStep(1);
     }
     return () => {
@@ -32,21 +37,32 @@ export default function RegistrationFlow() {
     };
   }, [searchParams]);
 
-  const safeSetState = (fn) => mounted.current && fn();
+  const safeSetState = (fn) => {
+    if (mounted.current) fn();
+  };
 
   const goDashboard = (orgId, uid) => {
-    setCookie("currentUserId", uid);
-    setCookie("currentOrgId", orgId);
+    // set cookies for downstream app usage
+    setCookie("currentUserId", uid, { path: "/" });
+    setCookie("currentOrgId", orgId, { path: "/" });
     router.push(`/en/postgres-org/${orgId}/dashboard`);
   };
 
+  /**
+   * Accept an invite:
+   * 1) Update org team_members on org service
+   * 2) Link user -> org via POST /users/{uid}/orgs (atomic on user)
+   */
   const acceptInvite = async ({ orgId, uid, email, role = "member" }) => {
     const org = await getById(orgId);
     if (!org?.org_id) throw new Error("Organisation not found");
 
     const now = new Date().toISOString();
+
     const currentTeam = Array.isArray(org.team_members) ? [...org.team_members] : [];
-    const idx = currentTeam.findIndex((m) => m?.uid === uid || (!!email && m?.email === email));
+    const idx = currentTeam.findIndex(
+      (m) => m?.uid === uid || (!!email && m?.email === email)
+    );
     const isNew = idx === -1;
 
     let nextTeam;
@@ -71,7 +87,7 @@ export default function RegistrationFlow() {
     const prevSize = parseInt(org.organisation_size || "0", 10);
     const nextSize = String((isNaN(prevSize) ? 0 : prevSize) + (isNew ? 1 : 0));
 
-    // Step A: update org
+    // A) Update org team state
     const updatedOrg = await update(orgId, {
       team_members: nextTeam,
       organisation_size: nextSize,
@@ -79,13 +95,13 @@ export default function RegistrationFlow() {
       last_activity: now,
     });
 
-    // Step B: update user (server merges org_ids)
+    // B) Link user -> org (atomic add; server handles duplicates)
     try {
-      await UserModel.update(uid, { org_ids: [String(orgId)] });
+      await UserModel.addOrg(uid, String(orgId));
     } catch (err) {
-      // rollback org member add
+      // rollback org member add on failure
       try {
-        const rolledTeam = nextTeam.filter((m) => m?.uid !== uid);
+        const rolledTeam = nextTeam.filter((m) => m?.uid !== uid && m?.email !== email);
         await update(orgId, {
           team_members: rolledTeam,
           organisation_size: String(Math.max(isNaN(prevSize) ? 0 : prevSize, 0)),
@@ -100,16 +116,17 @@ export default function RegistrationFlow() {
     return updatedOrg;
   };
 
-  // Step 1 — Register user and link to org (invite or self-org)
+  // Step 1 — Register user and (invite) link to org OR continue to org creation
   const handleRegisterNext = async (data) => {
-    if (busy) return;
+    if (busy || isSubmittingRef.current) return;
     setBusy(true);
+    isSubmittingRef.current = true;
 
     try {
-      setUserData(data);
+      safeSetState(() => setUserData(data));
 
       if (inviteOrgId) {
-        // Accept invite using org.update + user.update only
+        // Accept invite (updates org + links user to org)
         await acceptInvite({
           orgId: String(inviteOrgId),
           uid: data.uid,
@@ -118,7 +135,7 @@ export default function RegistrationFlow() {
         });
 
         const org = await getById(inviteOrgId);
-        if (!org || !org.org_id) {
+        if (!org?.org_id) {
           alert("Invalid or missing organization.");
           return;
         }
@@ -127,34 +144,39 @@ export default function RegistrationFlow() {
         return;
       }
 
-      // No invite: continue to org creation
+      // No invite: move to org creation
       safeSetState(() => setStep(2));
     } catch (e) {
       console.error("Registration failed:", e);
       const msg = String(e?.message || "Registration failed");
-      if (msg.includes("limit")) {
+      if (msg.toLowerCase().includes("limit")) {
         alert("❌ You cannot create or join more than 3 organizations.");
       } else {
         alert(msg);
       }
     } finally {
+      isSubmittingRef.current = false;
       safeSetState(() => setBusy(false));
     }
   };
 
-  // Step 2 — Create organisation (server will set defaults)
+  // Step 2 — Create organisation (and link user -> org)
   const handleOrgNext = async (data) => {
-    if (busy || !userData?.uid) return;
+    if (busy || isSubmittingRef.current || !userData?.uid) return;
     setBusy(true);
+    isSubmittingRef.current = true;
 
     try {
-      // your organisationModel.create already seeds owner into team_members
+      // create org (your model seeds owner in team_members)
       const created = await create({
         ...data,
-        uid: String(userData.uid),        // org_id = uid inside model.defaultData
+        uid: String(userData.uid),
         ownerUID: userData.uid,
         ownerEmail: userData.email || "",
       });
+
+      // link user -> org (atomic)
+      await UserModel.addOrg(userData.uid, String(created.org_id));
 
       safeSetState(() => {
         setOrgData(created);
@@ -164,19 +186,22 @@ export default function RegistrationFlow() {
       console.error("Create org failed:", e);
       alert(String(e?.message || "Failed to create organization"));
     } finally {
+      isSubmittingRef.current = false;
       safeSetState(() => setBusy(false));
     }
   };
 
-  // Step 3 — Pick plan, (optionally) record payment, update subscription, redirect
+  // Step 3 — Pick plan, update subscription, redirect
   const handlePricingComplete = async ({ selectedPlan, payment }) => {
-    if (busy) return;
+    if (busy || isSubmittingRef.current) return;
     setBusy(true);
+    isSubmittingRef.current = true;
 
     try {
       const orgId = String(orgData?.org_id || userData?.uid);
       const now = new Date().toISOString();
       const endsAt = new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString();
+
       if (!orgId || !userData?.uid) {
         alert("Missing user/org context.");
         return;
@@ -200,12 +225,13 @@ export default function RegistrationFlow() {
         return;
       }
 
-      // (Optional) handle paid plans here (paymentApi/orgApi)…
+      // TODO: handle paid plans (payment + subscription update)
       goDashboard(orgId, userData.uid);
     } catch (error) {
       console.error("Pricing completion failed:", error);
       alert("Something went wrong while completing your registration. Please try again.");
     } finally {
+      isSubmittingRef.current = false;
       safeSetState(() => setBusy(false));
     }
   };
@@ -220,11 +246,21 @@ export default function RegistrationFlow() {
       )}
 
       {step === 2 && !inviteOrgId && (
-        <OrganizationPage onNext={handleOrgNext} onBack={handleBack} busy={busy} submitLabel={submitLabel} />
+        <OrganizationPage
+          onNext={handleOrgNext}
+          onBack={handleBack}
+          busy={busy}
+          submitLabel={submitLabel}
+        />
       )}
 
       {step === 3 && (
-        <PricingPage onBack={handleBack} onComplete={handlePricingComplete} busy={busy} submitLabel={submitLabel} />
+        <PricingPage
+          onBack={handleBack}
+          onComplete={handlePricingComplete}
+          busy={busy}
+          submitLabel={submitLabel}
+        />
       )}
     </div>
   );

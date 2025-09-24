@@ -1,9 +1,8 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
 import { auth } from '@/firebase/firebase.js';
-import { useOrganisation } from '@/providers/organisationPProvider';
 
-export default function OrgChatFlow({ onNext, onBack }) {
+export default function OrgChatFlow({ onNext, onBack, loading = false }) {
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState({
     orgName: '',
@@ -14,10 +13,9 @@ export default function OrgChatFlow({ onNext, onBack }) {
     timezone: '',
   });
   const [isVisible, setIsVisible] = useState(true);
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const { create } = useOrganisation();
   const inputRef = useRef(null);
   const questions = [
     {
@@ -52,13 +50,12 @@ export default function OrgChatFlow({ onNext, onBack }) {
 
     const fetchLocation = async () => {
       try {
-        // const res = await fetch('https://ipapi.co/json/');
-        // const data = await res.json();
-
+        // You can implement IP geolocation if needed
+        // For now, setting default values
         setFormData((prev) => ({
           ...prev,
-          region:  'hi',
-          country:  'ind',
+          region: 'Asia',
+          country: 'India',
           timezone: tz,
         }));
       } catch (err) {
@@ -70,19 +67,11 @@ export default function OrgChatFlow({ onNext, onBack }) {
     fetchLocation();
   }, []);
 
-  // useEffect(() => {
-  //   if (isVisible && inputRef.current) {
-  //     setTimeout(() => {
-  //       inputRef.current.focus();
-  //     }, 300);
-  //   }
-  // }, [isVisible, step]);
-
   const handleInput = (e) => {
     const value = e.target.value;
     const currentKey = questions[step].key;
     setFormData((prev) => ({ ...prev, [currentKey]: value }));
-    setError(''); // Clear error when user starts typing
+    setError('');
   };
 
   const handleNext = async () => {
@@ -108,40 +97,38 @@ export default function OrgChatFlow({ onNext, onBack }) {
   };
 
   const handleSubmit = async () => {
-    setLoading(true);
+    setIsLoading(true);
     setError('');
 
     const user = auth.currentUser;
     if (!user) {
       setError('You must be logged in to create an organization.');
-      setLoading(false);
+      setIsLoading(false);
       return;
     }
 
     try {
-      const orgId = user.uid;
-
-      const orgdata = {
-        uid: orgId,
+      // Prepare organization data for PostgreSQL backend
+      const orgData = {
         orgName: formData.orgName,
-        ownerUID: user.uid,
         industry: formData.industry,
         size: formData.size,
         region: formData.region,
         country: formData.country,
         timezone: formData.timezone,
-        ownerEmail: user.email,
-        createdVia: 'web',
+        uid: user.uid,
       };
 
-      console.log(orgdata);
-      const res = await create(orgdata);
-      console.log(res)
-      onNext(res);
+      console.log('Organization data:', orgData);
+      
+      // Pass to next step - the parent will handle the actual API call
+      await onNext(orgData);
+      
     } catch (err) {
-      setError(err.message);
+      console.error('Organization creation error:', err);
+      setError(err.message || 'Failed to create organization');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -167,6 +154,7 @@ export default function OrgChatFlow({ onNext, onBack }) {
 
   const currentQuestion = questions[step];
   const currentValue = formData[currentQuestion.key];
+  const isDisabled = loading || isLoading;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100 flex items-center justify-center p-4">
@@ -224,7 +212,8 @@ export default function OrgChatFlow({ onNext, onBack }) {
                         value={currentValue}
                         onChange={handleInput}
                         onKeyDown={handleKeyDown}
-                        className="inline-block bg-transparent border-none outline-none border-b-2 border-blue-300 focus:border-blue-500 text-blue-600 font-semibold text-lg px-2 py-1 text-center min-w-[120px] placeholder-blue-300 placeholder-opacity-60"
+                        disabled={isDisabled}
+                        className="inline-block bg-transparent border-none outline-none border-b-2 border-blue-300 focus:border-blue-500 text-blue-600 font-semibold text-lg px-2 py-1 text-center min-w-[120px] placeholder-blue-300 placeholder-opacity-60 disabled:opacity-50"
                         style={{ 
                           width: Math.max(120, (currentValue?.length || 0) * 12 + 40) + 'px'
                         }}
@@ -245,11 +234,13 @@ export default function OrgChatFlow({ onNext, onBack }) {
         )}
 
         {/* Loading State */}
-        {loading && (
+        {isDisabled && (
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <div className="flex items-center justify-center space-x-2">
               <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-              <p className="text-blue-600 text-sm">Creating your organization...</p>
+              <p className="text-blue-600 text-sm">
+                {loading ? "Processing..." : "Creating your organization..."}
+              </p>
             </div>
           </div>
         )}
@@ -258,9 +249,9 @@ export default function OrgChatFlow({ onNext, onBack }) {
         <div className="flex justify-between items-center">
           <button
             onClick={handleBack}
-            disabled={loading}
+            disabled={isDisabled}
             className={`px-6 py-3 rounded-xl font-medium transition-all duration-200 ${
-              loading
+              isDisabled
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
@@ -274,14 +265,14 @@ export default function OrgChatFlow({ onNext, onBack }) {
 
           <button
             onClick={handleNext}
-            disabled={loading || (currentQuestion.required && !currentValue?.trim())}
+            disabled={isDisabled || (currentQuestion.required && !currentValue?.trim())}
             className={`px-8 py-3 rounded-xl font-medium transition-all duration-200 ${
-              loading || (currentQuestion.required && !currentValue?.trim())
+              isDisabled || (currentQuestion.required && !currentValue?.trim())
                 ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 : 'bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:shadow-lg transform hover:scale-105'
             }`}
           >
-            {loading ? (
+            {isDisabled ? (
               <div className="flex items-center space-x-2">
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 <span>Please wait...</span>

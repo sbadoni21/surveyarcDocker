@@ -25,7 +25,55 @@ class RedisClient:
         self._client = None
         self._connection_pool = None
         self._initialize_client()
-    
+    # ---- Session helpers ----
+    def cache_user_session(self, uid: str, session: dict, ex: int = 7200) -> bool:
+        """Cache a user session as JSON"""
+        try:
+            if not self.ping():
+                return False
+            from .redis_client import serialize_for_redis  # avoid circular if top-level imported
+            return self.set(f"user_session:{uid}", serialize_for_redis(session), ex=ex)
+        except Exception as e:
+            print(f"[RedisClient] cache_user_session failed: {e}")
+            return False
+
+    def get_user_session(self, uid: str):
+        """Get cached user session"""
+        try:
+            if not self.ping():
+                return None
+            blob = self.get(f"user_session:{uid}")
+            if not blob:
+                return None
+            if isinstance(blob, bytes):
+                blob = blob.decode("utf-8")
+            from .redis_client import deserialize_from_redis
+            return deserialize_from_redis(blob)
+        except Exception as e:
+            print(f"[RedisClient] get_user_session failed: {e}")
+            return None
+
+    def invalidate_user_session(self, uid: str) -> int:
+        """Delete cached user session"""
+        try:
+            if not self.ping():
+                return 0
+            return self.delete(f"user_session:{uid}")
+        except Exception as e:
+            print(f"[RedisClient] invalidate_user_session failed: {e}")
+            return 0
+
+    def clear_pattern(self, pattern: str) -> int:
+        """Delete keys by pattern (use carefully)"""
+        try:
+            if not self.ping():
+                return 0
+            keys = self.client.keys(pattern)
+            return self.delete(*keys) if keys else 0
+        except Exception as e:
+            print(f"[RedisClient] clear_pattern failed: {e}")
+            return 0
+
     def _initialize_client(self):
         """Initialize Redis client with connection pool"""
         try:
@@ -76,6 +124,14 @@ class RedisClient:
         except Exception as e:
             print(f"[RedisClient] Ping failed: {e}")
             return False
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.safe_get(key, default)
+
+    def set(self, key: str, value: Any, ex: Optional[int] = None) -> bool:
+        return self.safe_set(key, value, ex)
+
+    def delete(self, *keys: str) -> int:
+        return self.safe_delete(*keys)
     
     def reconnect(self) -> bool:
         """Attempt to reconnect to Redis"""

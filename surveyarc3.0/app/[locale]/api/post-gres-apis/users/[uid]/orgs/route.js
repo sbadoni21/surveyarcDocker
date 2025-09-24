@@ -1,18 +1,18 @@
-// /api/post-gres-apis/users/route.js
-import { encryptPayload } from "@/utils/crypto_utils";
+// /api/post-gres-apis/users/[uid]/orgs/route.js
 import { NextResponse } from "next/server";
 
 const BASE = "http://localhost:8000";
 
-export async function POST(req) {
+export async function POST(req, { params }) {
+  const { uid } = params;
+  
   try {
     const body = await req.json();
-    const encryptedBody = await encryptPayload(body);
+    const { org_id } = body;
     
-    const res = await fetch(`${BASE}/users/`, {
+    const res = await fetch(`${BASE}/users/${uid}/orgs?org_id=${org_id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(encryptedBody),
       signal: AbortSignal.timeout(30000)
     });
     
@@ -20,9 +20,9 @@ export async function POST(req) {
     return NextResponse.json(data, { status: res.status });
     
   } catch (error) {
-    console.error("POST /users error:", error);
+    console.error("Add org error:", error);
     return NextResponse.json(
-      { error: "Failed to create user", message: error.message },
+      { error: "Failed to add organization", message: error.message },
       { status: 500 }
     );
   }

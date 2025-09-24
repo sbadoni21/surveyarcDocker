@@ -124,8 +124,8 @@ const organisationModel = {
   async getById(orgId) {
     const url = new URL(BASE, window.location.origin);
     url.searchParams.set("orgId", String(orgId));
-    // const res = await fetch(url.toString(), { cache: "no-store" });
-     const res = await fetch(`${BASE}/${orgId}`, { cache: "no-store" });
+    
+  const res = await fetch(url.toString(), { cache: "no-store" });
     return toJson(res);
   },
   async getByIdmail(orgId) {

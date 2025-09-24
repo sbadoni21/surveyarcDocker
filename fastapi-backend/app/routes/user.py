@@ -6,71 +6,71 @@ from ..models.user import User
 from ..schemas.user import UserCreate, UserUpdate, UserOut
 from typing import List
 from sqlalchemy.sql import func
+import json
 
 # Import Redis dependencies
 from ..dependencies.redis import get_redis_optional
-from ..core.redis_client import RedisClient
+from ..core.redis_client import RedisClient, serialize_for_redis, deserialize_from_redis
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
+# in routes/user.py
 @router.post("/", response_model=UserOut)
 def create_user(
-    user_in: UserCreate, 
+    user_in: UserCreate,
     db: Session = Depends(get_db),
     redis: RedisClient = Depends(get_redis_optional)
 ):
-    """Create a new user with Redis caching"""
-    
-    # Check if user already exists
-    existing_user = db.query(User).filter(User.uid == user_in.uid).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="User with this UID already exists")
-    
-    # Check email uniqueness
-    existing_email = db.query(User).filter(User.email == user_in.email).first()
-    if existing_email:
-        raise HTTPException(status_code=400, detail="User with this email already exists")
-    
-    user = User(
-        uid=user_in.uid,
-        email=user_in.email,
-        display_name=user_in.display_name,
-        role=user_in.role,
-        org_ids=user_in.org_ids,
-        status=user_in.status,
-        meta_data=user_in.meta_data,
-        joined_at=datetime.utcnow(),
-        last_login_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    
-    # Cache the new user
-    if redis:
-        user_data = {
-            "uid": user.uid,
-            "email": user.email,
-            "display_name": user.display_name,
-            "role": user.role,
-            "org_ids": user.org_ids or [],
-            "status": user.status,
-            "meta_data": user.meta_data or {},
-            "joined_at": user.joined_at.isoformat() if user.joined_at else None,
-            "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
-            "updated_at": user.updated_at.isoformat() if user.updated_at else None
-        }
-        redis.set(f"user:{user.uid}", user_data, expire=3600)  # Cache for 1 hour
-        
-        # Cache user by email for login lookups
-        redis.set(f"user_email:{user.email}", user.uid, expire=3600)
-        
-        # Invalidate org user lists cache
-        for org_id in user.org_ids or []:
-            redis.delete(f"org_users:{org_id}")
-    
-    return UserOut.from_orm(user)
+    print("[/users POST] entered handler")
+    try:
+        print("[/users POST] checking duplicates")
+        existing_user = db.query(User).filter(User.uid == user_in.uid).first()
+        if existing_user:
+            print("[/users POST] duplicate uid")
+            raise HTTPException(status_code=400, detail="User with this UID already exists")
+        existing_email = db.query(User).filter(User.email == user_in.email).first()
+        if existing_email:
+            print("[/users POST] duplicate email")
+            raise HTTPException(status_code=400, detail="User with this email already exists")
+
+        print("[/users POST] creating instance")
+        user = User(
+            uid=user_in.uid, email=user_in.email, display_name=user_in.display_name,
+            role=user_in.role, org_ids=user_in.org_ids, status=user_in.status,
+            meta_data=user_in.meta_data, joined_at=datetime.utcnow(),
+            last_login_at=datetime.utcnow(), updated_at=datetime.utcnow(),
+        )
+        db.add(user)
+        print("[/users POST] committing")
+        db.commit()
+        print("[/users POST] refresh")
+        db.refresh(user)
+
+        # Make Redis truly optional and non-blocking
+        try:
+            if redis and redis.ping():
+                print("[/users POST] caching to redis")
+                user_data = {
+                    "uid": user.uid, "email": user.email, "display_name": user.display_name,
+                    "role": user.role, "org_ids": user.org_ids or [], "status": user.status,
+                    "meta_data": user.meta_data or {},
+                    "joined_at": user.joined_at.isoformat() if user.joined_at else None,
+                    "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+                    "updated_at": user.updated_at.isoformat() if user.updated_at else None
+                }
+                redis.safe_set(f"user:{user.uid}", json.dumps(user_data), ex=3600)
+                redis.safe_set(f"user_email:{user.email}", user.uid, ex=3600)
+                for org_id in user.org_ids or []:
+                    redis.safe_delete(f"org_users:{org_id}")
+        except Exception as e:
+            print(f"[/users POST] redis error (ignored): {e}")
+
+        print("[/users POST] return response")
+        return UserOut.from_orm(user)
+
+    except Exception as e:
+        print(f"[/users POST] error: {e}")
+        raise
 
 @router.post("/{uid}/orgs")
 def add_org(
@@ -116,18 +116,20 @@ def get_user(
     
     # Try cache first
     if redis:
-        cached_user = redis.get(f"user:{uid}")
-        if cached_user:
-            # Convert datetime strings back to datetime objects for response
-            if cached_user.get("joined_at"):
-                cached_user["joined_at"] = datetime.fromisoformat(cached_user["joined_at"])
-            if cached_user.get("last_login_at"):
-                cached_user["last_login_at"] = datetime.fromisoformat(cached_user["last_login_at"])
-            if cached_user.get("updated_at"):
-                cached_user["updated_at"] = datetime.fromisoformat(cached_user["updated_at"])
-            
-            return UserOut(**cached_user)
-    
+        blob = redis.get(f"user:{uid}")
+        if blob:
+            try:
+                if isinstance(blob, bytes):
+                    blob = blob.decode("utf-8")
+                cached_user = deserialize_from_redis(blob)  # -> dict
+                if isinstance(cached_user, dict):
+                    # convert datetime strings
+                    for dt_key in ("joined_at", "last_login_at", "updated_at"):
+                        if cached_user.get(dt_key):
+                            cached_user[dt_key] = datetime.fromisoformat(cached_user[dt_key])
+                    return UserOut(**cached_user)
+            except Exception as e:
+                print(f"[get_user] cache decode failed: {e}")
     # Query database
     user = db.query(User).filter(User.uid == uid).first()
     if not user:
@@ -147,7 +149,7 @@ def get_user(
             "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
             "updated_at": user.updated_at.isoformat() if user.updated_at else None
         }
-        redis.set(f"user:{uid}", user_data, expire=3600)
+        redis.set(f"user:{uid}", serialize_for_redis(user_data), ex=3600)
     
     return user
 
@@ -308,7 +310,7 @@ def track_login(
             "status": user.status,
             "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None
         }
-        redis.cache_user_session(uid, session_data, expire=7200)  # 2 hours
+        redis.cache_user_session(uid, session_data, ex=7200)  # 2 hours
     
     return {
         "uid": user.uid,
@@ -361,7 +363,7 @@ def list_users_by_org(
             }
             users_data.append(user_data)
         
-        redis.set(f"org_users:{org_id}", users_data, expire=1800)  # Cache for 30 minutes
+        redis.set(f"org_users:{org_id}", users_data, ex=1800)  # Cache for 30 minutes
     
     return users
 
@@ -423,6 +425,6 @@ def get_user_by_email(
     
     # Cache email -> UID mapping
     if redis:
-        redis.set(f"user_email:{email}", user.uid, expire=3600)
+        redis.set(f"user_email:{email}", user.uid, ex=3600)
     
     return get_user(user.uid, db, redis)

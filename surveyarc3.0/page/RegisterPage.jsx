@@ -7,28 +7,14 @@ import {
   googleAuthProvider,
   signInWithPopup,
 } from "@/firebase/firebase";
-import { useUser } from "@/providers/UserPProvider";
 import Link from "next/link";
 
-export default function RegisterPage({ onNext }) {
+export default function RegisterPage({ onNext, loading = false }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const { createUser } = useUser();
-
-  const createUserRecord = async (user, displayName) => {
-    const userData = {
-      uid: user.uid,
-      email: user.email,
-      displayName: displayName || user.displayName || "",
-      role: "user",
-      orgId: [],
-    };
-    await createUser(userData);
-    return userData;
-  };
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -39,39 +25,69 @@ export default function RegisterPage({ onNext }) {
       return;
     }
 
-    setLoading(true);
+    setIsLoading(true);
 
     try {
+      // Create Firebase user
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         email,
         password
       );
-      const userData = await createUserRecord(userCredential.user, name);
-      onNext(userData);
+
+      // Prepare user data for PostgreSQL backend
+      const userData = {
+        uid: userCredential.user.uid,
+        email: userCredential.user.email,
+        displayName: name,
+        role: "member",
+        orgIds: [],
+        status: "active",
+        metaData: {}
+      };
+
+      // Pass to next step
+      await onNext(userData);
+      
     } catch (err) {
+      console.error("Registration error:", err);
       setError(err.message);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
   const handleGoogleSignIn = async () => {
     setError("");
-    setLoading(true);
+    setIsLoading(true);
 
     try {
       const result = await signInWithPopup(auth, googleAuthProvider);
       const user = result.user;
-      const userData = await createUserRecord(user, user.displayName);
-      onNext(userData);
+
+      // Prepare user data for PostgreSQL backend
+      const userData = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName || user.email?.split('@')[0] || "",
+        role: "member",
+        orgIds: [],
+        status: "active",
+        metaData: {}
+      };
+
+      // Pass to next step
+      await onNext(userData);
+      
     } catch (err) {
+      console.error("Google sign-in error:", err);
       setError(err.message);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
+  const isDisabled = loading || isLoading;
 
   return (
     <div className="min-h-screen bg-[#FFF7ED] dark:bg-[#1A1A1E] flex items-center justify-center p-4 relative">
@@ -98,6 +114,16 @@ export default function RegisterPage({ onNext }) {
             </div>
           )}
 
+          {/* Loading indicator */}
+          {isDisabled && (
+            <div className="mb-4 p-4 bg-blue-100 border border-blue-300 rounded-lg text-blue-700 dark:bg-blue-200/10 dark:border-blue-400 dark:text-blue-300">
+              <div className="flex items-center space-x-2">
+                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <span>Creating your account...</span>
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label className="block mb-1 text-sm text-black dark:text-[#CBC9DE]">
@@ -110,6 +136,7 @@ export default function RegisterPage({ onNext }) {
                 className="w-full px-4 py-3 rounded-xl bg-white/10 dark:bg-white/5 border border-black placeholder-black dark:border-[#CBC9DE] dark:placeholder-[#CBC9DE] focus:outline-none"
                 placeholder="John Doe"
                 required
+                disabled={isDisabled}
               />
             </div>
 
@@ -121,9 +148,10 @@ export default function RegisterPage({ onNext }) {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-white/10 dark:bg-white/5 border border-black placeholder-black dark:border-[#CBC9DE] dark:placeholder-[#CBC9DE] focus:outline-none "
+                className="w-full px-4 py-3 rounded-xl bg-white/10 dark:bg-white/5 border border-black placeholder-black dark:border-[#CBC9DE] dark:placeholder-[#CBC9DE] focus:outline-none"
                 placeholder="you@example.com"
                 required
+                disabled={isDisabled}
               />
             </div>
 
@@ -138,15 +166,16 @@ export default function RegisterPage({ onNext }) {
                 className="w-full px-4 py-3 rounded-xl bg-white/10 dark:bg-white/5 border border-black placeholder-black dark:border-[#CBC9DE] dark:placeholder-[#CBC9DE] focus:outline-none"
                 placeholder="••••••••"
                 required
+                disabled={isDisabled}
               />
             </div>
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={isDisabled}
               className="w-full py-3 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white font-semibold shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? "Creating Account..." : "Create Account"}
+              {isDisabled ? "Creating Account..." : "Create Account"}
             </button>
 
             <div className="relative text-center text-sm text-[var(--text-secondary)] my-4">
@@ -156,10 +185,10 @@ export default function RegisterPage({ onNext }) {
             <button
               type="button"
               onClick={handleGoogleSignIn}
-              disabled={loading}
-              className="w-full py-3 rounded-xl border border-black  dark:border-[#CBC9DE] text-[var(--text-primary)] bg-[var(--surface)] hover:bg-[var(--secondary)] hover:text-[var(--text-primary)] font-semibold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isDisabled}
+              className="w-full py-3 rounded-xl border border-black dark:border-[#CBC9DE] text-[var(--text-primary)] bg-[var(--surface)] hover:bg-[var(--secondary)] hover:text-[var(--text-primary)] font-semibold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? "Signing in..." : "Continue with Google"}
+              {isDisabled ? "Signing in..." : "Continue with Google"}
             </button>
           </form>
 

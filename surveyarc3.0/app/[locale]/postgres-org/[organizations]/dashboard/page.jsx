@@ -99,7 +99,6 @@ export default function Page() {
   const { organisation } = useOrganisation();
   const [showUpgradePopup, setShowUpgradePopup] = useState(false);
   const [expired, setExpired] = useState(false);
-
   useEffect(() => {
     if (!organisation?.uid || !organisation?.subscription?.endDate) return;
 

@@ -30,33 +30,63 @@ export default function LoginPage() {
   const router = useRouter();
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [showPassword, setShowPassword] = useState(false);
-  const { setCurrentUser, getUser } = useUser();
+const { setCurrentUser, getUser, loginUser } = useUser();
   const { setCurrentOrg, getById } = useOrganisation();
 
- const fetchUserAndOrg = async (uid) => {
+const fetchUserAndOrg = async (uid, firebaseUser = null) => {
   try {
-    const user = await getUser(uid);
-    if (!user) throw new Error("User not found");
+    console.log("Fetching user and org for:", uid);
+    
+    let user = await getUser(uid);
+
+    if (!user) {
+      throw new Error("User not found and could not be created");
+    }
+    
     setCurrentUser(user);
+    
+    // Track login in backend
+    try {
+      await loginUser(uid);
+      console.log("Login tracked successfully");
+    } catch (loginError) {
+      console.error("Failed to track login:", loginError);
+      // Don't fail the entire login process for tracking failure
+    }
+    
+    // Handle organization logic
     const primaryOrgId = Array.isArray(user.org_ids) && user.org_ids.length > 0
       ? String(user.org_ids[0])
-      : (user.org_ids ? String(user.org_ids) : null); 
-
+      : (user.org_ids ? String(user.org_ids) : null);
+    
     if (!primaryOrgId) {
-      throw new Error("No organization linked to this user");
+      setCookie("currentUserId", user.uid);
+        throw new Error("You dont have any organisation");
     }
-
-    const org = await getById(primaryOrgId);
-
-    if (!org) throw new Error("Organization not found");
-    setCurrentOrg(org);
-
-    setCookie("currentUserId", user.uid);
-    setCookie("currentOrgId", primaryOrgId);
-
-    router.push(`/postgres-org/${primaryOrgId}/dashboard`);
+    
+    try {
+      const org = await getById(primaryOrgId);
+      
+      if (!org) {
+        throw new Error("Organization not found");
+      }
+      
+      setCurrentOrg(org);
+      setCookie("currentUserId", user.uid);
+      setCookie("currentOrgId", primaryOrgId);
+      
+      router.push(`/postgres-org/${primaryOrgId}/dashboard`);
+      
+    } catch (orgError) {
+      console.error("Failed to fetch organization:", orgError);
+      // Redirect to org selection if their org is invalid
+      setCookie("currentUserId", user.uid);
+      router.push("/select-organization");
+    }
+    
   } catch (err) {
-    setError(err.message || "Failed to fetch user or organization");
+    console.error("fetchUserAndOrg failed:", err);
+    setError(err.message || "Failed to sign in");
     setLoading(false);
   }
 };

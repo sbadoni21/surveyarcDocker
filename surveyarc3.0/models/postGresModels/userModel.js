@@ -1,85 +1,214 @@
 // models/postGresModels/userModel.js
-const BASE = "/en/api/post-gres-apis/users";
+const BASE = "/api/post-gres-apis/users";
 
 const json = async (res) => {
+  console.log(res)
   if (!res.ok) {
     const msg = await res.text().catch(() => "");
+    
     throw new Error(`${res.status} ${res.statusText} :: ${msg}`);
   }
   return res.json();
 };
 
 const UserModel = {
-  async create({ uid, email, displayName, role = "member", initialOrgId }) {
+  /**
+   * Create a new user
+   * POST /users/
+   */
+  async create({ uid, email, displayName, role = "member", orgIds = [], status = "active", metaData = {} }) {
     const body = {
       uid,
       email,
-      org_ids: [],
       display_name: displayName || "",
       role,
-      meta_data: {},
+      org_ids: orgIds,
+      status,
+      meta_data: metaData,
     };
-    if (initialOrgId) body.org_ids = [String(initialOrgId)];
+    
     const res = await fetch(`${BASE}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       cache: "no-store",
     });
+    
     return json(res);
   },
 
-  async addOrg(uid, orgId) {
-    const res = await fetch(`${BASE}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ uid, org_ids: [String(orgId)] }),
-      cache: "no-store",
-    });
-    return json(res); // { ok, message, org_ids? }
-  },
-
+  /**
+   * Get user by UID
+   * GET /users/{uid}
+   */
   async get(uid) {
-    const url = new URL(BASE, window.location.origin);
-    url.searchParams.set("uid", uid);
-    console.log(url.toString());
-    console.log("uid", uid);
-    const res = await fetch('url.toString()', { cache: "no-store" });
+    console.log("Fetching user by UID:", uid);
+    const res = await fetch(`${BASE}/${encodeURIComponent(uid)}`, {
+      method: "GET",
+      cache: "no-store",
+    });
     return json(res);
   },
 
+  /**
+   * Update user
+   * PATCH /users/{uid}
+   */
   async update(uid, data) {
-    const res = await fetch(`${BASE}`, {
+    const res = await fetch(`${BASE}/orgs/${encodeURIComponent(uid)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ uid, ...data }),
+      body: JSON.stringify(data),
       cache: "no-store",
     });
     return json(res);
   },
 
+  /**
+   * Delete user
+   * DELETE /users/{uid}
+   */
   async delete(uid) {
-    const res = await fetch(`${BASE}`, {
+    const res = await fetch(`${BASE}/${encodeURIComponent(uid)}`, {
       method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ uid }),
       cache: "no-store",
     });
     return json(res);
   },
-  // NEW ---- list users by org (FastAPI: GET /users/org/{org_id})
+
+  /**
+   * Track user login
+   * POST /users/{uid}/login
+   */
+  async login(uid) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(uid)}/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    });
+    return json(res);
+  },
+
+  /**
+   * Add organization to user
+   * POST /users/{uid}/orgs
+   */
+  async addOrg(uid, orgId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(uid)}/orgs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ org_id: orgId }),
+      cache: "no-store",
+    });
+    return json(res);
+  },
+
+  /**
+   * Activate user
+   * POST /users/{uid}/activate
+   */
+  async activate(uid) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(uid)}/activate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    });
+    return json(res);
+  },
+
+  /**
+   * Suspend user
+   * POST /users/{uid}/suspend
+   */
+  async suspend(uid) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(uid)}/suspend`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    });
+    return json(res);
+  },
+
+  /**
+   * List users by organization
+   * GET /users/org/{org_id}
+   */
   async listByOrg(orgId) {
     const res = await fetch(`${BASE}/org/${encodeURIComponent(orgId)}`, {
       cache: "no-store",
     });
-    return json(res); // returns UserOut[]
+    return json(res);
   },
 
-  // NEW ---- active users by org (client-side filter)
+  /**
+   * List active users by organization (client-side filter)
+   */
   async listActiveByOrg(orgId) {
     const users = await this.listByOrg(orgId);
     return (users || []).filter((u) => u?.status === "active");
   },
+
+  /**
+   * Get user session
+   * GET /users/{uid}/session
+   */
+  async getSession(uid) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(uid)}/session`, {
+      method: "GET",
+      cache: "no-store",
+    });
+    return json(res);
+  },
+
+  /**
+   * Invalidate user session (logout)
+   * DELETE /users/{uid}/session
+   */
+  async logout(uid) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(uid)}/session`, {
+      method: "DELETE",
+      cache: "no-store",
+    });
+    return json(res);
+  },
+
+  /**
+   * Get user by email
+   * GET /users/email/{email}
+   */
+  async getByEmail(email) {
+    const res = await fetch(`${BASE}/email/${encodeURIComponent(email)}`, {
+      cache: "no-store",
+    });
+    return json(res);
+  },
+
+  /**
+   * Utility method: Check if user exists
+   */
+  async exists(uid) {
+    try {
+      await this.get(uid);
+      return true;
+    } catch (error) {
+      if (error.message.includes('404')) {
+        return false;
+      }
+      throw error;
+    }
+  },
+
+  /**
+   * Utility method: Check if user is active
+   */
+  async isActive(uid) {
+    try {
+      const user = await this.get(uid);
+      return user.status === "active";
+    } catch (error) {
+      return false;
+    }
+  }
 };
 
 export default UserModel;
