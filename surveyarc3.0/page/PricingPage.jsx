@@ -9,8 +9,7 @@ export default function PricingPage({ onBack, onComplete }) {
     const fetchPlans = async () => {
       try {
         const res = await plans;
-        const data = await res.json();
-        setPlans(data);
+        const data = res;
         setSelectedPlan(data[0]?.id || "");
       } catch (err) {
         console.error("Failed to load plans:", err);

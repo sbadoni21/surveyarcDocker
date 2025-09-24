@@ -2,13 +2,13 @@ import { decryptGetResponse } from "@/utils/crypto_client";
 import { encryptPayload } from "@/utils/crypto_utils";
 import { NextResponse } from "next/server";
 
-// const BASE_URL = "http://fastapi-backend:8000";
-const BASE_URL = "http://localhost:8000";
+// const BASE = "http://fastapi-backend:8000";
+const BASE =  "http://fastapi-backend:8000"|| "http://localhost:8000" ;
 
 export async function POST(req) {
   const body = await req.json();
   const encryptedBody = await encryptPayload(body);
-  const res = await fetch(`${BASE_URL}/organisation/`, {
+  const res = await fetch(`${BASE}/organisation/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(encryptedBody),
@@ -21,7 +21,7 @@ export async function POST(req) {
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const orgId = searchParams.get("orgId");
-  const res = await fetch(`${BASE_URL}/organisation/${orgId}`);
+  const res = await fetch(`${BASE}/organisation/${orgId}`);
   const encrypted = await res.json();
   const data = await decryptGetResponse(encrypted);
   console.log("Get decrypted", data);
@@ -32,7 +32,7 @@ export async function PATCH(req) {
   const body = await req.json();
   const { orgId, ...rest } = body;
   const encryptedBody = await encryptPayload(rest);
-  const res = await fetch(`${BASE_URL}/organisation/${orgId}`, {
+  const res = await fetch(`${BASE}/organisation/${orgId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(encryptedBody),

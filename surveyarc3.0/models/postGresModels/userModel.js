@@ -42,6 +42,7 @@ const UserModel = {
   async get(uid) {
     const url = new URL(BASE, window.location.origin);
     url.searchParams.set("uid", uid);
+    console.log(url.toString());
     console.log("uid", uid);
     const res = await fetch('url.toString()', { cache: "no-store" });
     return json(res);

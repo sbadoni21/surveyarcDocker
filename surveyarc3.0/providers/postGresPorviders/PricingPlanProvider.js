@@ -32,7 +32,7 @@ export const PricingPlanProvider = ({ children }) => {
   };
 
   return (
-    <PricingPlanContext.Provider value={{ plans, loading, findById }}>
+    <PricingPlanContext.Provider value={{ plans, setPlans, loading, findById }}>
       {children}
     </PricingPlanContext.Provider>
   );

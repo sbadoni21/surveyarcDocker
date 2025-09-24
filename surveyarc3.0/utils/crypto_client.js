@@ -1,4 +1,5 @@
 import crypto from "crypto";
+const BASE =  "http://key-server:8001"|| "http://localhost:8001" ;
 
 export function decryptAESGCM({ ciphertext, iv, tag }, aesKeyBase64) {
   const key = Buffer.from(aesKeyBase64, "base64");
@@ -12,7 +13,7 @@ export function decryptAESGCM({ ciphertext, iv, tag }, aesKeyBase64) {
 
 export async function decryptGetResponse(encrypted) {
   console.log('encrypted under decryption code ', encrypted);
-  const keyRes = await fetch(`http://localhost:8001/get-key/${encrypted.key_id}`);
+  const keyRes = await fetch(`${BASE}/get-key/${encrypted.key_id}`);
     // const keyRes = await fetch(`http://key-server:8001/get-key/${encrypted.key_id}`);
   if (!keyRes.ok) throw new Error("Failed to get key from keyserver");
   const { aes_key_b64 } = await keyRes.json();

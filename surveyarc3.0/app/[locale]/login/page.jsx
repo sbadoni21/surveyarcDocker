@@ -67,7 +67,6 @@ export default function LoginPage() {
     setError("");
     try {
       const userCred = await signInWithEmailAndPassword(auth, email, password);
-
       await fetchUserAndOrg(userCred.user.uid);
     } catch (err) {
       setError(err.message || "Email login failed");

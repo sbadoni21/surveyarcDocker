@@ -70,12 +70,19 @@ const projectModel = {
     return toJson(res);
   },
 
-  async getAll(orgId) {
-    const url = new URL(BASE, window.location.origin);
-    url.searchParams.set("orgId", String(orgId));
-    const res = await fetch(url.toString(), { cache: "no-store" });
-    return toJson(res);
-  },
+ // models/postGresModels/projectModel.js
+async getAll(orgId) {
+  const url = new URL("/api/post-gres-apis/projects", window.location.origin);
+  url.searchParams.set("orgId", String(orgId));
+  const res = await fetch(url.toString(), { cache: "no-store" });
+
+  const txt = await res.text();
+  let data; try { data = txt ? JSON.parse(txt) : []; } catch { data = []; }
+
+  if (!Array.isArray(data)) data = [];  // 👈 ensure array
+  return data;
+},
+
 
   async getById(orgId, projectId) {
     const res = await fetch(`${BASE}/${orgId}/${projectId}`, {
