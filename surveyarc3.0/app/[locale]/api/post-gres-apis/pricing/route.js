@@ -6,9 +6,7 @@ const BASE =  "http://localhost:8000" ;
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-  console.log("first",id)
   const url = `${BASE}/pricing-plan`;
-console.log(url)
 
   const res = await fetch(url, { cache: "no-store" });
 
@@ -17,7 +15,6 @@ console.log(url)
   let body;
   try {
     body = text ? JSON.parse(text) : null;
-    console.log(body)
   } catch (err) {
     console.error("Failed to parse JSON:", text, err);
     return NextResponse.json(
@@ -29,7 +26,6 @@ console.log(url)
   let data;
   try {
     data = await decryptGetResponse(body);
-        console.log("decrypted data",data)
 
   } catch (err) {
     console.error("Decryption failed:", err);

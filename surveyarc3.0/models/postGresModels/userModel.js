@@ -2,7 +2,6 @@
 const BASE = "/api/post-gres-apis/users";
 
 const json = async (res) => {
-  console.log(res)
   if (!res.ok) {
     const msg = await res.text().catch(() => "");
     
@@ -42,7 +41,6 @@ const UserModel = {
    * GET /users/{uid}
    */
   async get(uid) {
-    console.log("Fetching user by UID:", uid);
     const res = await fetch(`${BASE}/${encodeURIComponent(uid)}`, {
       method: "GET",
       cache: "no-store",

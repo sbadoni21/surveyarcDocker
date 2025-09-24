@@ -1,51 +1,102 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from ..db import get_db
-from ..models.questions import Question
-from ..schemas.questions import QuestionCreate, QuestionUpdate
 from typing import List
+from datetime import datetime
+
+from ..db import get_db
+from ..models.questions import Question            # SQLAlchemy model
+from ..schemas.questions import QuestionCreate, QuestionUpdate, QuestionOut
+from ..services.redis_question_service import RedisQuestionService
 
 router = APIRouter(prefix="/questions", tags=["Questions"])
 
-@router.post("/", response_model=QuestionCreate)
+@router.post("/", response_model=QuestionOut)
 def create_question(data: QuestionCreate, db: Session = Depends(get_db)):
-    db_question = Question(**data.dict())
-    db.add(db_question)
+    # Generate server timestamps if your model has them
+    q = Question(
+        question_id=data.question_id,        # optional in schema; if None, DB default/trigger or set here
+        survey_id=data.survey_id,
+        org_id=data.org_id,
+        project_id=data.project_id,
+        type=data.type,
+        label=data.label,
+        required=data.required if data.required is not None else True,
+        description=data.description or "",
+        config=data.config or {},
+        logic=data.logic or [],
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(q)
     db.commit()
-    db.refresh(db_question)
-    return db_question
+    db.refresh(q)
 
-@router.get("/{survey_id}", response_model=List[QuestionCreate])
+    RedisQuestionService.cache_question(q.survey_id, q)
+    RedisQuestionService.cache_questions_list(q.survey_id, [q])
+    return q
+
+@router.get("/{survey_id}", response_model=List[QuestionOut])
 def get_all_questions(survey_id: str, db: Session = Depends(get_db)):
-    questions = db.query(Question).filter(Question.survey_id == survey_id).all()
-    return questions
+    cached = RedisQuestionService.get_questions_for_survey(survey_id)
+    if cached:
+        return cached
 
-@router.get("/{survey_id}/{question_id}", response_model=QuestionCreate)
+    rows = db.query(Question).filter(Question.survey_id == survey_id).all()
+    if rows:
+        RedisQuestionService.cache_questions_list(survey_id, rows)
+    return rows
+
+@router.get("/{survey_id}/{question_id}", response_model=QuestionOut)
 def get_question(survey_id: str, question_id: str, db: Session = Depends(get_db)):
-    question = db.query(Question).filter(Question.survey_id == survey_id,
-                                         Question.question_id == question_id).first()
-    if not question:
-        raise HTTPException(status_code=404, detail="Question not found")
-    return question
+    cached = RedisQuestionService.get_question(survey_id, question_id)
+    if cached:
+        return cached
 
-@router.patch("/{survey_id}/{question_id}", response_model=QuestionCreate)
-def update_question(survey_id: str, question_id: str, data: QuestionUpdate, db: Session = Depends(get_db)):
-    question = db.query(Question).filter(Question.survey_id == survey_id,
-                                         Question.question_id == question_id).first()
-    if not question:
+    q = (
+        db.query(Question)
+        .filter(Question.survey_id == survey_id, Question.question_id == question_id)
+        .first()
+    )
+    if not q:
         raise HTTPException(status_code=404, detail="Question not found")
-    for key, value in data.dict(exclude_unset=True).items():
-        setattr(question, key, value)
+
+    RedisQuestionService.cache_question(survey_id, q)
+    return q
+
+@router.patch("/{survey_id}/{question_id}", response_model=QuestionOut)
+def update_question(survey_id: str, question_id: str, data: QuestionUpdate, db: Session = Depends(get_db)):
+    q = (
+        db.query(Question)
+        .filter(Question.survey_id == survey_id, Question.question_id == question_id)
+        .first()
+    )
+    if not q:
+        raise HTTPException(status_code=404, detail="Question not found")
+
+    updates = data.dict(exclude_unset=True)
+    for k, v in updates.items():
+        setattr(q, k, v)
+    q.updated_at = datetime.utcnow()
     db.commit()
-    db.refresh(question)
-    return question
+    db.refresh(q)
+
+    RedisQuestionService.cache_question(survey_id, q)
+    # list membership unchanged (same id), no need to rewrite list
+    return q
 
 @router.delete("/{survey_id}/{question_id}")
 def delete_question(survey_id: str, question_id: str, db: Session = Depends(get_db)):
-    question = db.query(Question).filter(Question.survey_id == survey_id,
-                                         Question.question_id == question_id).first()
-    if not question:
+    q = (
+        db.query(Question)
+        .filter(Question.survey_id == survey_id, Question.question_id == question_id)
+        .first()
+    )
+    if not q:
         raise HTTPException(status_code=404, detail="Question not found")
-    db.delete(question)
+
+    db.delete(q)
     db.commit()
+
+    RedisQuestionService.invalidate_question(survey_id, question_id)
+    RedisQuestionService.remove_from_list(survey_id, question_id)
     return {"detail": "Question deleted"}

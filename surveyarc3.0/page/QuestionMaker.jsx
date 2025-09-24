@@ -3,26 +3,23 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 
 import QUESTION_TYPES from "@/enums/questionTypes";
 import { usePathname } from "next/navigation";
+
 import QuestionsTab from "@/components/QuestionsTab";
 import RulesTab from "@/components/RulesTab";
-import { useQuestion } from "@/providers/questionPProvider";
-import { useSurvey } from "@/providers/surveyPProvider";
-import { db } from "@/firebase/firebase";
-import {
-  doc,
-  getDoc,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-} from "firebase/firestore";
-import Loading from "@/app/[locale]/loading";
 import SurveyDemoPage from "./SurveyDemoPage";
 import TopTabsNavbar from "@/components/TopTabsNavbar";
 import DistributionPage from "./DistributionPage";
 import SurveyToolbar from "@/components/SurveyToolbar";
 import CampaignPage from "./CampaignPage";
+import Loading from "@/app/[locale]/loading";
 
-export default function dist() {
+import { useQuestion } from "@/providers/questionPProvider";
+import { useSurvey } from "@/providers/surveyPProvider";
+import QuestionModel from "@/models/questionModel";
+import SurveyModel from "@/models/surveyModel";
+
+export default function Dist() {
+  // UI state
   const [selectedType, setSelectedType] = useState(null);
   const [newQuestionData, setNewQuestionData] = useState({
     label: "",
@@ -33,34 +30,35 @@ export default function dist() {
   const [activeTab, setActiveTab] = useState("questions");
   const [rules, setRules] = useState("<Logic>\n</Logic>");
   const [survey, setSurvey] = useState(null);
-  const [selectedBlock, setSelectedBlock] = useState(null);
+  const [selectedBlock, setSelectedBlock] = useState(null); // must be a blockId
   const [newBlockName, setNewBlockName] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // route params
   const pathname = usePathname();
-  const pathParts = pathname.split("/");
-  const orgId = pathParts[3];
-  const projectId = pathParts[6];
-  const surveyId = pathParts[7];
+  const parts = (pathname || "").split("/");
+  const orgId = parts[3];
+  const projectId = parts[6];
+  const surveyId = parts[7];
 
+  // URLs
   const domain =
     process.env.NEXT_PUBLIC_DOMAIN || "https://surveyarc2-0.vercel.app";
   const publicSurveyUrl = `${domain}/en/form?orgId=${orgId}&projects=${projectId}&survey=${surveyId}`;
 
+  // providers
   const { getAllQuestions } = useQuestion();
   const { updateSurvey, getSurvey } = useSurvey();
   const [questions, setQuestions] = useState([]);
+
+  // tab handling
   const normalizeHashToTab = useCallback((hash) => {
-    const k = String(hash || "")
-      .replace(/^#/, "")
-      .toLowerCase();
-
-  if (["questions", "question", "questoins"].includes(k)) return "questions";
-  if (["rules", "logicrules", "logic"].includes(k)) return "rules";
-  if (["demo", "preview"].includes(k)) return "demo";
-  if (["distribution", "share"].includes(k)) return "distribution";
-  if (["campaign", "share"].includes(k)) return "campaign";
-
+    const k = String(hash || "").replace(/^#/, "").toLowerCase();
+    if (["questions", "question", "questoins"].includes(k)) return "questions";
+    if (["rules", "logicrules", "logic"].includes(k)) return "rules";
+    if (["demo", "preview"].includes(k)) return "demo";
+    if (["distribution", "share"].includes(k)) return "distribution";
+    if (["campaign", "share"].includes(k)) return "campaign";
     return "questions";
   }, []);
 
@@ -85,17 +83,54 @@ export default function dist() {
     [normalizeHashToTab]
   );
 
+  // --- helpers ---
+  const normalizeSurveyFromApi = (raw) => {
+    const blocks = Array.isArray(raw?.blocks)
+      ? raw.blocks.map((b) => ({
+          blockId: b.blockId ?? b.block_id ?? b.id,
+          name: b.name ?? "",
+          questionOrder: Array.isArray(b.questionOrder)
+            ? b.questionOrder
+            : Array.isArray(b.question_order)
+            ? b.question_order
+            : [],
+        }))
+      : [];
+
+    const blockOrder = Array.isArray(raw?.block_order)
+      ? raw.block_order
+      : Array.isArray(raw?.blockOrder)
+      ? raw.blockOrder
+      : [];
+
+    const questionOrder = Array.isArray(raw?.question_order)
+      ? raw.question_order
+      : Array.isArray(raw?.questionOrder)
+      ? raw.questionOrder
+      : [];
+
+    return { ...raw, blocks, blockOrder, questionOrder };
+  };
+
+  // initial fetch (decrypt already handled in your API route)
   useEffect(() => {
     async function fetchData() {
+      if (!orgId || !surveyId) return;
       setLoading(true);
       try {
-        const questionsData = await getAllQuestions(orgId, surveyId);
-        setQuestions(questionsData);
-        const surveyData = await getSurvey(orgId, surveyId);
-        setSurvey(surveyData);
+        const qs = await getAllQuestions(orgId, surveyId);
+        setQuestions(qs || []);
 
-        if (surveyData?.blocks?.length > 0 && !selectedBlock) {
-          setSelectedBlock(surveyData.blocks[0].blockId);
+        const rawSurvey = await getSurvey(surveyId);
+        const normalized = normalizeSurveyFromApi(rawSurvey);
+        setSurvey(normalized);
+
+        // default to first block (by blockOrder if present, else first in blocks)
+        if (!selectedBlock) {
+          const firstBlockId =
+            normalized.blockOrder?.[0] ??
+            (normalized.blocks?.[0]?.blockId || null);
+          setSelectedBlock(firstBlockId);
         }
       } catch (error) {
         console.error("Failed to fetch data:", error);
@@ -104,103 +139,138 @@ export default function dist() {
       }
     }
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, surveyId]);
 
+  // Map id -> question
+  const questionsById = useMemo(() => {
+    const m = new Map();
+    for (const q of questions) m.set(q.questionId, q);
+    return m;
+  }, [questions]);
+
+  // Questions for selected block
+  const questionsInSelectedBlock = useMemo(() => {
+    const block = (survey?.blocks || []).find(
+      (b) => b.blockId === selectedBlock
+    );
+    if (!block) return [];
+    return (block.questionOrder || [])
+      .map((id) => questionsById.get(id))
+      .filter(Boolean);
+  }, [survey?.blocks, selectedBlock, questionsById]);
+
+  // ===== Add Question =====
   const handleAddQuestion = async () => {
     if (!selectedBlock) {
       alert("Please select a block to add question");
       return;
     }
+    if (!selectedType || !newQuestionData.label?.trim()) {
+      alert("Please choose a type and enter a label");
+      return;
+    }
 
     const questionId = `Q${Math.floor(100000 + Math.random() * 900000)}`;
-    const newQuestion = {
+
+    const payload = {
       questionId,
       type: selectedType,
       label: newQuestionData.label,
-      description: newQuestionData.description,
-      config: newQuestionData.config,
+      description: newQuestionData.description || "",
+      config: newQuestionData.config || {},
+      required: true,
+      logic: [],
+      projectId,
     };
 
     try {
-      const docId = `${surveyId}`;
-      const docRef = doc(db, "organizations", orgId, "questions", docId);
-      const docSnap = await getDoc(docRef);
+      await QuestionModel.create(orgId, surveyId, payload);
 
-      if (docSnap.exists()) {
-        await updateDoc(docRef, {
-          questions: [...(docSnap.data().questions || []), newQuestion],
-        });
-      } else {
-        await setDoc(docRef, {
-          orgId,
-          surveyId,
-          projectId,
-          uid: docId,
-          createdAt: serverTimestamp(),
-          questions: [newQuestion],
-        });
-      }
+      // latest survey from API (already decrypted by your route)
+      const current = normalizeSurveyFromApi(await getSurvey(surveyId));
 
-      const currentSurvey = await getSurvey(orgId, surveyId);
-      const updatedBlocks = (currentSurvey.blocks || []).map((block) => {
-        if (block.blockId === selectedBlock) {
-          return {
-            ...block,
-            questionOrder: [...(block.questionOrder || []), questionId],
-          };
-        }
-        return block;
-      });
+      const updatedBlocks = (current.blocks || []).map((b) =>
+        b.blockId === selectedBlock
+          ? {
+              ...b,
+              questionOrder: [...(b.questionOrder || []), questionId],
+            }
+          : b
+      );
 
-      await updateSurvey(orgId, surveyId, {
+      const updatedQuestionOrder = [
+        ...(current.questionOrder || []),
+        questionId,
+      ];
+
+      // patch (snake_case for API model)
+      await SurveyModel.update(surveyId, {
         blocks: updatedBlocks,
-        questionOrder: [...(currentSurvey.questionOrder || []), questionId],
+        block_order: current.blockOrder, // unchanged
+        question_order: updatedQuestionOrder,
       });
 
-      const questionsData = await getAllQuestions(orgId, surveyId);
-      setQuestions(questionsData);
+      // refresh UI
+      const freshQs = await getAllQuestions(orgId, surveyId);
+      setQuestions(freshQs || []);
       setSurvey({
-        ...currentSurvey,
+        ...current,
         blocks: updatedBlocks,
-        questionOrder: [...(currentSurvey.questionOrder || []), questionId],
+        questionOrder: updatedQuestionOrder,
       });
 
+      // reset dialog
       setSelectedType(null);
       setNewQuestionData({ label: "", description: "", config: {} });
       setShowTypePopup(false);
     } catch (err) {
       console.error("Error adding question:", err);
+      alert(err?.message || "Failed to add question");
     }
   };
 
-  const handleUpdateQuestion = async (questionId, updatedQuestion) => {
+  // ===== Add Block =====
+  const handleAddBlock = async () => {
+    if (!newBlockName.trim()) return alert("Please enter block name");
+
+    const blockId = `B${Math.floor(1000 + Math.random() * 9000)}`;
+    const newBlock = { blockId, name: newBlockName.trim(), questionOrder: [] };
+
     try {
-      await fetch("/api/questions", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          orgId,
-          surveyId,
-          questionId,
-          updatedQuestion,
-        }),
+      const current = normalizeSurveyFromApi(await getSurvey(surveyId));
+
+      const updatedBlocks = [...(current.blocks || []), newBlock];
+
+      // derive blockOrder: prefer existing order, append new id
+      const currentOrder = Array.isArray(current.blockOrder)
+        ? current.blockOrder
+        : [];
+      const updatedBlockOrder = [...currentOrder, blockId];
+
+      await updateSurvey(orgId, surveyId, {
+        blocks: updatedBlocks,
+        block_order: updatedBlockOrder, // snake_case for API
       });
 
-      setQuestions((prev) =>
-        prev.map((q) => (q.questionId === questionId ? updatedQuestion : q))
-      );
-    } catch (error) {
-      console.error("Failed to update question", error);
+      setSurvey({
+        ...current,
+        blocks: updatedBlocks,
+        blockOrder: updatedBlockOrder,
+      });
+      setNewBlockName("");
+      setSelectedBlock(blockId); // IMPORTANT: keep selected as blockId
+    } catch (e) {
+      console.error("Failed to add block:", e);
+      alert(e?.message || "Failed to add block");
     }
   };
 
+  // config helper
   const updateConfig = (key, value) => {
     setNewQuestionData((prev) => ({
       ...prev,
-      config: {
-        ...prev.config,
-        [key]: value,
-      },
+      config: { ...prev.config, [key]: value },
     }));
   };
 
@@ -210,30 +280,7 @@ export default function dist() {
     });
   };
 
-  const handleAddBlock = async () => {
-    if (!newBlockName.trim()) return alert("Please enter block name");
-    const blockId = `B${Math.floor(1000 + Math.random() * 9000)}`;
-    const newBlock = { blockId, name: newBlockName.trim(), questionOrder: [] };
-    const currentSurvey = await getSurvey(orgId, surveyId);
-    const updatedBlocks = [...(currentSurvey.blocks || []), newBlock];
-    const updatedBlockOrder = [...(currentSurvey.blockOrder || []), blockId];
-
-    await updateSurvey(orgId, surveyId, {
-      blocks: updatedBlocks,
-      blockOrder: updatedBlockOrder,
-    });
-    setSurvey({
-      ...currentSurvey,
-      blocks: updatedBlocks,
-      blockOrder: updatedBlockOrder,
-    });
-    setNewBlockName("");
-    setSelectedBlock(blockId);
-  };
-
-  if (loading) {
-    return <Loading />;
-  }
+  if (loading) return <Loading />;
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -244,25 +291,25 @@ export default function dist() {
           <>
             <SurveyToolbar
               blocks={survey?.blocks || []}
-              selectedBlock={selectedBlock}
-              onSelectBlock={setSelectedBlock}
+              selectedBlock={selectedBlock}                 // value = blockId
+              onSelectBlock={setSelectedBlock}             // setter expects blockId
               newBlockName={newBlockName}
               setNewBlockName={setNewBlockName}
               onAddBlock={handleAddBlock}
               onCopyLink={handleCopyLink}
               onNewQuestion={() => setShowTypePopup(true)}
               publicSurveyUrl={publicSurveyUrl}
-              surveyTitle={survey?.title || "Survey"}
-              showBlocks={true}
-              showCopy={true}
-              showQR={true}
-              showNewQuestion={true}
+              surveyTitle={survey?.title || survey?.name || "Survey"}
+              showBlocks
+              showCopy
+              showQR
+              showNewQuestion
             />
 
             <QuestionsTab
-              questions={questions}
+              questions={questionsInSelectedBlock}
               blocks={survey?.blocks || []}
-              selectedBlockId={selectedBlock}
+              selectedBlockId={selectedBlock}              // blockId
               publicSurveyUrl={publicSurveyUrl}
               showTypePopup={showTypePopup}
               fetchQuestions={getAllQuestions}
@@ -275,15 +322,13 @@ export default function dist() {
               updateConfig={updateConfig}
               handleCopyLink={handleCopyLink}
               handleAddQuestion={handleAddQuestion}
-              handleUpdateQuestion={handleUpdateQuestion}
               onBlocksChange={(newBlocks) =>
-                setSurvey((prev) =>
-                  prev ? { ...prev, blocks: newBlocks } : prev
-                )
+                setSurvey((prev) => (prev ? { ...prev, blocks: newBlocks } : prev))
               }
             />
           </>
         )}
+
         {activeTab === "rules" && (
           <RulesTab
             questions={questions}

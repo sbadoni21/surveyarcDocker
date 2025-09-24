@@ -1,0 +1,143 @@
+// app/api/post-gres-apis/surveys/[survey_id]/route.js
+import { NextResponse } from "next/server";
+import { decryptGetResponse } from "@/utils/crypto_client";
+import { encryptPayload } from "@/utils/crypto_utils";
+
+const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
+const ENC = process.env.ENCRYPT_SURVEYS === "1";
+
+const looksEncrypted = (o) =>
+  o && typeof o === "object" &&
+  "key_id" in o && "encrypted_key" in o &&
+  "ciphertext" in o && "iv" in o && "tag" in o;
+
+const safeParse = (t) => { try { return { ok: true, json: JSON.parse(t) }; } catch { return { ok: false, raw: t }; } };
+
+// Force decrypt helper with verbose logs
+async function forceDecryptResponse(res, label = "") {
+  const text = await res.text();
+  console.log(`[${label}] raw text:`, text);
+
+  const parsed = safeParse(text);
+  if (!parsed.ok) {
+    console.warn(`[${label}] not JSON, returning raw`);
+    return NextResponse.json({ status: "error", raw: parsed.raw }, { status: res.status });
+  }
+
+  const data = parsed.json;
+  console.log(`[${label}] parsed JSON:`, data);
+
+  // Object envelope
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    if (looksEncrypted(data)) {
+      try {
+        console.log(`[${label}] attempting decrypt (object)…`);
+        const dec = await decryptGetResponse(data);
+        console.log(`[${label}] ✅ decrypted object:`, dec);
+        return NextResponse.json(dec, { status: res.status });
+      } catch (e) {
+        console.warn(`[${label}] ❌ decrypt failed, returning raw object:`, e);
+        return NextResponse.json(data, { status: res.status });
+      }
+    }
+    // Not an encrypted envelope
+    return NextResponse.json(data, { status: res.status });
+  }
+
+  // Array of possibly encrypted items
+  if (Array.isArray(data)) {
+    try {
+      console.log(`[${label}] array length=${data.length}, attempting per-item decrypt…`);
+      const dec = await Promise.all(
+        data.map(async (item, i) => {
+          if (item && typeof item === "object" && looksEncrypted(item)) {
+            try {
+              const d = await decryptGetResponse(item);
+              console.log(`[${label}] ✅ decrypted item[${i}]`, d);
+              return d;
+            } catch (e) {
+              console.warn(`[${label}] ❌ decrypt failed for item[${i}], returning raw`, e);
+              return item;
+            }
+          }
+          return item;
+        })
+      );
+      return NextResponse.json(dec, { status: res.status });
+    } catch (e) {
+      console.warn(`[${label}] ❌ array decrypt failed, returning raw`, e);
+      return NextResponse.json(data, { status: res.status });
+    }
+  }
+
+  // Primitive JSON
+  return NextResponse.json(data, { status: res.status });
+}
+
+// Optional: camel → snake for PATCH keys the backend expects
+function toSnakeCasePatch(body) {
+  const out = { ...body };
+  if ("blockOrder" in out) { out.block_order = out.blockOrder; delete out.blockOrder; }
+  if ("questionOrder" in out) { out.question_order = out.questionOrder; delete out.questionOrder; }
+  return out;
+}
+
+export async function GET(_req, { params }) {
+  const { survey_id } = await params;
+  console.log("[GET] survey_id:", survey_id);
+
+  try {
+    const res = await fetch(`${BASE}/surveys/${encodeURIComponent(survey_id)}`, {
+      signal: AbortSignal.timeout(30000),
+    });
+    console.log("[GET] backend status:", res.status);
+    return forceDecryptResponse(res, "GET /surveys/[id]");
+  } catch (e) {
+    console.error("[GET] ❌ error:", e);
+    return NextResponse.json({ status: "error", message: String(e?.message || e) }, { status: 500 });
+  }
+}
+
+export async function PATCH(req, { params }) {
+  const { survey_id } = params;
+  try {
+    const raw = await req.json();
+    console.log("[PATCH] incoming body (camel):", raw);
+
+    const snake = toSnakeCasePatch(raw);
+    console.log("[PATCH] outgoing body (snake):", snake);
+
+    const payload = ENC ? await encryptPayload(snake) : snake;
+    console.log("[PATCH] payload (maybe encrypted):", payload);
+
+    const res = await fetch(`${BASE}/surveys/${encodeURIComponent(survey_id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(ENC ? { "x-encrypted": "1" } : {}) },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30000),
+    });
+    console.log("[PATCH] backend status:", res.status);
+
+    return forceDecryptResponse(res, "PATCH /surveys/[id]");
+  } catch (e) {
+    console.error("[PATCH] ❌ error:", e);
+    return NextResponse.json({ status: "error", message: String(e?.message || e) }, { status: 500 });
+  }
+}
+
+export async function DELETE(_req, { params }) {
+  const { survey_id } = params;
+  console.log("[DELETE] survey_id:", survey_id);
+
+  try {
+    const res = await fetch(`${BASE}/surveys/${encodeURIComponent(survey_id)}`, {
+      method: "DELETE",
+      signal: AbortSignal.timeout(30000),
+    });
+    console.log("[DELETE] backend status:", res.status);
+    return forceDecryptResponse(res, "DELETE /surveys/[id]");
+  } catch (e) {
+    console.error("[DELETE] ❌ error:", e);
+    return NextResponse.json({ status: "error", message: String(e?.message || e) }, { status: 500 });
+  }
+}

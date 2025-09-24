@@ -14,8 +14,7 @@ export default function QuestionFlowTab({ questions = [], rules = [] }) {
   const [edges, setEdges] = useState([]);
 
   useEffect(() => {
-    console.log("🧾 Props - questions:", questions);
-    console.log("🧾 Props - rules:", rules);
+
 
     if (!questions.length) return;
 
@@ -66,7 +65,6 @@ export default function QuestionFlowTab({ questions = [], rules = [] }) {
 
       (rule.actions || []).forEach((action, aIdx) => {
         const type = action.type;
-        console.log(action)
         const targets = Array.isArray(action.target)
           ? action.target
           : [action.target];
@@ -93,8 +91,6 @@ export default function QuestionFlowTab({ questions = [], rules = [] }) {
     setNodes(generatedNodes);
     setEdges(allEdges);
 
-    console.log("🧱 Generated Nodes:", generatedNodes);
-    console.log("🔗 Generated Edges:", allEdges);
   }, [questions, rules]);
 
   return (

@@ -133,7 +133,6 @@ export default function OrgChatFlow({ onNext, onBack }) {
         createdVia: 'web',
       };
 
-      console.log(orgdata);
 
       onNext(orgdata);
     } catch (err) {

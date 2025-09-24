@@ -155,7 +155,7 @@ export default function ProjectsList({
         openToast("You're not part of this project's team yet.", "warning");
         return;
       }
-      router.push(`/org/${orgId}/dashboard/projects/${project.project_id}`);
+      router.push(`/postgres-org/${orgId}/dashboard/projects/${project.project_id}`);
     },
     [canEnter, openToast, router, orgId]
   );

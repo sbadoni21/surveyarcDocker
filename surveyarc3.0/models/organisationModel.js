@@ -122,7 +122,6 @@ export default new (class OrganisationModel {
     };
   }
   async create(orgData) {
-    console.log(orgData)
     const { uid, ownerUID, ownerEmail } = orgData;
 
     const orgRef = doc(this.col, uid);

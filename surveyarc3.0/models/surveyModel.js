@@ -1,133 +1,98 @@
-import {
-  getFirestore,
-  doc,
-  setDoc,
-  getDoc,
-  updateDoc,
-  deleteDoc,
-  Timestamp,
-  where,
-  collection,
-  getDocs,
-  query,
-  increment,
-} from "firebase/firestore";
-import { firebaseApp } from "@/firebase/firebase";
+const BASE = "/api/post-gres-apis/surveys";
 
-const db = getFirestore(firebaseApp);
-
-class SurveyModel {
-  ref(orgId, surveyId) {
-    return doc(db, "organizations", orgId, "surveys", surveyId);
+const json = async (res) => {
+  if (!res.ok) {
+    const msg = await res.text().catch(() => "");
+    throw new Error(`${res.status} ${res.statusText} :: ${msg}`);
   }
+  return res.json();
+};
 
-  orgRef(orgId) {
-    return doc(db, "organizations", orgId);
-  }
-
-  defaultData({ surveyId, name, projectId, createdBy, time, orgId }) {
-    const now = Timestamp.now();
-    return {
-      surveyId,
-      orgId,
-      name,
-      projectId,
-      slug: surveyId,
-      version: 1,
-      status: "draft",
-      createdBy,
-      time,
-      updatedBy: createdBy,
-      createdAt: now,
-      updatedAt: now,
-      settings: {
-        anonymous: false,
-      },
-      questionOrder: [],
-      metadata: {},
-    };
-  }
-
+const SurveyModel = {
   async create(orgId, data) {
-    try {
-      const surveysRef = collection(db, "organizations", orgId, "surveys");
-      let surveyId;
-      let surveyDocRef;
-      let docExists = true;
-
-      while (docExists) {
-        surveyId = "survey_" + Math.random().toString(36).substr(2, 9);
-        surveyDocRef = doc(surveysRef, surveyId);
-        const docSnap = await getDoc(surveyDocRef);
-        docExists = docSnap.exists();
-      }
-
-      const fullData = this.defaultData({
-        ...data,
-        surveyId,
-      });
-
-      await setDoc(surveyDocRef, fullData);
-
-      await updateDoc(this.orgRef(orgId), {
-        "subscription.currentUsage.surveys": increment(1),
-      });
-
-      return {
-        surveyId,
-        ...data,
-      };
-    } catch (error) {
-      console.error("Error creating survey:", error);
-      throw error;
-    }
-  }
-
-  async get(orgId, surveyId) {
-    const ref = this.ref(orgId, surveyId);
-    const snap = await getDoc(ref);
-    return snap.exists() ? snap.data() : null;
-  }
-
-  async getAllSurveys(orgId, projectId) {
-    try {
-      const collectionRef = collection(db, "organizations", orgId, "surveys");
-      const q = query(collectionRef, where("projectId", "==", projectId));
-      const snapshot = await getDocs(q);
-      const surveys = [];
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        surveys.push({
-          ...data,
-          id: docSnap.id,
-        });
-      });
-      return surveys;
-    } catch (error) {
-      console.error("Error fetching surveys from Firestore:", error);
-      throw error;
-    }
-  }
-
-  async update(orgId, surveyId, data) {
-    const ref = this.ref(orgId, surveyId);
-    await updateDoc(ref, {
-      ...data,
-      updatedAt: Timestamp.now(),
+    const body = {
+      org_id: orgId,
+      project_id: data.projectId,
+      name: data.name,
+      time: data.time,
+      status: "draft",
+      created_by: data.createdBy,
+      updated_by: data.createdBy,
+      settings: { anonymous: false },
+      question_order: [],
+      meta_data: {},
+      // optional: start with empty structure
+      blocks: [],
+      block_order: [],
+    };
+    const res = await fetch(`${BASE}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
     });
-    return ref;
-  }
+    return json(res);
+  },
 
-  async delete(orgId, surveyId) {
-    const ref = this.ref(orgId, surveyId);
-    await deleteDoc(ref);
-
-    await updateDoc(this.orgRef(orgId), {
-      "subscription.currentUsage.surveys": increment(-1),
+  async get(surveyId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(surveyId)}`, {
+      method: "GET",
+      cache: "no-store",
     });
+    return json(res);
+  },
 
-    return ref;
-  }
-}
+  async getAllByProject(projectId) {
+    const res = await fetch(`${BASE}?project_id=${encodeURIComponent(projectId)}`, {
+      method: "GET",
+      cache: "no-store",
+    });
+    return json(res);
+  },
 
-export default new SurveyModel();
+  async update(surveyId, data) {
+    // 🔹 convert camelCase → snake_case for the API
+    const payload = { ...data };
+    if ("blockOrder" in payload) {
+      payload.block_order = payload.blockOrder;
+      delete payload.blockOrder;
+    }
+    // (questionOrder is already snake? if you use camel, map it too)
+    if ("questionOrder" in payload) {
+      payload.question_order = payload.questionOrder;
+      delete payload.questionOrder;
+    }
+
+    const res = await fetch(`${BASE}/${encodeURIComponent(surveyId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+    return json(res);
+  },
+
+  async delete(surveyId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(surveyId)}`, {
+      method: "DELETE",
+      cache: "no-store",
+    });
+    return json(res);
+  },
+
+  async listResponses(surveyId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(surveyId)}/responses`, {
+      cache: "no-store",
+    });
+    return json(res);
+  },
+
+  async countResponses(surveyId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(surveyId)}/responses?count=1`, {
+      cache: "no-store",
+    });
+    return json(res);
+  },
+};
+
+export default SurveyModel;

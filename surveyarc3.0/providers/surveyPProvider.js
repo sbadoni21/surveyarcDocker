@@ -1,6 +1,7 @@
+// providers/surveyPProvider.js
 'use client';
-import React, { createContext, useContext, useState } from 'react';
 import SurveyModel from '@/models/surveyModel';
+import React, { createContext, useContext, useState } from 'react';
 
 const SurveyContext = createContext();
 
@@ -9,45 +10,52 @@ export const SurveyProvider = ({ children }) => {
   const [surveyLoading, setLoading] = useState(false);
   const [selectedSurvey, setSelectedSurvey] = useState(null);
 
-  const getSurvey = async (orgId, surveyId) => {
-    const data = await SurveyModel.get(orgId, surveyId);
+  const getSurvey = async (surveyId) => {
+    console.log("gcfhvjikol")
+    const data = await SurveyModel.get(surveyId);
+    console.log(data)
     setSelectedSurvey(data);
     return data;
   };
 
-  const getAllSurveys = async (orgId, projectId) => {
+  const getAllSurveys = async (_orgId, projectId) => {
     setLoading(true);
-    const data = await SurveyModel.getAllSurveys(orgId, projectId);
-    setSurveys(data);
-    setLoading(false);
-    return data;
-  };
 
-  const getSurveysByIds = async (orgId, surveyIds) => {
-    setLoading(true);
-    const results = await Promise.all(
-      surveyIds.map((id) => SurveyModel.get(orgId, id))
-    );
-    setSurveys(results);
-    setLoading(false);
-    return results;
+    try {
+
+      const list = await SurveyModel.getAllByProject(projectId);
+      setSurveys(list || []);
+      return list;
+    } finally {
+      setLoading(false);
+    }
   };
 
   const saveSurvey = async (data) => {
-    await SurveyModel.create(data.orgId, data);
-    setSurveys((prev) => [...prev, data]);
+    const created = await SurveyModel.create(data.orgId, data);
+    setSurveys((prev) => [...prev, created]);
+    return created;
   };
 
-  const updateSurvey = async (orgId, surveyId, updateData) => {
-    await SurveyModel.update(orgId, surveyId, updateData);
+  const updateSurvey = async (_orgId, surveyId, updateData) => {
+    const updated = await SurveyModel.update(surveyId, updateData);
     setSurveys((prev) =>
-      prev.map((s) => (s.surveyId === surveyId ? { ...s, ...updateData } : s))
+      prev.map((s) => (s.survey_id === surveyId ? { ...s, ...updated } : s))
     );
+    return updated;
   };
 
-  const deleteSurvey = async (orgId, surveyId) => {
-    await SurveyModel.delete(orgId, surveyId);
-    setSurveys((prev) => prev.filter((s) => s.surveyId !== surveyId));
+  const deleteSurvey = async (_orgId, surveyId) => {
+    await SurveyModel.delete(surveyId);
+    setSurveys((prev) => prev.filter((s) => s.survey_id !== surveyId));
+  };
+
+  const listResponses = async (surveyId) => {
+    return SurveyModel.listResponses(surveyId);
+  };
+
+  const countResponses = async (surveyId) => {
+    return SurveyModel.countResponses(surveyId); // { count }
   };
 
   return (
@@ -57,12 +65,13 @@ export const SurveyProvider = ({ children }) => {
         selectedSurvey,
         getSurvey,
         getAllSurveys,
-        getSurveysByIds,
         saveSurvey,
         updateSurvey,
         deleteSurvey,
         setSelectedSurvey,
         surveyLoading,
+        listResponses,
+        countResponses,
       }}
     >
       {children}

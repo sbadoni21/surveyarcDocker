@@ -35,7 +35,6 @@ const { setCurrentUser, getUser, loginUser } = useUser();
 
 const fetchUserAndOrg = async (uid, firebaseUser = null) => {
   try {
-    console.log("Fetching user and org for:", uid);
     
     let user = await getUser(uid);
 

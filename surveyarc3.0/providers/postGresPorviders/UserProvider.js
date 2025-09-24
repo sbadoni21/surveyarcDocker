@@ -14,7 +14,6 @@ export const UserProvider = ({ children }) => {
 
   const getUser = async (targetUid) => {
     try {
-      console.log('Fetching user data for:', targetUid);
       const doc = await UserModel.get(targetUid);
       setUser(doc || null);
       return doc;
@@ -27,9 +26,7 @@ export const UserProvider = ({ children }) => {
 
   const loginUser = async (targetUid) => {
     try {
-      console.log('Tracking login for:', targetUid);
       const loginResult = await UserModel.login(targetUid);
-      console.log('Login tracked:', loginResult);
       return loginResult;
     } catch (err) {
       console.error('loginUser failed:', err);
@@ -38,7 +35,6 @@ export const UserProvider = ({ children }) => {
   };
 
   const setCurrentUser = (userData) => {
-    console.log('Setting current user:', userData);
     setUser(userData);
   };
 
@@ -62,18 +58,15 @@ export const UserProvider = ({ children }) => {
 
   const createUser = async (data) => {
     try {
-      console.log('Creating user in provider:', data);
       setIsRegistering(true); // Set registration flag
       
       const created = await UserModel.create(data);
-      console.log('User created successfully:', created);
       
       setUser(created);
       setIsRegistering(false); // Clear registration flag
       
       return created;
     } catch (e) {
-      console.error('createUser failed:', e);
       setIsRegistering(false); // Clear registration flag on error
       throw e;
     }
@@ -103,7 +96,6 @@ export const UserProvider = ({ children }) => {
   const logoutUser = async (targetUid) => {
     try {
       await UserModel.logout(targetUid);
-      console.log('User session invalidated');
     } catch (e) {
       console.error('logout failed:', e);
     }
@@ -117,7 +109,6 @@ export const UserProvider = ({ children }) => {
     const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
       try {
         if (authUser) {
-          console.log('Firebase auth state changed - user signed in:', authUser.uid);
           setUid(authUser.uid);
           
           // Skip auto-fetch on registration routes

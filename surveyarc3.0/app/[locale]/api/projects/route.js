@@ -28,7 +28,6 @@ export async function GET(request) {
 export async function DELETE(request) {
   try {
     const body = await request.json();
-    console.log(body)
     if (!body || !body.orgId || !body.projectId) {
       return new Response(JSON.stringify({ error: 'Missing orgId or projectId' }), { status: 400 });
     }

@@ -2,15 +2,6 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  collection,
-  getDocs,
-  addDoc,
-  updateDoc,
-  doc,
-  deleteDoc,
-  Timestamp,
-} from "firebase/firestore";
-import {
   Plus,
   Trash2,
   ChevronDown,
@@ -21,12 +12,12 @@ import {
 } from "lucide-react";
 import {
   evaluateRule,
-  fetchRulesForSurvey,   // 🔧 now uses collectionGroup
+  fetchRulesForSurvey,   // keep using your ruleEngine helper; make it call the Postgres API under the hood
   getNextBlockFromRules,
   getNextTargetFromRules,
 } from "@/utils/ruleEngine";
-import { db } from "@/firebase/firebase";
 import { useParams } from "next/navigation";
+import { useRule } from "@/providers/rulePProvider";
 
 const emptyCondition = {
   questionId: "",
@@ -63,7 +54,8 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
   const orgId = params.organizations;
   const surveyId = params.slug;
 
-  const [rules, setRules] = useState([]);
+  const { rules, getAllRules, saveRule, updateRule, deleteRule } = useRule();
+
   const [editingRule, setEditingRule] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -72,8 +64,9 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
   const [currentBlockId, setCurrentBlockId] = useState("");
   const [currentQuestionId, setCurrentQuestionId] = useState("");
 
+  // ----- Derived structures -----
   const blockOrder = useMemo(() => {
-    return blocks
+    return (blocks || [])
       .slice()
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .map((b) => b.id);
@@ -81,7 +74,7 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
 
   const blocksById = useMemo(() => {
     const m = {};
-    blocks.forEach((b) => (m[b.id] = b));
+    (blocks || []).forEach((b) => (m[b.id] = b));
     return m;
   }, [blocks]);
 
@@ -121,20 +114,14 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
     return m;
   }, [blocks, questionsById, questionOptions]);
 
+  // ----- Load rules from Postgres via provider -----
   const loadRules = async () => {
-    const ref = collection(db, `organizations/${orgId}/surveys/${surveyId}/rules`);
-    const snapshot = await getDocs(ref);
-    const data = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-    const sorted = data.sort((a, b) => {
-      const ao = blockOrder.indexOf(a.blockId);
-      const bo = blockOrder.indexOf(b.blockId);
-      if (ao !== bo) return ao - bo;
-      return Number(a.priority ?? 1) - Number(b.priority ?? 1);
-    });
-    setRules(sorted);
+    const data = await getAllRules(surveyId);
+    // Provider sets state; if you need custom order in UI, we sort at render-time where needed
+    return data;
   };
 
+  // ----- Helpers -----
   const normalizeActions = (actions) =>
     (actions || []).map((act) => {
       const base = { type: act.type };
@@ -150,45 +137,6 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
       return base;
     });
 
-  const saveRule = async () => {
-    if (!editingRule) return;
-    if (!editingRule.blockId) {
-      alert("Please select a Block for this branch.");
-      return;
-    }
-    setLoading(true);
-    try {
-      const ruleRef = collection(db, `organizations/${orgId}/surveys/${surveyId}/rules`);
-      const payload = {
-        ...editingRule,
-        surveyId,
-        enabled: editingRule.enabled !== false,
-        priority: Number(editingRule.priority || 1),
-        actions: normalizeActions(editingRule.actions),
-        updatedAt: Timestamp.now(),
-      };
-
-      if (editingRule.id) {
-        await updateDoc(doc(ruleRef, editingRule.id), payload);
-      } else {
-        await addDoc(ruleRef, { ...payload, createdAt: Timestamp.now() });
-      }
-
-      await loadRules();
-      setEditingRule(null);
-    } catch (err) {
-      console.error("Save failed", err);
-      alert("Save failed. Check console for details.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const deleteRule = async (id) => {
-    await deleteDoc(doc(db, `organizations/${orgId}/surveys/${surveyId}/rules/${id}`));
-    await loadRules();
-  };
-
   const toggleBlockExpanded = (blockId) =>
     setExpandedBlocks((p) => ({ ...p, [blockId]: !p[blockId] }));
 
@@ -201,7 +149,7 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
     setTestAnswers((p) => ({ ...p, [qid]: value }));
 
   const simulateNextBlock = async () => {
-    const allRules = await fetchRulesForSurvey(orgId,surveyId);
+    const allRules = await fetchRulesForSurvey(orgId, surveyId);
     const next = getNextBlockFromRules({
       rules: allRules,
       answers: testAnswers,
@@ -212,7 +160,7 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
   };
 
   const simulateNextTarget = async () => {
-    const allRules = await fetchRulesForSurvey(orgId,surveyId);
+    const allRules = await fetchRulesForSurvey(orgId, surveyId);
 
     const target = getNextTargetFromRules({
       rules: allRules,
@@ -233,7 +181,7 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
     inBlock.forEach((r) => {
       const passed = evaluateRule(r, testAnswers);
       console.log(
-        `Rule: ${r.name || r.id} (priority ${r.priority}) -> ${passed ? "MATCH" : "no match"}`
+        `Rule: ${r.name || r.ruleId} (priority ${r.priority}) -> ${passed ? "MATCH" : "no match"}`
       );
       console.table(
         (r.conditions || []).map((c) => ({
@@ -265,9 +213,50 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
     }
   };
 
+  // ----- CRUD using provider -----
+  const onSaveRule = async () => {
+    if (!editingRule) return;
+    if (!editingRule.blockId) {
+      alert("Please select a Block for this branch.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const payload = {
+        ...editingRule,
+        surveyId,
+        enabled: editingRule.enabled !== false,
+        priority: Number(editingRule.priority || 1),
+        actions: normalizeActions(editingRule.actions),
+      };
+
+      if (editingRule.ruleId) {
+        await updateRule(surveyId, editingRule.ruleId, payload);
+      } else {
+        // Let backend create id OR provide your own
+        payload.ruleId = `rule_${Math.random().toString(36).slice(2, 10)}`;
+        await saveRule(orgId, surveyId, payload);
+      }
+
+      await loadRules();
+      setEditingRule(null);
+    } catch (err) {
+      console.error("Save failed", err);
+      alert("Save failed. Check console for details.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onDeleteRule = async (id) => {
+    await deleteRule(surveyId, id);
+    await loadRules();
+  };
+
+  // ----- Effects -----
   useEffect(() => {
-    loadRules();
-  }, []);
+    if (surveyId) loadRules();
+  }, [surveyId]);
 
   useEffect(() => {
     if (!currentBlockId && blockOrder.length) setCurrentBlockId(blockOrder[0]);
@@ -278,6 +267,7 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
     setCurrentQuestionId(firstQ ? firstQ.id : "");
   }, [currentBlockId, questionsByBlock]);
 
+  // ----- UI helpers -----
   const getOperatorsForType = (type) => {
     const base = [
       { label: "Equals", value: "equals" },
@@ -330,18 +320,23 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
   const rulesByBlock = useMemo(() => {
     const m = {};
     blockOrder.forEach((id) => (m[id] = []));
-    rules.forEach((r) => {
+    (rules || []).forEach((r) => {
       if (!m[r.blockId]) m[r.blockId] = [];
       m[r.blockId].push(r);
+    });
+    // Sort each block's rules by priority
+    Object.keys(m).forEach((bid) => {
+      m[bid].sort((a, b) => Number(a.priority ?? 1) - Number(b.priority ?? 1));
     });
     return m;
   }, [rules, blockOrder]);
 
   const orphanRules = useMemo(
-    () => rules.filter((r) => !blockOrder.includes(r.blockId)),
+    () => (rules || []).filter((r) => !blockOrder.includes(r.blockId)),
     [rules, blockOrder]
   );
 
+  // ----- Render -----
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-6">
       <div className="space-y-4">
@@ -397,7 +392,7 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                             const sum = summarizeRule(rule);
                             return (
                               <div
-                                key={rule.id}
+                                key={rule.ruleId}
                                 className="rounded border bg-white px-3 py-2"
                               >
                                 <div className="flex items-center justify-between">
@@ -423,7 +418,7 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                                     </button>
                                     <button
                                       className="px-2 py-1 text-xs bg-red-500 text-white rounded"
-                                      onClick={() => deleteRule(rule.id)}
+                                      onClick={() => onDeleteRule(rule.ruleId)}
                                     >
                                       <Trash2 className="h-3 w-3" />
                                     </button>
@@ -463,8 +458,8 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
               </div>
               <ul className="text-sm list-disc pl-5">
                 {orphanRules.map((r) => (
-                  <li key={r.id}>
-                    {r.name || r.id} —{" "}
+                  <li key={r.ruleId}>
+                    {r.name || r.ruleId} —{" "}
                     <button className="underline" onClick={() => setEditingRule(r)}>
                       assign to a block
                     </button>
@@ -571,6 +566,7 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
         </div>
       </div>
 
+      {/* Right pane: editor */}
       <div className="space-y-4">
         {!editingRule ? (
           <div className="p-6 bg-white rounded-lg border shadow-sm text-slate-600">
@@ -583,7 +579,7 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
           <div className="p-6 bg-white rounded-lg border shadow-sm space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-slate-800">
-                {editingRule.id ? "Edit Branch" : "Create Branch"}
+                {editingRule.ruleId ? "Edit Branch" : "Create Branch"}
               </h3>
               <button
                 className="text-slate-500 hover:text-slate-800"
@@ -662,6 +658,7 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                 Enabled
               </label>
 
+              {/* Conditions */}
               <div className="space-y-2">
                 <h4 className="text-md font-medium">Conditions (If)</h4>
                 {editingRule.conditions.map((cond, index) => {
@@ -801,6 +798,7 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                 })}
               </div>
 
+              {/* Actions */}
               <div className="space-y-2">
                 <h4 className="text-md font-medium">Actions (Then)</h4>
                 {editingRule.actions.map((act, index) => (
@@ -991,10 +989,10 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
               <div className="flex gap-2 pt-2">
                 <button
                   className="bg-green-600 text-white px-4 py-2 rounded"
-                  onClick={saveRule}
+                  onClick={onSaveRule}
                   disabled={loading}
                 >
-                  {editingRule.id ? "Update Branch" : "Save Branch"}
+                  {editingRule.ruleId ? "Update Branch" : "Save Branch"}
                 </button>
                 <button
                   className="px-4 py-2 rounded border"

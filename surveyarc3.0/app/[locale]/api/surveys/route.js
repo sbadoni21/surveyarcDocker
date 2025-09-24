@@ -15,7 +15,6 @@ export async function GET(req) {
         { status: 400 }
       );
     }
-    console.log("Fetching survey questions for orgId:", orgId, "surveyId:", surveyId);
     const survey = await SurveyProvider.getSurvey(orgId, surveyId);
 
     if (!survey || !Array.isArray(survey.questionOrder)) {

@@ -48,6 +48,8 @@ export const UserProvider = ({ children }) => {
       if (authUser) {
         setUid(authUser.uid);
         getUser(authUser.uid);
+        
+
       } else {
         setUid(null);
         setUser(null);

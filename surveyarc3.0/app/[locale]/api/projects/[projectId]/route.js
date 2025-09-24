@@ -27,7 +27,6 @@ export async function PATCH(request, { params }) {
 export async function DELETE(request) {
   try {
     const { orgId, projectId } = await request.json();
-    console.log("Deleting project:", orgId, projectId);
     await ProjectProvider.delete(orgId, projectId);
 
  return new Response(null, { status: 204 });  } catch (e) {

@@ -30,10 +30,8 @@ export const OrganisationProvider = ({ children }) => {
   };
 
   const create = async (data) => {
-    console.log(data)
     await organisationModel.create(data);
     const defaultDoc = organisationModel.defaultData(data);
-    console.log(defaultDoc)
     
     setOrganisation(defaultDoc);
     return defaultDoc

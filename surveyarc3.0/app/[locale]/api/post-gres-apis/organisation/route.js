@@ -14,7 +14,6 @@ export async function POST(req) {
     body: JSON.stringify(encryptedBody),
   });
   const encrypted = await res.json();
-  console.log("encrypted", encrypted);
   return NextResponse.json(encrypted, { status: res.status });
 }
 
@@ -24,7 +23,6 @@ export async function GET(req) {
   const res = await fetch(`${BASE}/organisation/${orgId}`);
   const encrypted = await res.json();
   const data = await decryptGetResponse(encrypted);
-  console.log("Get decrypted", data);
   return NextResponse.json(data, { status: res.status });
 }
 

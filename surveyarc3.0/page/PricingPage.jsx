@@ -31,7 +31,6 @@ export default function PricingPage({ onBack, onComplete }) {
     });
   };
 
-  console.log(plans)
 
   const handleSubmit = async (e) => {
     e.preventDefault();

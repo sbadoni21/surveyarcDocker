@@ -77,7 +77,6 @@ export default function SurveyDemoPage() {
   }, [orgId, projectId, surveyId]);
 
   const handleSubmit = async (answers) => {
-    console.log("Final Answers:", answers);
     alert("Survey submitted!");
   };
 

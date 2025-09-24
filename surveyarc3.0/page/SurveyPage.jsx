@@ -6,7 +6,6 @@ import { useSurvey } from "@/providers/surveyPProvider";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import MenuItem from "@mui/material/MenuItem";
-import { useUser } from "@/providers/UserPProvider";
 import SurveyFormComponent from "@/components/SurveyFormComponent";
 import {
   Table,
@@ -32,12 +31,11 @@ import {
   Clear as ClearIcon,
   Visibility as ViewIcon,
 } from "@mui/icons-material";
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "@/firebase/firebase";
 import SurveyResponsePopup from "@/components/SurveyResponsePopup";
 import { FiPlus } from "react-icons/fi";
 import { Icon } from "@iconify/react";
 import { FaSpinner } from "react-icons/fa";
+import { useUser } from "@/providers/postGresPorviders/UserProvider";
 
 export default function SurveyPage() {
   const [name, setName] = useState("");
@@ -59,31 +57,59 @@ export default function SurveyPage() {
   const projectId = pathParts[6];
   const [isEditing, setIsEditing] = useState(false);
   const [editSurveyId, setEditSurveyId] = useState(null);
+// In SurveyPage file: remove Firestore imports and usage
+// import { collection, getDocs } from "firebase/firestore";
+// import { db } from "@/firebase/firebase";
 
-  const {
-    surveys,
-    getAllSurveys,
-    surveyLoading,
-    saveSurvey,
-    updateSurvey,
-    deleteSurvey: deleteSurveyContext,
-  } = useSurvey();
+const {
+  surveys,
+  getAllSurveys,
+  surveyLoading,
+  saveSurvey,
+  updateSurvey,
+  deleteSurvey: deleteSurveyContext,
+  listResponses,
+  countResponses,
+} = useSurvey();
 
-  useEffect(() => {
-    const checkDarkMode = () => {
-      setIsDarkMode(document.documentElement.classList.contains("dark"));
-    };
+// fetch all surveys for project
+useEffect(() => {
+  if (!orgId || !projectId) return;
+  getAllSurveys(orgId, projectId);
+  console.log(surveys)
+}, [orgId, projectId]);
 
-    checkDarkMode();
+// count responses using API
+useEffect(() => {
+  const fetchCounts = async () => {
+    if (!surveys?.length) {
+      setSurveysWithCounts([]);
+      return;
+    }
+    const updated = await Promise.all(
+      surveys.map(async (s) => {
+        try {
+          const { count } = await countResponses(s.survey_id || s.surveyId || s.id);
+          return { ...s, surveyId: s.survey_id || s.surveyId || s.id, responseCount: count || 0 };
+        } catch {
+          return { ...s, surveyId: s.survey_id || s.surveyId || s.id, responseCount: 0 };
+        }
+      })
+    );
+    setSurveysWithCounts(updated);
+  };
+  fetchCounts();
+}, [surveys]);
 
-    const observer = new MutationObserver(checkDarkMode);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class"],
-    });
+const handleResponseCountClick = async (surveyId) => {
+  if (!surveyId) return;
+  const resp = await listResponses(surveyId);
+  setSelectedSurveyId(surveyId);
+  setResponseData(resp || []);
+  setOpenPopup(true);
+};
 
-    return () => observer.disconnect();
-  }, []);
+
 
   const [surveysWithCounts, setSurveysWithCounts] = useState([]);
 
@@ -104,52 +130,11 @@ export default function SurveyPage() {
     getAllSurveys(orgId, projectId);
   }, [orgId, projectId]);
 
-  useEffect(() => {
-    const fetchResponseCounts = async () => {
-      if (!orgId || !projectId || surveys.length === 0) return;
-
-      const updatedSurveys = await Promise.all(
-        surveys.map(async (survey) => {
-          const responsesRef = collection(
-            db,
-            `organizations/${orgId}/surveys/${survey.id}/responses`
-          );
-          const snapshot = await getDocs(responsesRef);
-
-          return {
-            ...survey,
-            responseCount: snapshot.size,
-          };
-        })
-      );
-      setSurveysWithCounts(updatedSurveys);
-    };
-
-    fetchResponseCounts();
-  }, [orgId, projectId, surveys]);
-
   const [selectedSurveyId, setSelectedSurveyId] = useState(null);
   const [responseData, setResponseData] = useState([]);
   const [openPopup, setOpenPopup] = useState(false);
 
-  const handleResponseCountClick = async (surveyId) => {
-    if (!orgId || !surveyId) return;
 
-    const responsesRef = collection(
-      db,
-      `organizations/${orgId}/surveys/${surveyId}/responses`
-    );
-
-    const snapshot = await getDocs(responsesRef);
-    const responses = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-
-    setSelectedSurveyId(surveyId);
-    setResponseData(responses);
-    setOpenPopup(true);
-  };
 
   const handleRequestSort = (property) => {
     const isAsc = orderBy === property && order === "asc";
@@ -201,15 +186,14 @@ export default function SurveyPage() {
   }, [searchText]);
 
   const handleClick = (surveyId) => {
-    router.push(`/org/${orgId}/dashboard/projects/${projectId}/${surveyId}`);
+    router.push(`/postgres-org/${orgId}/dashboard/projects/${projectId}/${surveyId}`);
   };
 
   const handleSubmit = async () => {
     if (!name.trim()) return alert("Please enter a survey name");
     if (!time.trim()) return alert("Please enter survey duration");
+    console.log("first")
     setLoading(true);
-    console.log("first");
-
     try {
       if (isEditing && editSurveyId) {
         await updateSurvey(orgId, editSurveyId, {

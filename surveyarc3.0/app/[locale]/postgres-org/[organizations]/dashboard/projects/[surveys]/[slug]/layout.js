@@ -3,6 +3,7 @@
 import React from 'react';
 
 import { QuestionProvider } from '@/providers/questionPProvider';
+import { RuleProvider } from '@/providers/rulePProvider';
 
 export default function Layout({ children }) {
   return (
@@ -10,10 +11,12 @@ export default function Layout({ children }) {
       {/* Header */}
    
 <QuestionProvider>
-      {/* Main Content */}
-      <main className="">
-        {children}
-      </main>
+  <RuleProvider>
+    {/* Main Content */}
+    <main className="">
+      {children}
+    </main>
+  </RuleProvider>
 </QuestionProvider>
  
     </div>

@@ -1,8 +1,8 @@
 "use client";
-import React, { createContext, useContext, useState, useEffect } from "react";
-import QuestionModel from "@/models/questionModel";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { getCookie } from "cookies-next";
+import QuestionModel from "@/models/questionModel";
 
 const QuestionContext = createContext();
 
@@ -12,47 +12,49 @@ export const QuestionProvider = ({ children }) => {
 
   const [orgId, setOrgId] = useState(null);
   const [surveyId, setSurveyId] = useState(null);
+
   const path = usePathname();
-  const pathParts = path.split("/");
-  
+  const parts = (path || "").split("/"); // e.g. /en/postgres-org/{orgId}/dashboard/projects/{projectId}/{surveyId}
+  // Adjust index per your routing: you used 7 earlier; confirm with your actual path.
+  const inferredSurveyId = parts[7] || parts[parts.length - 1];
+
   useEffect(() => {
-    const storedOrgId = getCookie("currentOrgId") || null;
-    const storedSurveyId = pathParts[7];
+    const o = getCookie("currentOrgId") || null;
+    setOrgId(o);
+    setSurveyId(inferredSurveyId);
 
-    setOrgId(storedOrgId);
-    setSurveyId(storedSurveyId);
+    if (o && inferredSurveyId) {
+      getAllQuestions(o, inferredSurveyId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path]);
 
-    getAllQuestions(storedOrgId, storedSurveyId);
-  }, []);
-
-  const getQuestion = async (orgId, surveyId, questionId) => {
-    const data = await QuestionModel.get(orgId, surveyId, questionId);
-    setSelectedQuestion(data);
-    return data;
-  };
-
-  const getAllQuestions = async (orgId, surveyId) => {
-    const data = await QuestionModel.getAll(orgId, surveyId);
+  const getAllQuestions = async (_orgId, _surveyId) => {
+    const data = await QuestionModel.getAll(_orgId, _surveyId);
     setQuestions(data || []);
     return data;
   };
 
-  const saveQuestion = async (orgId, surveyId, data) => {
-    await QuestionModel.create(orgId, surveyId, data);
-    setQuestions((prev) => [...prev, data]);
+  const getQuestion = async (_orgId, _surveyId, questionId) => {
+    const q = await QuestionModel.get(_orgId, _surveyId, questionId);
+    setSelectedQuestion(q);
+    return q;
   };
 
-  const updateQuestion = async (orgId, surveyId, questionId, updateData) => {
-    await QuestionModel.update(orgId, surveyId, questionId, updateData);
-    setQuestions((prev) =>
-      prev.map((q) =>
-        q.questionId === questionId ? { ...q, ...updateData } : q
-      )
-    );
+  const saveQuestion = async (_orgId, _surveyId, data) => {
+    const created = await QuestionModel.create(_orgId, _surveyId, data);
+    setQuestions((prev) => [...prev, created]);
+    return created;
   };
 
-  const deleteQuestion = async (orgId, surveyId, questionId) => {
-    await QuestionModel.delete(orgId, surveyId, questionId);
+  const updateQuestion = async (_orgId, _surveyId, questionId, updateData) => {
+    const updated = await QuestionModel.update(_orgId, _surveyId, questionId, updateData);
+    setQuestions((prev) => prev.map((q) => (q.questionId === questionId ? updated : q)));
+    return updated;
+  };
+
+  const deleteQuestion = async (_orgId, _surveyId, questionId) => {
+    await QuestionModel.delete(_orgId, _surveyId, questionId);
     setQuestions((prev) => prev.filter((q) => q.questionId !== questionId));
   };
 
@@ -61,8 +63,8 @@ export const QuestionProvider = ({ children }) => {
       value={{
         questions,
         selectedQuestion,
-        getQuestion,
         getAllQuestions,
+        getQuestion,
         saveQuestion,
         updateQuestion,
         deleteQuestion,

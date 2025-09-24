@@ -7,7 +7,6 @@ export function useOrganisation(orgId) {
   const [org, setOrg] = useState(null);
   useEffect(() => {
     let isMounted = true;
-      console.log("first")
 
     async function fetchData() {
       const data = await organisationProvider.getById(orgId);

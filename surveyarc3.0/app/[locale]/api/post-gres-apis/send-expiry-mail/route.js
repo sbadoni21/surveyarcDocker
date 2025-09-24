@@ -6,7 +6,6 @@ const BASE =  "http://localhost:8000" ;
 
   try {
     const body = await req.json();
-    console.log("mail", body);
     const { orgId, orgName, expiryDate, daysRemaining } = body;
 
     if (!orgId || !orgName || !expiryDate) {
@@ -19,7 +18,6 @@ const BASE =  "http://localhost:8000" ;
     const res = await fetch(`${BASE}/organisation/${orgId}`, {
       cache: "no-store",
     });
-    console.log(res);
 
     if (!res.ok) {
       return NextResponse.json(

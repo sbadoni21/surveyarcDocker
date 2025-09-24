@@ -6,11 +6,8 @@ import { NextResponse } from "next/server";
 const BASE = "http://localhost:8000";
 
 export async function GET(req, { params }) {
-  console.log(params)
   const { uid } = await params;
-  console.log(uid)
   try {
-    console.log("Fetching user data for uid:", uid);
     
     const res = await fetch(`${BASE}/users/${uid}`, {
       signal: AbortSignal.timeout(30000)

@@ -119,7 +119,6 @@ export default function OrgChatFlow({ onNext, onBack, loading = false }) {
         uid: user.uid,
       };
 
-      console.log('Organization data:', orgData);
       
       // Pass to next step - the parent will handle the actual API call
       await onNext(orgData);

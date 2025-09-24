@@ -108,7 +108,6 @@ const organisationModel = {
 
     });
 
-    console.log("payload", payload);
 
     const res = await fetch(`${BASE}`, {
       method: "POST",
@@ -117,7 +116,6 @@ const organisationModel = {
       body: JSON.stringify(payload),
     });
 
-    console.log("res", res);
     return toJson(res);
   },
 
@@ -137,15 +135,12 @@ const organisationModel = {
   },
 
   async update(orgId, patch) {
-    console.log(orgId);
-    console.log("patch", patch);
     const res = await fetch(`${BASE}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
       body: JSON.stringify({ orgId: String(orgId), ...patch }),
     });
-    console.log(res);
     return toJson(res);
   },
 

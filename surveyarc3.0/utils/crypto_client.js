@@ -12,7 +12,6 @@ export function decryptAESGCM({ ciphertext, iv, tag }, aesKeyBase64) {
 }
 
 export async function decryptGetResponse(encrypted) {
-  console.log('encrypted under decryption code ', encrypted);
   const keyRes = await fetch(`${BASE}/get-key/${encrypted.key_id}`);
     // const keyRes = await fetch(`http://key-server:8001/get-key/${encrypted.key_id}`);
   if (!keyRes.ok) throw new Error("Failed to get key from keyserver");
