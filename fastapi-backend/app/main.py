@@ -71,7 +71,8 @@ async def startup_event():
             timeout = httpx.Timeout(5.0, connect=3.0)
             async with httpx.AsyncClient(timeout=timeout) as client:
                 test_key_id = "startup_test"
-                response = await client.get(f"http://key-server:8001/get-key/{test_key_id}")
+                # response = await client.get(f"http://key-server:8001/get-key/{test_key_id}")
+                response = await client.get(f"http://localhost:8001/get-key/{test_key_id}")
                 if response.status_code == 200:
                     print("✅ Key server connected successfully")
                 else:

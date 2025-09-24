@@ -12,7 +12,7 @@ export async function POST(req) {
   ciphertext = Buffer.concat([ciphertext, cipher.final()]);
   const tag = cipher.getAuthTag();
 
-  const response = await fetch("http://localhost:8000/secure-crud" || "http://fastapi-backend:8000/secure-crud", {
+  const response = await fetch("http://localhost:8000/secure-crud" , {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

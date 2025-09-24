@@ -1,7 +1,7 @@
 import { decryptGetResponse } from "@/utils/crypto_client";
 import { NextResponse } from "next/server";
 
-const BASE =  "http://fastapi-backend:8000"|| "http://localhost:8000" ;
+const BASE =  "http://localhost:8000" ;
 
 export async function GET(req) {
   const { searchParams } = new URL(req.url);

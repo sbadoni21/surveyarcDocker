@@ -1,5 +1,5 @@
 import crypto from "crypto";
-const BASE =  "http://key-server:8001"|| "http://localhost:8001" ;
+const BASE =  "http://localhost:8001" ;
 
 export async function encryptPayload(payload) {
   const key_id = "req_" + Date.now();

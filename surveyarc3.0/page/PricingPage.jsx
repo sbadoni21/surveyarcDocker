@@ -5,6 +5,7 @@ import React, { useState, useEffect } from "react";
 export default function PricingPage({ onBack, onComplete }) {
   const [selectedPlan, setSelectedPlan] = useState("");
    const {plans} = usePricingPlans()
+  
   useEffect(() => {
     const fetchPlans = async () => {
       try {
@@ -29,6 +30,8 @@ export default function PricingPage({ onBack, onComplete }) {
       document.body.appendChild(script);
     });
   };
+
+  console.log(plans)
 
   const handleSubmit = async (e) => {
     e.preventDefault();

@@ -8,7 +8,8 @@ from fastapi import Request
 import httpx
 from app.utils.crypto_utils import encrypt_aes_gcm
 
-KEYSERVER_URL = "http://key-server:8001/get-key"
+# KEYSERVER_URL = "http://key-server:8001/get-key"
+KEYSERVER_URL = "http://localhost:8001/get-key"
 
 class EncryptGetMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, enable_encryption: bool = True, fallback_on_error: bool = True):

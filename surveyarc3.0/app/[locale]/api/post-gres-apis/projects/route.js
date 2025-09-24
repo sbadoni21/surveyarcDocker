@@ -3,7 +3,7 @@ import { encryptPayload } from "@/utils/crypto_utils";
 import { decryptGetResponse } from "@/utils/crypto_client";
 
 // ✅ Use env, never `"a" || "b"`
-const BASE = process.env.FASTAPI_BASE || "http://localhost:8000";
+const BASE = "http://localhost:8000";
 
 // Small helper to show backend errors clearly
 function jsonErr(status, detail) {

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 
 export async function POST(req) {
-const BASE =  "http://fastapi-backend:8000"|| "http://localhost:8000" ;
+const BASE =  "http://localhost:8000" ;
 
   try {
     const body = await req.json();
