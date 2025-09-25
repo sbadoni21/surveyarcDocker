@@ -1,31 +1,74 @@
+// app/api/post-gres-apis/tickets/route.js
 import { NextResponse } from "next/server";
-const BASE =   "http://localhost:8000" ;
+import { decryptGetResponse } from "@/utils/crypto_client";
+import { encryptPayload } from "@/utils/crypto_utils";
 
+const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
+const ENC = process.env.ENCRYPT_SURVEYS === "1";
 
-export async function POST(req) {
-  const body = await req.json();
-  const res = await fetch(`${BASE}/tickets/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  return NextResponse.json(data, { status: res.status });
+// ----- shared decrypt helper (GET) -----
+async function forceDecryptResponse(res) {
+  const text = await res.text();
+  try {
+    const json = JSON.parse(text);
+    if (Array.isArray(json)) {
+      try {
+        const dec = await Promise.all(
+          json.map(async (item) => {
+            if (item && typeof item === "object") {
+              try { return await decryptGetResponse(item); } catch { return item; }
+            }
+            return item;
+          })
+        );
+        return NextResponse.json(dec, { status: res.status });
+      } catch { return NextResponse.json(json, { status: res.status }); }
+    }
+    if (json && typeof json === "object") {
+      try { return NextResponse.json(await decryptGetResponse(json), { status: res.status }); }
+      catch { return NextResponse.json(json, { status: res.status }); }
+    }
+    return NextResponse.json(json, { status: res.status });
+  } catch {
+    return NextResponse.json({ status: "error", raw: text }, { status: res.status });
+  }
 }
 
+// GET /api/post-gres-apis/tickets?org_id=...&status=...&assignee_id=...&q=...&limit=...&offset=...
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
-  const orgId = searchParams.get("org_id");
-  const surveyId = searchParams.get("survey_id");
-  const questionId = searchParams.get("question_id");
+  const qs = new URLSearchParams();
+  for (const k of ["org_id", "status", "assignee_id", "q", "limit", "offset"]) {
+    const v = searchParams.get(k);
+    if (v !== null && v !== "") qs.set(k, v);
+  }
 
-  let url = `${BASE}/tickets/`;
-  if (orgId) url = `${BASE}/tickets/org/${encodeURIComponent(orgId)}`;
-  else if (surveyId) url = `${BASE}/tickets/survey/${encodeURIComponent(surveyId)}`;
-  else if (questionId) url = `${BASE}/tickets/question/${encodeURIComponent(questionId)}`;
-  else return NextResponse.json({ detail: "Provide org_id or survey_id or question_id" }, { status: 400 });
+  try {
+    const res = await fetch(`${BASE}/tickets?${qs.toString()}`, {
+      signal: AbortSignal.timeout(30000),
+      cache: "no-store",
+    });
+    return forceDecryptResponse(res);
+  } catch (e) {
+    return NextResponse.json({ detail: "Upstream error", message: String(e?.message || e) }, { status: 500 });
+  }
+}
 
-  const res = await fetch(url, { cache: "no-store" });
-  const data = await res.json();
-  return NextResponse.json(data, { status: res.status });
+// POST /api/post-gres-apis/tickets
+export async function POST(req) {
+  try {
+    const raw = await req.json();
+    const payload = ENC ? await encryptPayload(raw) : raw;
+
+    const res = await fetch(`${BASE}/tickets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(ENC ? { "x-encrypted": "1" } : {}) },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30000),
+      cache: "no-store",
+    });
+    return forceDecryptResponse(res);
+  } catch (e) {
+    return NextResponse.json({ detail: "Upstream error", message: String(e?.message || e) }, { status: 500 });
+  }
 }

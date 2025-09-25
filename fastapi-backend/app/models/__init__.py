@@ -11,7 +11,6 @@ def init_models():
 
     # Dependent tables (need survey/response/org/project already defined)
     from .answer import Answer
-    from .ticket import Ticket
     from .webhook import Webhook    
     from .archive import Archive
     from .audit_log import AuditLog
@@ -23,3 +22,5 @@ def init_models():
     from .metric import Metric
     from .order import Order
     from .payment import Payment
+    from .rule import Rule
+    from .contact import Contact, ContactList

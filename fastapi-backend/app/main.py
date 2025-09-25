@@ -17,9 +17,9 @@ init_models()
 Base.metadata.create_all(bind=engine)
 
 from app.routes import (
-    secure_crud, user, project, survey, questions, responses, ticket, webhook, answer,
+    secure_crud, user, project, survey, questions, responses, tickets, webhook, answer,
     archive, audit_log, domains, integration, invite, invoice,
-    marketplace, metric, order, organisation, payment, pricing_plan
+    marketplace, metric, order, organisation, payment, pricing_plan, rule, contacts
 )
 
 app = FastAPI(
@@ -234,6 +234,7 @@ app.include_router(domains.router, tags=["Domains"])
 app.include_router(integration.router, tags=["Integrations"])
 app.include_router(invite.router, tags=["Invite"])
 app.include_router(invoice.router, tags=["Invoices"])
+app.include_router(rule.router, tags=["Rules"])
 app.include_router(marketplace.router, tags=["Marketplace"])
 app.include_router(metric.router, tags=["Metrics"])
 app.include_router(order.router, tags=["Orders"])
@@ -245,9 +246,11 @@ app.include_router(project.router, tags=["Projects"])  # Updated with Redis inte
 app.include_router(survey.router, tags=["Surveys"])
 app.include_router(questions.router, tags=["Questions"])
 app.include_router(responses.router, tags=["Responses"])
-app.include_router(ticket.router, tags=["Tickets"])
+app.include_router(tickets.router, tags=["Tickets"])
 app.include_router(webhook.router, tags=["Webhooks"])
 app.include_router(secure_crud.router, tags=["Secure CRUD"])
+app.include_router(contacts.router, tags=["Contacts & Lists"])
+
 
 # Add encryption middleware with configuration
 app.add_middleware(

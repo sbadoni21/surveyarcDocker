@@ -3,6 +3,7 @@ import Sidebar from "@/components/frontend/Sidebar";
 import { OrganisationProvider } from "@/providers/postGresPorviders/organisationProvider";
 import { ProjectProvider } from "@/providers/postGresPorviders/projectProvider";
 import { UserProvider } from "@/providers/postGresPorviders/UserProvider";
+import { TicketProvider } from "@/providers/ticketsProvider";
 import React, { useState } from "react";
 
 
@@ -13,6 +14,8 @@ export default function Layout({ children }) {
     <div className="flex w-full bg-[#F5F5F5] dark:bg-[#121214]">
       <OrganisationProvider>
         <UserProvider>
+              <TicketProvider>
+          
           <ProjectProvider>
             <Sidebar
               isCollapsed={isCollapsed}
@@ -28,6 +31,8 @@ export default function Layout({ children }) {
               {children}
             </main>
           </ProjectProvider>
+              </TicketProvider>
+
         </UserProvider>
       </OrganisationProvider>
     </div>

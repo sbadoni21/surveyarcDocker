@@ -11,7 +11,6 @@ import {
   Download,
   Plus,
   Users,
-
   AlertCircle,
   CheckCircle,
   X,
@@ -28,55 +27,22 @@ import {
   SortDesc,
   RefreshCw,
 } from "lucide-react";
-import {
-  collection, getDocs, setDoc, updateDoc, doc,
-  arrayUnion, arrayRemove, limit as qLimit,
-  deleteDoc,
-} from "firebase/firestore";
-import { db } from "@/firebase/firebase";
+
+// Import PostgreSQL models instead of Firebase
+import ContactModel from "@/models/postGresModels/contactModel";
+import ContactListModel from "@/models/postGresModels/contactListModel";
+import { upsertListWithContacts } from "@/lib/contacts/upsertListWithContacts";
+
 import { useRouteParams } from "@/utils/getPaths";
-import { slugify } from "@/utils/emailTemplates";
 import { LoadingSpinner } from "@/utils/loadingSpinner";
 import { ListCard } from "./email-page-components/ListCard";
 import { UploadModal } from "./email-page-components/UploadContacts";
 import { ContactRow } from "./email-page-components/ContactRow";
 import { LoadingOverlay } from "@/utils/loadingOverlay";
 
-
-
-const findContactByEmail = async (orgId, email) => {
-  const snap = await getDocs(collection(db, "organizations", orgId, "contacts"));
-  return snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .find((c) => c.email === email);
-};
-
-const upsertContacts = async (orgId, contacts) => {
-  const ids = [];
-  for (const c of contacts) {
-    if (!c.email) continue;
-    const existing = await findContactByEmail(orgId, c.email);
-    if (existing) {
-      await updateDoc(doc(db, "organizations", orgId, "contacts", existing.id), c);
-      ids.push(existing.id);
-    } else {
-      const newRef = doc(collection(db, "organizations", orgId, "contacts"));
-      await setDoc(newRef, c);
-      ids.push(newRef.id);
-    }
-  }
-  return ids;
-};
-
-const upsertListWithContacts = async (orgId, name, contacts) => {
-  const contactIds = await upsertContacts(orgId, contacts);
-  const listId = slugify(name);
-  await setDoc(doc(db, "organizations", orgId, "lists", listId), {
-    listName: name,
-    contactIds,
-    createdAt: Date.now(),
-  });
-  return listId;
+/* --------------------------- Helper Functions --------------------------- */
+const findContactByEmail = (contacts, email) => {
+  return contacts.find(c => c.email.toLowerCase() === email.toLowerCase());
 };
 
 /* --------------------------- pagination hook --------------------------- */
@@ -99,8 +65,6 @@ const usePagination = (data, itemsPerPage = 20) => {
     hasPrev: currentPage > 1,
   };
 };
-
-
 
 const SkeletonRow = () => (
   <tr className="border-b">
@@ -307,9 +271,9 @@ const Notification = ({ message, type, onClose }) => {
   );
 };
 
-/* ------------------------------ Main ------------------------------ */
-export default function EmailManagementFirestore() {
-  const { orgId, } = useRouteParams();
+/* ------------------------------ Main Component ------------------------------ */
+export default function EmailManagementPostgres() {
+  const { orgId } = useRouteParams();
   const [isDeleteLoading, setIsDeleteLoading] = useState(false);
 
   // Data states
@@ -342,18 +306,16 @@ export default function EmailManagementFirestore() {
   const [dragMode, setDragMode] = useState("move");
   const [isDragging, setIsDragging] = useState(false);
 
-  /* ------------------------------ data fetching ------------------------------ */
+  /* ------------------------------ Data fetching with PostgreSQL ------------------------------ */
   const fetchLists = useCallback(async (showLoading = true) => {
     if (showLoading) setIsListsLoading(true);
     try {
-      const snap = await getDocs(collection(db, "organizations", orgId, "lists"));
-      const arr = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((l) => !l.deletedAt);
+      const lists = await ContactListModel.getAll(orgId);
       setListsRaw(
-        arr.map((l) => ({
-          id: l.id,
-          name: l.listName || l.name || l.id,
+        lists.map((l) => ({
+          id: l.listId,
+          listId: l.listId,
+          name: l.name || l.listName || `List ${l.listId}`,
           status: l.status || "live",
           contactIds: Array.isArray(l.contactIds) ? l.contactIds : [],
           createdAt: l.createdAt || 0,
@@ -373,11 +335,11 @@ export default function EmailManagementFirestore() {
   const fetchAllContacts = useCallback(async (showLoading = true) => {
     if (showLoading) setIsContactsLoading(true);
     try {
-      const snap = await getDocs(collection(db, "organizations", orgId, "contacts"));
-      const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const contacts = await ContactModel.getAll(orgId);
       setContactsRaw(
-        arr.map((c) => ({
-          id: c.id,
+        contacts.map((c) => ({
+          id: c.contactId,
+          contactId: c.contactId,
           name: c.name || "",
           email: c.email || "",
           status: c.status || "active",
@@ -585,29 +547,25 @@ export default function EmailManagementFirestore() {
     return options.filter(option => option.count > 0);
   }, [contacts, listsRaw]);
 
-  /* ------------------------------ Helper functions moved inside component ------------------------------ */
+  /* ------------------------------ Helper functions ------------------------------ */
   /** Delete contacts after cleaning them from all lists */
   const deleteContactsAndCleanup = useCallback(async (contactIds) => {
     const ids = Array.isArray(contactIds) ? contactIds : [contactIds];
     
     // 1) Remove from every list
     for (const list of listsRaw) {
-      const listRef = doc(db, "organizations", orgId, "lists", list.id);
       const hasAny = ids.some(id => (list.contactIds || []).includes(id));
       if (hasAny) {
-        // arrayRemove per id ensures idempotency
-        for (const id of ids) {
-          await updateDoc(listRef, { contactIds: arrayRemove(id) });
-        }
+        const newContactIds = (list.contactIds || []).filter(id => !ids.includes(id));
+        await ContactListModel.update(list.listId, { contactIds: newContactIds });
       }
     }
     
     // 2) Delete contact docs
     for (const id of ids) {
-      const contactRef = doc(db, "organizations", orgId, "contacts", id);
-      await deleteDoc(contactRef);
+      await ContactModel.delete(id);
     }
-  }, [listsRaw, orgId]);
+  }, [listsRaw]);
 
   /** Bulk assign selected to a target list (non-special) */
   const bulkAssignToList = useCallback(async (targetListId) => {
@@ -637,7 +595,7 @@ export default function EmailManagementFirestore() {
       const l = listsRaw.find((x) => x.id === listId);
       if (!l) return;
       const next = l.status === "live" ? "suspended" : "live";
-      await updateDoc(doc(db, "organizations", orgId, "lists", listId), { status: next });
+      await ContactListModel.update(l.listId, { status: next });
       setListsRaw((prev) => prev.map((x) => (x.id === listId ? { ...x, status: next } : x)));
       setNotification({
         message: `List ${next === "live" ? "activated" : "suspended"}`,
@@ -665,10 +623,7 @@ export default function EmailManagementFirestore() {
     
     setUpdatingListIds(prev => new Set(prev).add(listId));
     try {
-      await updateDoc(doc(db, "organizations", orgId, "lists", listId), {
-        listName: newName.trim(),
-        updatedAt: Date.now(),
-      });
+      await ContactListModel.update(l.listId, { listName: newName.trim() });
       setListsRaw((prev) => prev.map((x) => (x.id === listId ? { ...x, name: newName.trim() } : x)));
       setNotification({
         message: "List name updated successfully",
@@ -692,9 +647,12 @@ export default function EmailManagementFirestore() {
   const handleListDelete = async (listId) => {
     if (!confirm("Delete this list? Contacts remain in database.")) return;
     
+    const l = listsRaw.find((x) => x.id === listId);
+    if (!l) return;
+    
     setUpdatingListIds(prev => new Set(prev).add(listId));
     try {
-      await updateDoc(doc(db, "organizations", orgId, "lists", listId), { deletedAt: Date.now() });
+      await ContactListModel.delete(l.listId);
       await fetchLists(false);
       setNotification({
         message: "List deleted successfully",
@@ -729,30 +687,29 @@ export default function EmailManagementFirestore() {
     for (const list of listsRaw) {
       const hasAnyContact = contactIdsArray.some(cid => (list.contactIds || []).includes(cid));
       if (hasAnyContact) {
-        const listRef = doc(db, "organizations", orgId, "lists", list.id);
-        for (const contactId of contactIdsArray) {
-          await updateDoc(listRef, { contactIds: arrayRemove(contactId) });
-        }
+        const newContactIds = (list.contactIds || []).filter(id => !contactIdsArray.includes(id));
+        await ContactListModel.update(list.listId, { contactIds: newContactIds });
       }
     }
   };
 
   const addContactsToList = async (contactIds, listId) => {
     const contactIdsArray = Array.isArray(contactIds) ? contactIds : [contactIds];
-    const listRef = doc(db, "organizations", orgId, "lists", listId);
+    const list = listsRaw.find(l => l.id === listId);
+    if (!list) return;
     
-    for (const contactId of contactIdsArray) {
-      await updateDoc(listRef, { contactIds: arrayUnion(contactId) });
-    }
+    const currentIds = list.contactIds || [];
+    const newIds = [...new Set([...currentIds, ...contactIdsArray])];
+    await ContactListModel.update(list.listId, { contactIds: newIds });
   };
 
   const removeContactsFromList = async (contactIds, listId) => {
     const contactIdsArray = Array.isArray(contactIds) ? contactIds : [contactIds];
-    const listRef = doc(db, "organizations", orgId, "lists", listId);
+    const list = listsRaw.find(l => l.id === listId);
+    if (!list) return;
     
-    for (const contactId of contactIdsArray) {
-      await updateDoc(listRef, { contactIds: arrayRemove(contactId) });
-    }
+    const newContactIds = (list.contactIds || []).filter(id => !contactIdsArray.includes(id));
+    await ContactListModel.update(list.listId, { contactIds: newContactIds });
   };
 
   /* ------------------------------ drag & drop ------------------------------ */
@@ -955,7 +912,11 @@ export default function EmailManagementFirestore() {
     try {
       await upsertListWithContacts(orgId, listName, contacts);
       await refreshData();
-      setSelectedListId(slugify(listName));
+      // Find the created list and select it
+      const createdList = listsRaw.find(l => l.name.toLowerCase() === listName.toLowerCase());
+      if (createdList) {
+        setSelectedListId(createdList.id);
+      }
       setNotification({
         message: `Successfully created list "${listName}" with ${contacts.length} contacts`,
         type: "success"

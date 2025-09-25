@@ -132,7 +132,7 @@ const UserModel = {
    * GET /users/org/{org_id}
    */
   async listByOrg(orgId) {
-    const res = await fetch(`${BASE}/org/${encodeURIComponent(orgId)}`, {
+    const res = await fetch(`${BASE}/org/${encodeURIComponent(orgId.orgId)}`, {
       cache: "no-store",
     });
     return json(res);

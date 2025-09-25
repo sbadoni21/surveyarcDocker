@@ -1,12 +1,16 @@
+// UploadContacts.jsx
 "use client";
-import React, { useState, useEffect, useCallback, useMemo } from "react";
-const { LoadingOverlay } = require("@/utils/loadingOverlay");
-const { LoadingSpinner } = require("@/utils/loadingSpinner");
-const { Upload, CheckCircle, AlertCircle } = require("lucide-react");
+import React, { useState } from "react";
+import Papa from "papaparse";
+import * as XLSX from "xlsx";
+import { Upload, CheckCircle, AlertCircle, X } from "lucide-react";
+import { LoadingOverlay } from "@/utils/loadingOverlay";
+import { LoadingSpinner } from "@/utils/loadingSpinner";
 
 const parseFile = (file) =>
   new Promise((resolve, reject) => {
     const ext = file.name.split(".").pop().toLowerCase();
+
     if (ext === "csv") {
       Papa.parse(file, {
         header: true,
@@ -26,44 +30,77 @@ const parseFile = (file) =>
       reject(new Error("Unsupported file type"));
     }
   });
+
+const normalizeRow = (row) => {
+  // handle common header variants
+  const rawEmail =
+    row.Email ??
+    row.email ??
+    row["E-mail"] ??
+    row["e-mail"] ??
+    row["Email Address"] ??
+    row["email address"] ??
+    row["EMAIL"];
+
+  const rawName =
+    row.Name ??
+    row.name ??
+    row.FullName ??
+    row["Full Name"] ??
+    row["full name"] ??
+    row["NAME"];
+
+  const email = String(rawEmail || "").trim();
+  const name = String(rawName || "").trim();
+
+  if (!email) return null; // <- will be skipped
+  return {
+    name,
+    email,
+    emailLower: email.toLowerCase(),
+    status: "active",
+    meta: {},
+  };
+};
+
 /* ------------------------------ Upload Modal ------------------------------ */
 export const UploadModal = ({ isOpen, onClose, onUpload }) => {
   const [listName, setListName] = useState("");
   const [parsedContacts, setParsedContacts] = useState([]);
-  const [duplicates, setDuplicates] = useState([]);
-  const [newContacts, setNewContacts] = useState([]);
+  const [skippedRows, setSkippedRows] = useState([]); // rows that had no email
   const [step, setStep] = useState(1);
   const [isUploading, setIsUploading] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
-  
+
   const handleFileSelect = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     setIsParsing(true);
     try {
       const rows = await parseFile(file);
-      const mapped = rows
-        .map((r) => ({
-          name: r.Name || r.name || "",
-          email: r.Email || r.email || "",
-          status: "active",
-        }))
-        .filter((r) => r.email);
-      
-      // dedupe only by email within file
-      const map = new Map();
+
+      const normalized = [];
+      const skipped = [];
+
+      for (const r of rows) {
+        const n = normalizeRow(r);
+        if (n) normalized.push(n);
+        else skipped.push(r);
+      }
+
+      // de-dupe by email (in-file)
+      const seen = new Set();
       const deduped = [];
-      for (const r of mapped) {
-        if (!map.has(r.email)) {
-          map.set(r.email, true);
-          deduped.push(r);
+      for (const c of normalized) {
+        if (!seen.has(c.emailLower)) {
+          seen.add(c.emailLower);
+          deduped.push(c);
         }
       }
-      
+
       setParsedContacts(deduped);
-      setDuplicates([]);
-      setNewContacts(deduped);
+      setSkippedRows(skipped);
       setStep(2);
     } catch (error) {
       console.error("Error parsing file:", error);
@@ -72,57 +109,64 @@ export const UploadModal = ({ isOpen, onClose, onUpload }) => {
       setIsParsing(false);
     }
   };
-  
+
   const handleUpload = async () => {
     if (!listName.trim()) return;
-    
+    if (parsedContacts.length === 0) {
+      alert("No valid contacts with an email were found in the file.");
+      return;
+    }
+
     setIsUploading(true);
     try {
-      await onUpload({ listName: listName.trim(), contacts: parsedContacts });
-      onClose();
-      setListName("");
-      setParsedContacts([]);
-      setDuplicates([]);
-      setNewContacts([]);
-      setStep(1);
+      await onUpload({
+        listName: listName.trim(),
+        contacts: parsedContacts, // each contact has a valid email now
+      });
+      handleClose();
     } catch (error) {
       console.error("Error uploading:", error);
-      alert("Error uploading contacts. Please try again.");
+      try {
+        const j = JSON.parse(error);
+        alert(j.detail?.[0]?.msg || "Error uploading contacts.");
+      } catch {
+        alert("Error uploading contacts.");
+      }
     } finally {
       setIsUploading(false);
     }
   };
-  
+
   const handleClose = () => {
     if (isUploading || isParsing) return;
     onClose();
     setListName("");
     setParsedContacts([]);
-    setDuplicates([]);
-    setNewContacts([]);
+    setSkippedRows([]);
     setStep(1);
   };
-  
+
   if (!isOpen) return null;
-  
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b flex items-center justify-between">
           <h3 className="text-xl font-semibold">Upload Contact List</h3>
-          <button 
-            onClick={handleClose} 
+          <button
+            onClick={handleClose}
             disabled={isUploading || isParsing}
             className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
+
         <div className="p-6 relative">
           {(isUploading || isParsing) && (
             <LoadingOverlay message={isUploading ? "Uploading contacts..." : "Parsing file..."} />
           )}
-          
+
           {step === 1 && (
             <div className="space-y-4">
               <div>
@@ -170,35 +214,36 @@ export const UploadModal = ({ isOpen, onClose, onUpload }) => {
               </div>
             </div>
           )}
-          
+
           {step === 2 && (
             <div className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <CheckCircle className="w-5 h-5 text-green-600" />
-                    <h4 className="font-medium text-green-800">New Contacts</h4>
+                    <h4 className="font-medium text-green-800">Valid Contacts</h4>
                   </div>
-                  <p className="text-2xl font-bold text-green-800">{newContacts.length}</p>
+                  <p className="text-2xl font-bold text-green-800">{parsedContacts.length}</p>
                   <p className="text-sm text-green-600">Will be added to your database</p>
                 </div>
+
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <AlertCircle className="w-5 h-5 text-yellow-600" />
-                    <h4 className="font-medium text-yellow-800">Existing (unknown yet)</h4>
+                    <h4 className="font-medium text-yellow-800">Skipped (no email)</h4>
                   </div>
-                  <p className="text-2xl font-bold text-yellow-800">–</p>
-                  <p className="text-sm text-yellow-600">Resolved during import</p>
+                  <p className="text-2xl font-bold text-yellow-800">{skippedRows.length}</p>
+                  <p className="text-sm text-yellow-600">Rows missing an email address</p>
                 </div>
               </div>
-              
+
               {parsedContacts.length > 0 && (
                 <div>
                   <h5 className="font-medium mb-2">Preview (first 10):</h5>
                   <div className="max-h-32 overflow-y-auto bg-gray-50 rounded-lg p-3">
                     {parsedContacts.slice(0, 10).map((c, idx) => (
                       <div key={idx} className="text-sm py-1">
-                        {c.name} — {c.email}
+                        {c.name || "(no name)"} — {c.email}
                       </div>
                     ))}
                     {parsedContacts.length > 10 && (
@@ -212,9 +257,10 @@ export const UploadModal = ({ isOpen, onClose, onUpload }) => {
             </div>
           )}
         </div>
+
         <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
-          <button 
-            onClick={handleClose} 
+          <button
+            onClick={handleClose}
             disabled={isUploading || isParsing}
             className="px-4 py-2 border rounded-lg hover:bg-gray-50 disabled:opacity-50"
           >
@@ -223,7 +269,7 @@ export const UploadModal = ({ isOpen, onClose, onUpload }) => {
           {step === 2 && (
             <button
               onClick={handleUpload}
-              disabled={!listName.trim() || isUploading || isParsing}
+              disabled={!listName.trim() || isUploading || isParsing || parsedContacts.length === 0}
               className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2"
             >
               {isUploading && <LoadingSpinner size="sm" />}
