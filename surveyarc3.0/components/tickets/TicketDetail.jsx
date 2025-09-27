@@ -21,7 +21,8 @@ const PRIORITIES = ["low", "normal", "high", "urgent"];
 const SEVERITIES = ["sev4", "sev3", "sev2", "sev1"];
 const WORK_KINDS = ["analysis", "investigation", "comms", "fix", "review", "other"];
 
-export default function TicketDetail({ ticket, orgId, onUpdate, currentUserId }) {
+export default function TicketDetail({ ticket, participants, onAssignGroup, onPatchTeams, onPatchAgents, onUpdate, ...rest }) {
+
   const [edit, setEdit] = useState(false);
   const [draft, setDraft] = useState(ticket);
 
@@ -151,6 +152,7 @@ export default function TicketDetail({ ticket, orgId, onUpdate, currentUserId })
           </Box>
           <Box minWidth={240}>
             <AssigneeSelect
+              groupId={draft.groupId || undefined}   // restrict by group
               orgId={orgId}
               value={edit ? draft.assigneeId : ticket.assigneeId}
               onChange={(v) => { if (!edit) setEdit(true); setDraft((d) => ({ ...d, assigneeId: v })); }}
@@ -209,7 +211,30 @@ export default function TicketDetail({ ticket, orgId, onUpdate, currentUserId })
           <TextField size="small" label="Category" value={edit ? (draft.category || "") : (ticket.category || "")} onChange={(e) => edit && applyUpdate("category", e.target.value)} fullWidth />
           <TextField size="small" label="Subcategory" value={edit ? (draft.subcategory || "") : (ticket.subcategory || "")} onChange={(e) => edit && applyUpdate("subcategory", e.target.value)} fullWidth />
         </Stack>
+   <Stack spacing={1} sx={{ mt: 1 }}>
+        <Typography variant="body2">Group: {participants?.groupId || "—"}</Typography>
+        <Typography variant="body2">Teams: {(participants?.teamIds || []).join(", ") || "—"}</Typography>
+        <Typography variant="body2">Agents: {(participants?.agentIds || []).join(", ") || "—"}</Typography>
 
+        {/* tiny inline editors (for demo) */}
+        <Stack direction="row" spacing={1}>
+          <Button size="small" onClick={() => onAssignGroup(ticket.ticketId, null)}>Clear Group</Button>
+        </Stack>
+
+        <Stack direction="row" spacing={1} alignItems="center">
+          <TextField size="small" label="Teams CSV" value={teamsCsv} onChange={(e) => setTeamsCsv(e.target.value)} />
+          <Button size="small" onClick={() => onPatchTeams(ticket.ticketId, teamsCsv.split(",").map(s => s.trim()).filter(Boolean), "add")}>Add</Button>
+          <Button size="small" onClick={() => onPatchTeams(ticket.ticketId, teamsCsv.split(",").map(s => s.trim()).filter(Boolean), "remove")}>Remove</Button>
+          <Button size="small" onClick={() => onPatchTeams(ticket.ticketId, teamsCsv.split(",").map(s => s.trim()).filter(Boolean), "replace")}>Set</Button>
+        </Stack>
+
+        <Stack direction="row" spacing={1} alignItems="center">
+          <TextField size="small" label="Agents CSV" value={agentsCsv} onChange={(e) => setAgentsCsv(e.target.value)} />
+          <Button size="small" onClick={() => onPatchAgents(ticket.ticketId, agentsCsv.split(",").map(s => s.trim()).filter(Boolean), "add")}>Add</Button>
+          <Button size="small" onClick={() => onPatchAgents(ticket.ticketId, agentsCsv.split(",").map(s => s.trim()).filter(Boolean), "remove")}>Remove</Button>
+          <Button size="small" onClick={() => onPatchAgents(ticket.ticketId, agentsCsv.split(",").map(s => s.trim()).filter(Boolean), "replace")}>Set</Button>
+        </Stack>
+      </Stack>
         {/* Worklogs */}
         <Stack spacing={1}>
           <Stack direction="row" alignItems="center" justifyContent="space-between">

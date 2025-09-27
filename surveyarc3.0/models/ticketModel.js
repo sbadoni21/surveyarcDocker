@@ -46,7 +46,13 @@ const toCamel = (t) => ({
   number: t.number ?? null,
   tags: t.tags || [],
   custom: t.custom_fields || t.meta || {},
+
+  // arrays we added server-side
+  teamIds: t.team_ids ?? [],
+  agentIds: t.agent_ids ?? [],
 });
+
+// ---------------- core CRUD (unchanged above) ----------------
 
 const TicketModel = {
   async list({ orgId, status, assigneeId, q, limit = 50, offset = 0 } = {}) {
@@ -77,7 +83,7 @@ const TicketModel = {
       subject: data.subject,
       description: data.description ?? "",
       priority: normalizePriority(data.priority ?? "normal"),
-      severity: data.severity ? data.severity : undefined, // let backend default if undefined
+      severity: data.severity ? data.severity : undefined,
       status: data.status ?? "new",
       category: data.category ?? null,
       subcategory: data.subcategory ?? null,
@@ -86,6 +92,9 @@ const TicketModel = {
       due_at: data.dueAt ?? null,
       tags: Array.isArray(data.tags) ? data.tags : undefined,
       custom_fields: data.custom ?? {},
+      // allow create with arrays if you pass them
+      team_ids: Array.isArray(data.teamIds) ? data.teamIds : undefined,
+      agent_ids: Array.isArray(data.agentIds) ? data.agentIds : undefined,
     };
     const payload = omitNullish(payloadRaw);
     const res = await fetch(`${BASE}`, {
@@ -107,9 +116,10 @@ const TicketModel = {
       if ("assigneeId" in out) { out.assignee_id = out.assigneeId; delete out.assigneeId; }
       if ("slaId" in out) { out.sla_id = out.slaId; delete out.slaId; }
       if ("projectId" in out) { out.project_id = out.projectId; delete out.projectId; }
-      // FIX: map dueAt -> due_at correctly
       if ("dueAt" in out) { out.due_at = out.dueAt; delete out.dueAt; }
-      // remove null/undefined fields
+      // NEW: map arrays if provided in patch (full replace semantics)
+      if ("teamIds" in out) { out.team_ids = out.teamIds; delete out.teamIds; }
+      if ("agentIds" in out) { out.agent_ids = out.agentIds; delete out.agentIds; }
       return omitNullish(out);
     };
 
@@ -140,31 +150,104 @@ const TicketModel = {
     const res = await fetch(`${COUNT_BASE}?${qs.toString()}`, { cache: "no-store" });
     return json(res); // { count: number }
   },
-  // ADD to your existing TicketModel:
 
-async listGroupQueue({ orgId, groupId, status, q, limit = 50, offset = 0 }) {
-  const qs = new URLSearchParams();
-  if (orgId) qs.set("org_id", orgId);
-  if (groupId) qs.set("group_id", groupId);
-  if (status) qs.set("status", status);
-  if (q) qs.set("q", q);
-  qs.set("limit", String(limit));
-  qs.set("offset", String(offset));
-  const res = await fetch(`${BASE}?${qs.toString()}`, { cache: "no-store" });
-  const arr = await json(res);
-  return (arr || []).map(toCamel);
-},
+  // ---------------- queues / views you already had ----------------
+  async listGroupQueue({ orgId, groupId, status, q, limit = 50, offset = 0 }) {
+    const qs = new URLSearchParams();
+    if (orgId) qs.set("org_id", orgId);
+    if (groupId) qs.set("group_id", groupId);
+    if (status) qs.set("status", status);
+    if (q) qs.set("q", q);
+    qs.set("limit", String(limit));
+    qs.set("offset", String(offset));
+    const res = await fetch(`${BASE}?${qs.toString()}`, { cache: "no-store" });
+    const arr = await json(res);
+    return (arr || []).map(toCamel);
+  },
 
-async listCollaborating({ orgId, userId, status, limit = 50, offset = 0 }) {
-  const qs = new URLSearchParams({ org_id: orgId, user_id: userId });
-  if (status) qs.set("status", status);
-  qs.set("limit", String(limit));
-  qs.set("offset", String(offset));
-  const res = await fetch(`${BASE}/collaborating?${qs.toString()}`, { cache: "no-store" });
-  const arr = await json(res);
-  return (arr || []).map(toCamel);
-},
+  async listCollaborating({ orgId, userId, status, limit = 50, offset = 0 }) {
+    const qs = new URLSearchParams({ org_id: orgId, user_id: userId });
+    if (status) qs.set("status", status);
+    qs.set("limit", String(limit));
+    qs.set("offset", String(offset));
+    const res = await fetch(`${BASE}/collaborating?${qs.toString()}`, { cache: "no-store" });
+    const arr = await json(res);
+    return (arr || []).map(toCamel);
+  },
 
+  // ---------------- NEW: assignment helpers ----------------
+
+  // Group: assign or clear (pass null to clear)
+  async assignGroup(ticketId, groupId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}/group`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group_id: groupId ?? null }),
+      cache: "no-store",
+    });
+    const t = await json(res);
+    return toCamel(t);
+  },
+
+  // Teams: mode can be "add" | "replace" | "remove"
+  async patchTeams(ticketId, teamIds, mode = "add") {
+    const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}/teams`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ team_ids: teamIds || [], mode }),
+      cache: "no-store",
+    });
+    const t = await json(res);
+    return toCamel(t);
+  },
+
+  // Agents: mode can be "add" | "replace" | "remove"
+  async patchAgents(ticketId, agentIds, mode = "add") {
+    const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}/agents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent_ids: agentIds || [], mode }),
+      cache: "no-store",
+    });
+    const t = await json(res);
+    return toCamel(t);
+  },
+
+  // Quick snapshot
+  async getParticipants(ticketId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}/participants`, { cache: "no-store" });
+    const payload = await json(res);
+    return {
+      ticketId: payload.ticket_id,
+      orgId: payload.org_id,
+      groupId: payload.group_id ?? null,
+      teamIds: payload.team_ids ?? [],
+      agentIds: payload.agent_ids ?? [],
+      assigneeId: payload.assignee_id ?? null,
+      updatedAt: payload.updated_at ?? null,
+    };
+  },
+
+  // Convenience sugar
+  async addTeams(ticketId, teamIds) {
+    return this.patchTeams(ticketId, teamIds, "add");
+  },
+  async removeTeams(ticketId, teamIds) {
+    return this.patchTeams(ticketId, teamIds, "remove");
+  },
+  async setTeams(ticketId, teamIds) {
+    return this.patchTeams(ticketId, teamIds, "replace");
+  },
+
+  async addAgents(ticketId, agentIds) {
+    return this.patchAgents(ticketId, agentIds, "add");
+  },
+  async removeAgents(ticketId, agentIds) {
+    return this.patchAgents(ticketId, agentIds, "remove");
+  },
+  async setAgents(ticketId, agentIds) {
+    return this.patchAgents(ticketId, agentIds, "replace");
+  },
 };
 
 export default TicketModel;

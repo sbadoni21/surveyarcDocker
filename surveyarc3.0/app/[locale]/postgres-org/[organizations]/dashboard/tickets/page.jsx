@@ -1,5 +1,6 @@
+// app/(whatever)/TicketsPage.jsx
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Box, Button, Container, Grid, Paper, Stack, Typography } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import TicketFilters from "@/components/tickets/TicketFilters";
@@ -33,7 +34,11 @@ export default function TicketsPage() {
   const { uid: currentUserId } = useUser() || {};
   const requesterId = currentUserId;
 
-  const { tickets, selectedTicket, setSelectedTicket, list, create, update, count, loading } = useTickets();
+  const {
+    tickets, selectedTicket, setSelectedTicket, list, create, update, count, loading,
+    // NEW provider methods
+    assignGroup, patchTeams, patchAgents, getParticipants
+  } = useTickets();
 
   const [filters, setFilters] = useState({
     orgId,
@@ -46,8 +51,10 @@ export default function TicketsPage() {
   const [counts, setCounts] = useState({});
   const [createOpen, setCreateOpen] = useState(false);
 
+  // keep a lightweight participants snapshot (groupId, teamIds, agentIds, assigneeId)
+  const [participants, setParticipants] = useState(null);
+
   const refresh = async () => {
-    // provider passes through extra params (groupId). backend list handles group_id.
     await list({
       orgId,
       status: filters.status || undefined,
@@ -72,6 +79,45 @@ export default function TicketsPage() {
     })();
     return () => { mounted = false; };
   }, [orgId, count]);
+
+  // when a ticket is selected/updated, fetch participants snapshot
+  useEffect(() => {
+    if (!selectedTicket?.ticketId) {
+      setParticipants(null);
+      return;
+    }
+    let mounted = true;
+    getParticipants(selectedTicket.ticketId)
+      .then((p) => mounted && setParticipants(p))
+      .catch(() => mounted && setParticipants(null));
+    return () => { mounted = false; };
+  }, [selectedTicket?.ticketId, getParticipants]);
+
+  // ---------- handlers we pass to TicketDetail ----------
+  const handleAssignGroup = async (ticketId, groupIdOrNull) => {
+    const updated = await assignGroup(ticketId, groupIdOrNull);
+    setSelectedTicket(updated);
+    // refresh participants snapshot
+    const snap = await getParticipants(ticketId);
+    setParticipants(snap);
+    return updated;
+  };
+
+  const handlePatchTeams = async (ticketId, teamIds, mode = "add") => {
+    const updated = await patchTeams(ticketId, teamIds, mode);
+    setSelectedTicket(updated);
+    const snap = await getParticipants(ticketId);
+    setParticipants(snap);
+    return updated;
+  };
+
+  const handlePatchAgents = async (ticketId, agentIds, mode = "add") => {
+    const updated = await patchAgents(ticketId, agentIds, mode);
+    setSelectedTicket(updated);
+    const snap = await getParticipants(ticketId);
+    setParticipants(snap);
+    return updated;
+  };
 
   return (
     <Container maxWidth="xl" sx={{ py: 2 }}>
@@ -113,10 +159,17 @@ export default function TicketsPage() {
                 ticket={selectedTicket}
                 orgId={orgId}
                 currentUserId={currentUserId}
+                participants={participants}                
                 onUpdate={async (id, patch) => {
                   const updated = await update(id, patch);
                   setSelectedTicket(updated);
+                  const snap = await getParticipants(id);
+                  setParticipants(snap);
                 }}
+                // NEW: assignment actions
+                onAssignGroup={handleAssignGroup}
+                onPatchTeams={handlePatchTeams}
+                onPatchAgents={handlePatchAgents}
               />
             ) : (
               <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>

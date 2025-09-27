@@ -4,9 +4,10 @@ from sqlalchemy import (
     
     UniqueConstraint, BigInteger
 )
-from typing import Optional, List
+from sqlalchemy.dialects.postgresql import ARRAY
+from pydantic import BaseModel, Field
+from typing import Literal, Dict, Any, List, Optional
 from datetime import datetime
-from pydantic import Field
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -18,6 +19,18 @@ from ..db import Base
 
 
 # ------------------------------- Enums -------------------------------
+# ---------- payloads ----------
+
+class AssignGroupBody(BaseModel):
+    group_id: Optional[str] = Field(None, description="Support group to assign; null to clear")
+
+class PatchTeamsBody(BaseModel):
+    team_ids: List[str] = Field(default_factory=list)
+    mode: Literal["add", "replace", "remove"] = "add"
+
+class PatchAgentsBody(BaseModel):
+    agent_ids: List[str] = Field(default_factory=list)
+    mode: Literal["add", "replace", "remove"] = "add"
 
 class TicketStatus(str, enum.Enum):
     new = "new"
@@ -70,32 +83,6 @@ ticket_tags = Table(
 
 
 
-class SLA(Base):
-    """
-    SLA policy definition. Example rules JSON structure (flexible):
-      {
-        "applies_to": {"priority_in": ["urgent", "high"], "tag_any": ["vip"]},
-        "calendar_id": "biz_hours_india"
-      }
-    """
-    __tablename__ = "slas"
-
-    sla_id:  Mapped[str] = mapped_column(String, primary_key=True, index=True)
-    org_id:  Mapped[str] = mapped_column(String, index=True, nullable=False)
-
-    name:    Mapped[str] = mapped_column(String, nullable=False)
-    active:  Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-
-    first_response_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    resolution_minutes:     Mapped[int | None] = mapped_column(Integer, nullable=True)
-
-    rules:    Mapped[dict | None] = mapped_column(JSONB, default=dict)
-    meta: Mapped[dict | None] = mapped_column(JSONB, default=dict)
-
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
-    statuses = relationship("TicketSLAStatus", back_populates="sla", cascade="all, delete-orphan")
 
 
 class Ticket(Base):
@@ -136,12 +123,18 @@ class Ticket(Base):
     watchers = relationship("TicketWatcher", back_populates="ticket", cascade="all, delete-orphan")
     events   = relationship("TicketEvent", back_populates="ticket", cascade="all, delete-orphan")
     sla_status = relationship("TicketSLAStatus", uselist=False, back_populates="ticket", cascade="all, delete-orphan")
-    team_ids = relationship("SupportTeam", secondary="support_team_tickets", back_populates="tickets")
-    
+    team_ids:  Mapped[list[str]] = mapped_column(ARRAY(String), default=list, nullable=False, index=False)
+    agent_ids: Mapped[list[str]] = mapped_column(ARRAY(String), default=list, nullable=False, index=False)
+
     __table_args__ = (
         Index("ix_ticket_org_status", "org_id", "status"),
         Index("ix_ticket_org_assignee", "org_id", "assignee_id"),
         UniqueConstraint("org_id", "number", name="uq_ticket_org_number"),
+
+        # Optional but very useful for array queries:
+        # GIN indexes make `overlap/contains` fast
+        Index("gin_tickets_team_ids",  team_ids,  postgresql_using="gin"),
+        Index("gin_tickets_agent_ids", agent_ids, postgresql_using="gin"),
     )
 
 
@@ -322,7 +315,7 @@ class TicketCollaborator(Base):
     __table_args__ = (
         UniqueConstraint("ticket_id", "user_id", name="uq_ticket_collaborator"),
     )
-# app/models/tickets.py (additions)
+
 class TicketAssignment(Base):
     __tablename__ = "ticket_assignments"
     assignment_id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
@@ -331,7 +324,7 @@ class TicketAssignment(Base):
     from_assignee: Mapped[str | None] = mapped_column(String, nullable=True)
     to_assignee:   Mapped[str | None] = mapped_column(String, nullable=True)
     created_at:    Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
-# app/models/tickets.py (additions)
+
 class WorklogType(str, enum.Enum):
     analysis = "analysis"
     investigation = "investigation"

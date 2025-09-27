@@ -6,7 +6,7 @@ from typing import List, Optional
 import uuid
 
 from ..db import get_db
-from ..models.sla import BusinessCalendar, BusinessCalendarHour, BusinessCalendarHoliday
+from ..models.business_calendar import BusinessCalendar, BusinessCalendarHour, BusinessCalendarHoliday
 from ..schemas.business_calendar import (
     BusinessCalendarCreate, 
     BusinessCalendarUpdate, 

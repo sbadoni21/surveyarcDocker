@@ -1,72 +1,76 @@
 # app/services/sla_service.py
 from __future__ import annotations
-from datetime import datetime, timedelta, date, time,timezone
-from zoneinfo import ZoneInfo
 
-from sqlalchemy.orm import Session
-from sqlalchemy import select, and_
-
-from ..models.tickets import Ticket, TicketSLAStatus, SLA
-from ..models.sla import SLAPauseWindow, SLADimension, BusinessCalendar, BusinessCalendarHour, BusinessCalendarHoliday
-# app/services/sla_service.py
-
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 
-from ..models.tickets import Ticket, TicketSLAStatus, SLA
+from ..models.tickets import Ticket, TicketSLAStatus
+from ..models.sla import SLAPauseWindow, SLADimension, SLA
 from ..services.redis_sla_service import (
     cache_ticket_sla_status,
-    invalidate_ticket_sla_status,
+    invalidate_ticket_sla_status,  # kept for completeness (not used below but handy)
 )
-from ..models.sla import SLADimension
 
 UTC = timezone.utc
+
 
 def now_utc() -> datetime:
     return datetime.now(tz=UTC)
 
-# ------------------- helpers -------------------
 
-
+# --------------------------------------------------------------------
+# Helpers (wall-clock, no business-calendar)
+# --------------------------------------------------------------------
 
 def _minutes_to_due(base: datetime, mins: Optional[int]) -> Optional[datetime]:
-    if not mins:
+    if mins is None:
         return None
-    return base + timedelta(minutes=int(mins))
+    try:
+        mins = int(mins)
+    except Exception:
+        return None
+    if mins <= 0:
+        return base
+    return base + timedelta(minutes=mins)
+
 
 def _freeze_clock(status: TicketSLAStatus, when: datetime) -> None:
     """
-    Freeze 'remaining' for any due dates when we go paused.
-    We store remaining intervals in meta-like mechanism by subtracting 'when' from dues.
+    Capture remaining minutes at 'when' for both dimensions so we can recreate due times on resume.
     """
     if status.paused:
         return
-    # compute remaining deltas
+
     status.meta = status.meta or {}
-    fr, rr = None, None
+
+    rem_fr = None
     if status.first_response_due_at:
-        fr = max(0, int((status.first_response_due_at - when).total_seconds() // 60))
+        delta = (status.first_response_due_at - when).total_seconds() // 60
+        rem_fr = max(0, int(delta))
+
+    rem_res = None
     if status.resolution_due_at:
-        rr = max(0, int((status.resolution_due_at - when).total_seconds() // 60))
-    status.meta["remaining_first_response_minutes"] = fr
-    status.meta["remaining_resolution_minutes"] = rr
+        delta = (status.resolution_due_at - when).total_seconds() // 60
+        rem_res = max(0, int(delta))
+
+    status.meta["remaining_first_response_minutes"] = rem_fr
+    status.meta["remaining_resolution_minutes"] = rem_res
+
 
 def _unfreeze_clock(status: TicketSLAStatus, when: datetime) -> None:
     """
-    Resume by restoring due_at = when + remaining_minutes.
+    Rebuild due times from remaining minutes snapshot taken at pause time.
     """
     status.meta = status.meta or {}
-    fr = status.meta.get("remaining_first_response_minutes")
-    rr = status.meta.get("remaining_resolution_minutes")
-    if fr is not None:
-        status.first_response_due_at = _minutes_to_due(when, fr)
-    if rr is not None:
-        status.resolution_due_at = _minutes_to_due(when, rr)
-    # clear remaining once restored
-    status.meta.pop("remaining_first_response_minutes", None)
-    status.meta.pop("remaining_resolution_minutes", None)
+    fr = status.meta.pop("remaining_first_response_minutes", None)
+    rr = status.meta.pop("remaining_resolution_minutes", None)
+
+    status.first_response_due_at = _minutes_to_due(when, fr) if fr is not None else status.first_response_due_at
+    status.resolution_due_at     = _minutes_to_due(when, rr) if rr is not None else status.resolution_due_at
+
 
 def _serialize_status(status: TicketSLAStatus) -> dict:
     return {
@@ -81,257 +85,211 @@ def _serialize_status(status: TicketSLAStatus) -> dict:
         "updated_at": status.updated_at.isoformat() if status.updated_at else None,
     }
 
-# ------------------- recompute -------------------
+
+# --------------------------------------------------------------------
+# (Re)compute due dates – simple wall-clock version
+# --------------------------------------------------------------------
 
 def _recompute_due(db: Session, status: TicketSLAStatus, sla: SLA) -> None:
     """
-    Recompute due times naïvely from 'now' respecting paused state and any remaining values.
-    This is intentionally simple; if you have business calendars, plug them here.
-    """
-    if status is None or sla is None:
-        return
-    n = now_utc()
-    # if paused and we have remaining, do not change; otherwise set from SLA mins
-    if not status.paused:
-        if sla.first_response_minutes:
-            # don't override if already set (first response might have been set on first agent reply)
-            if not status.first_response_due_at:
-                status.first_response_due_at = _minutes_to_due(n, sla.first_response_minutes)
-        if sla.resolution_minutes:
-            status.resolution_due_at = _minutes_to_due(n, sla.resolution_minutes)
+    Compute/refresh due times from 'now', respecting paused state.
 
-# ------------------- public API -------------------
+    Rules (simple):
+      - If paused: do nothing (freeze state).
+      - If running:
+          * first_response_due_at: set once if SLA target exists and not already satisfied.
+          * resolution_due_at: set/refresh every time based on SLA target.
+    """
+    if not status or not sla:
+        return
+
+    n = now_utc()
+
+    if status.paused:
+        # When paused, do not touch due times—freeze preserved via _freeze_clock.
+        return
+
+    # First Response target
+    if sla.first_response_minutes and not status.first_response_due_at and not status.breached_first_response:
+        status.first_response_due_at = _minutes_to_due(n, sla.first_response_minutes)
+
+    # Resolution target
+    if sla.resolution_minutes and not status.breached_resolution:
+        # Allow recomputation to keep it simple (e.g., if SLA minutes change)
+        status.resolution_due_at = _minutes_to_due(n, sla.resolution_minutes)
+    elif not sla.resolution_minutes:
+        status.resolution_due_at = None
+
+
+# --------------------------------------------------------------------
+# Public API
+# --------------------------------------------------------------------
 
 def pause_sla(db: Session, ticket: Ticket, dimension: SLADimension, reason: str | None = None) -> TicketSLAStatus:
     """
-    Pause SLA timing (we freeze remaining minutes at the pause moment).
-    For per-dimension pause we still store a single paused flag (simple model).
+    Pause SLA timers (single paused flag for simplicity).
+    Creates/extends an open SLAPauseWindow for audit (dimension is stored).
     """
     if not ticket or not ticket.sla_status:
         return ticket.sla_status  # type: ignore
+
     st = ticket.sla_status
     if st.paused:
         return st
 
-    _freeze_clock(st, now_utc())
+    when = now_utc()
+    _freeze_clock(st, when)
     st.paused = True
     st.pause_reason = reason or "manual"
-    db.add(st); db.flush()
+
+    # open pause window
+    win = SLAPauseWindow(
+        ticket_id=ticket.ticket_id,
+        dimension=dimension,
+        reason=st.pause_reason,
+        started_at=when,
+        ended_at=None,
+        meta={},
+    )
+    db.add(win)
+    db.add(st)
+    db.flush()
+
     cache_ticket_sla_status(ticket.ticket_id, _serialize_status(st))
     return st
 
+
 def resume_sla(db: Session, ticket: Ticket, dimension: SLADimension) -> TicketSLAStatus:
     """
-    Resume SLA timing (we rebuild dues from remaining minutes captured at pause).
+    Resume SLA timers from the snapshot of remaining minutes.
+    Closes the most recent open SLAPauseWindow for the given dimension.
     """
     if not ticket or not ticket.sla_status:
         return ticket.sla_status  # type: ignore
+
     st = ticket.sla_status
     if not st.paused:
         return st
 
-    _unfreeze_clock(st, now_utc())
+    when = now_utc()
+    _unfreeze_clock(st, when)
     st.paused = False
     st.pause_reason = None
-    db.add(st); db.flush()
+
+    # close the latest open window for this dim (if any)
+    win = (
+        db.execute(
+            select(SLAPauseWindow)
+            .where(
+                SLAPauseWindow.ticket_id == ticket.ticket_id,
+                SLAPauseWindow.dimension == dimension,
+                SLAPauseWindow.ended_at.is_(None),
+            )
+            .order_by(SLAPauseWindow.started_at.desc())
+        )
+        .scalars()
+        .first()
+    )
+    if win:
+        win.ended_at = when
+        db.add(win)
+
+    db.add(st)
+    db.flush()
+
     cache_ticket_sla_status(ticket.ticket_id, _serialize_status(st))
     return st
 
+
 def mark_first_response_done(db: Session, ticket: Ticket) -> None:
     """
-    Called when the first agent PUBLIC reply is posted; we set first_response_at and
-    stop the first-response clock (by nulling due or marking breached if late).
+    On first PUBLIC agent reply: stamp 'first_response_at' and stop the first-response timer.
     """
     if not ticket or not ticket.sla_status:
         return
+
     st = ticket.sla_status
     if ticket.first_response_at:
         return
+
     ticket.first_response_at = now_utc()
 
     if st.first_response_due_at and ticket.first_response_at > st.first_response_due_at:
         st.breached_first_response = True
-    # stop first response timer
+
+    # stop first-response timer
     st.first_response_due_at = None
-    db.add(ticket); db.add(st); db.flush()
+
+    db.add(ticket)
+    db.add(st)
+    db.flush()
+
     cache_ticket_sla_status(ticket.ticket_id, _serialize_status(st))
+
 
 def mark_resolved(db: Session, ticket: Ticket) -> None:
     """
-    Called when ticket is resolved; we stop resolution clock and mark breach if late.
+    When ticket is resolved: stamp 'resolved_at', mark breach if late, stop resolution timer.
     """
     if not ticket or not ticket.sla_status:
         return
+
     st = ticket.sla_status
     if ticket.resolved_at:
         return
+
     ticket.resolved_at = now_utc()
 
     if st.resolution_due_at and ticket.resolved_at > st.resolution_due_at:
         st.breached_resolution = True
+
     st.resolution_due_at = None
-    db.add(ticket); db.add(st); db.flush()
+
+    db.add(ticket)
+    db.add(st)
+    db.flush()
+
     cache_ticket_sla_status(ticket.ticket_id, _serialize_status(st))
 
-# --------- business-hours helpers (compact but correct enough) ----------
-
-def _get_calendar(db: Session, calendar_id: str | None, fallback_tz="UTC") -> tuple[str, list[tuple[int,int,int]], set[str]]:
-    """
-    Returns (tz, hours, holidays) for calendar_id.
-    hours: list of (weekday, start_min, end_min)
-    holidays: set of 'YYYY-MM-DD'
-    """
-    if not calendar_id:
-        return fallback_tz, [(i, 0, 24*60) for i in range(7)], set()  # 24x7 default
-
-    cal = db.get(BusinessCalendar, calendar_id)
-    if not cal or not cal.active:
-        return fallback_tz, [(i, 0, 24*60) for i in range(7)], set()
-
-    hrs = db.execute(select(BusinessCalendarHour).where(BusinessCalendarHour.calendar_id == calendar_id)).scalars().all()
-    hols = db.execute(select(BusinessCalendarHoliday).where(BusinessCalendarHoliday.calendar_id == calendar_id)).scalars().all()
-    hours = [(h.weekday, h.start_min, h.end_min) for h in hrs]
-    holidays = {h.date_iso for h in hols}
-    return cal.timezone or fallback_tz, hours, holidays
-
-def _clip_to_business_minutes(tz: str, hours: list[tuple[int,int,int]], holidays: set[str], start_dt: datetime, end_dt: datetime) -> int:
-    """
-    Returns business minutes between start_dt and end_dt.
-    Simplified: iterate day by day, intersect with working windows.
-    """
-    if end_dt <= start_dt:
-        return 0
-    z = ZoneInfo(tz)
-    s = start_dt.astimezone(z)
-    e = end_dt.astimezone(z)
-
-    total = 0
-    cur = s
-    while cur < e:
-        day_end = datetime(cur.year, cur.month, cur.day, 23, 59, 59, tzinfo=z)
-        stop = min(e, day_end)
-        key = f"{cur.date().isoformat()}"
-        if key not in holidays:
-            wd = cur.weekday()
-            for (hwd, start_min, end_min) in hours:
-                if hwd != wd: 
-                    continue
-                win_start = datetime(cur.year, cur.month, cur.day, 0, 0, tzinfo=z) + timedelta(minutes=start_min)
-                win_end   = datetime(cur.year, cur.month, cur.day, 0, 0, tzinfo=z) + timedelta(minutes=end_min)
-                # overlap between [cur, stop] and [win_start, win_end]
-                a = max(cur, win_start)
-                b = min(stop, win_end)
-                if b > a:
-                    total += int((b - a).total_seconds() // 60)
-        cur = datetime(cur.year, cur.month, cur.day, 0, 0, tzinfo=z) + timedelta(days=1)
-    return max(total, 0)
-
-def _add_business_minutes(tz: str, hours: list[tuple[int,int,int]], holidays: set[str], start_dt: datetime, minutes: int) -> datetime:
-    """Move forward by business minutes; simplified but robust."""
-    if minutes <= 0: 
-        return start_dt
-    z = ZoneInfo(tz)
-    cur = start_dt.astimezone(z)
-    remaining = minutes
-
-    # iterate days forward
-    while remaining > 0:
-        key = cur.date().isoformat()
-        if key not in holidays:
-            wd = cur.weekday()
-            segments = [(s,e) for (hwd,s,e) in hours if hwd==wd]
-            segments.sort()
-            moved = False
-
-            for s_min, e_min in segments:
-                seg_start = datetime(cur.year, cur.month, cur.day, 0, 0, tzinfo=z) + timedelta(minutes=s_min)
-                seg_end   = datetime(cur.year, cur.month, cur.day, 0, 0, tzinfo=z) + timedelta(minutes=e_min)
-
-                if cur <= seg_end:
-                    cur2 = max(cur, seg_start)
-                    if cur2 < seg_end:
-                        cap = int((seg_end - cur2).total_seconds() // 60)
-                        used = min(cap, remaining)
-                        cur  = cur2 + timedelta(minutes=used)
-                        remaining -= used
-                        moved = True
-                        if remaining == 0:
-                            return cur
-            if not moved:
-                # jump to next day's first window
-                cur = datetime(cur.year, cur.month, cur.day, 0, 0, tzinfo=z) + timedelta(days=1)
-                continue
-        else:
-            cur = datetime(cur.year, cur.month, cur.day, 0, 0, tzinfo=z) + timedelta(days=1)
-    return cur
-
-# ------------- SLA state machine (pause/resume/recompute) -------------
-
-def _accumulate_elapsed(db: Session, t: Ticket, st: TicketSLAStatus, dim: SLADimension) -> None:
-    tz, hours, holidays = _get_calendar(db, st.calendar_id)
-    now = datetime.utcnow()
-    if dim == SLADimension.first_response and st.last_resume_first_response:
-        st.elapsed_first_response_minutes += _clip_to_business_minutes(
-            tz, hours, holidays, st.last_resume_first_response, now
-        )
-        st.last_resume_first_response = None
-    elif dim == SLADimension.resolution and st.last_resume_resolution:
-        st.elapsed_resolution_minutes += _clip_to_business_minutes(
-            tz, hours, holidays, st.last_resume_resolution, now
-        )
-        st.last_resume_resolution = None
-
-def _recompute_due(db: Session, st: TicketSLAStatus, sla: SLA) -> None:
-    tz, hours, holidays = _get_calendar(db, st.calendar_id)
-    now = datetime.utcnow()
-
-    # FIRST RESPONSE
-    if sla.first_response_minutes:
-        elapsed = st.elapsed_first_response_minutes
-        # if running, include partial to now
-        if st.last_resume_first_response:
-            elapsed += _clip_to_business_minutes(tz, hours, holidays, st.last_resume_first_response, now)
-        remaining = max(sla.first_response_minutes - elapsed, 0)
-        st.first_response_due_at = _add_business_minutes(tz, hours, holidays, now, remaining)
-        st.breached_first_response = elapsed >= sla.first_response_minutes
-    else:
-        st.first_response_due_at = None
-        st.breached_first_response = False
-
-    # RESOLUTION
-    if sla.resolution_minutes:
-        elapsed = st.elapsed_resolution_minutes
-        if st.last_resume_resolution:
-            elapsed += _clip_to_business_minutes(tz, hours, holidays, st.last_resume_resolution, now)
-        remaining = max(sla.resolution_minutes - elapsed, 0)
-        st.resolution_due_at = _add_business_minutes(tz, hours, holidays, now, remaining)
-        st.breached_resolution = elapsed >= sla.resolution_minutes
-    else:
-        st.resolution_due_at = None
-        st.breached_resolution = False
 
 def ensure_started(st: TicketSLAStatus) -> None:
-    now = datetime.utcnow()
+    """
+    Initialize SLA clocks when a ticket is created/binds to an SLA.
+    (We keep fields for compatibility with more advanced engines, but
+     here they’re used as simple "started at" markers.)
+    """
+    n = now_utc()
     if not st.first_response_started_at:
-        st.first_response_started_at = now
-        st.last_resume_first_response = now
+        st.first_response_started_at = n
+        st.last_resume_first_response = n
     if not st.resolution_started_at:
-        st.resolution_started_at = now
-        st.last_resume_resolution = now
-
+        st.resolution_started_at = n
+        st.last_resume_resolution = n
 
 
 def get_timers(db: Session, ticket_id: str) -> dict:
+    """
+    Returns a compact snapshot of a ticket's SLA timers + pause windows.
+    All wall-clock; no business-hours math.
+    """
     t = db.get(Ticket, ticket_id)
     if not t or not t.sla_status:
         return {}
+
     st = t.sla_status
     sla = db.get(SLA, t.sla_id) if t.sla_id else None
     if sla:
         _recompute_due(db, st, sla)
-    windows = db.execute(
-        select(SLAPauseWindow).where(SLAPauseWindow.ticket_id == ticket_id).order_by(SLAPauseWindow.started_at.asc())
-    ).scalars().all()
+
+    windows = (
+        db.execute(
+            select(SLAPauseWindow)
+            .where(SLAPauseWindow.ticket_id == ticket_id)
+            .order_by(SLAPauseWindow.started_at.asc())
+        )
+        .scalars()
+        .all()
+    )
 
     return {
         "ticket_id": t.ticket_id,
@@ -340,15 +298,11 @@ def get_timers(db: Session, ticket_id: str) -> dict:
         "pause_reason": st.pause_reason,
         "first_response": {
             "started_at": st.first_response_started_at,
-            "elapsed_minutes": st.elapsed_first_response_minutes
-                + (0 if not st.last_resume_first_response else 0),  # already accounted in due calc
             "due_at": st.first_response_due_at,
             "breached": st.breached_first_response,
         },
         "resolution": {
             "started_at": st.resolution_started_at,
-            "elapsed_minutes": st.elapsed_resolution_minutes
-                + (0 if not st.last_resume_resolution else 0),
             "due_at": st.resolution_due_at,
             "breached": st.breached_resolution,
         },

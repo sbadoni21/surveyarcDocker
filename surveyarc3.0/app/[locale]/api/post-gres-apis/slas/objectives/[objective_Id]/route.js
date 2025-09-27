@@ -1,4 +1,4 @@
-// app/api/post-gres-apis/slas/[sla_id]/route.js
+// app/api/post-gres-apis/slas/objectives/[objective_id]/route.js
 import { NextResponse } from "next/server";
 import { decryptGetResponse } from "@/utils/crypto_client";
 import { encryptPayload } from "@/utils/crypto_utils";
@@ -7,37 +7,23 @@ const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
 const ENC = process.env.ENCRYPT_SURVEYS === "1";
 
 async function forceDecryptResponse(res) {
-  const text = await res.text();
+  const txt = await res.text();
   try {
-    const json = JSON.parse(text);
-    if (Array.isArray(json)) {
-      try {
-        const dec = await Promise.all(
-          json.map(async (item) => {
-            if (item && typeof item === "object") {
-              try { return await decryptGetResponse(item); } catch { return item; }
-            }
-            return item;
-          })
-        );
-        return NextResponse.json(dec, { status: res.status });
-      } catch { return NextResponse.json(json, { status: res.status }); }
-    }
+    const json = JSON.parse(txt);
     if (json && typeof json === "object") {
       try { return NextResponse.json(await decryptGetResponse(json), { status: res.status }); }
       catch { return NextResponse.json(json, { status: res.status }); }
     }
     return NextResponse.json(json, { status: res.status });
   } catch {
-    return NextResponse.json({ status: "error", raw: text }, { status: res.status });
+    return NextResponse.json({ status: "error", raw: txt }, { status: res.status });
   }
 }
 
-// GET /api/post-gres-apis/slas/[sla_id]
 export async function GET(_req, { params }) {
-  const { sla_id } = params;
+  const { objective_id } = params;
   try {
-    const res = await fetch(`${BASE}/slas/${encodeURIComponent(sla_id)}`, {
+    const res = await fetch(`${BASE}/slas/objectives/${encodeURIComponent(objective_id)}`, {
       signal: AbortSignal.timeout(30000),
       cache: "no-store",
     });
@@ -47,14 +33,13 @@ export async function GET(_req, { params }) {
   }
 }
 
-// PATCH /api/post-gres-apis/slas/[sla_id]
 export async function PATCH(req, { params }) {
-  const { sla_id } = params;
+  const { objective_id } = params;
   try {
     const raw = await req.json();
     const payload = ENC ? await encryptPayload(raw) : raw;
 
-    const res = await fetch(`${BASE}/slas/${encodeURIComponent(sla_id)}`, {
+    const res = await fetch(`${BASE}/slas/objectives/${encodeURIComponent(objective_id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...(ENC ? { "x-encrypted": "1" } : {}) },
       body: JSON.stringify(payload),
@@ -67,11 +52,10 @@ export async function PATCH(req, { params }) {
   }
 }
 
-// DELETE /api/post-gres-apis/slas/[sla_id]
 export async function DELETE(_req, { params }) {
-  const { sla_id } = params;
+  const { objective_id } = params;
   try {
-    const res = await fetch(`${BASE}/slas/${encodeURIComponent(sla_id)}`, {
+    const res = await fetch(`${BASE}/slas/objectives/${encodeURIComponent(objective_id)}`, {
       method: "DELETE",
       signal: AbortSignal.timeout(30000),
       cache: "no-store",

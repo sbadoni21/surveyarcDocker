@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, select
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime
 
@@ -22,8 +22,10 @@ from ..models.tickets import (
     TicketCollaborator,
     TicketCollaboratorRole,
     TicketSLAStatus,
-    SLA,
+    PatchAgentsBody,
+    PatchTeamsBody
 )
+
 from ..schemas.tickets import (
     TicketCreate,
     TicketUpdate,
@@ -36,7 +38,8 @@ from ..schemas.tickets import (
     CollaboratorOut,
 )
 
-from ..models.sla import SLADimension
+from ..models.sla import SLADimension,SLA
+
 from ..services import sla_service
 
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
@@ -59,7 +62,29 @@ def _ensure_sla_status_if_needed(db: Session, t: Ticket) -> None:
 def _invalidate_all(db: Session, t: Ticket):
     RedisTicketService.invalidate_ticket(t.ticket_id)
     RedisTicketService.invalidate_org_lists_and_counts(t.org_id)
+    
+def _dedupe_sorted_strs(items: List[str]) -> List[str]:
+    return sorted({str(x).strip() for x in items if str(x).strip()})
 
+def _merge_array(current: List[str], incoming: List[str], mode: str) -> List[str]:
+    cur = set(current or [])
+    inc = {x for x in incoming or []}
+    if mode == "replace":
+        return _dedupe_sorted_strs(list(inc))
+    if mode == "remove":
+        return _dedupe_sorted_strs(list(cur - inc))
+    # default "add"
+    return _dedupe_sorted_strs(list(cur | inc))
+
+def _import_user_model():
+    """
+    Lazy import to avoid circulars. Returns User model or None.
+    """
+    try:
+        from ..models.user import User  # type: ignore
+        return User
+    except Exception:
+        return None
 
 # ------------------------------- CRUD --------------------------------
 
@@ -410,3 +435,116 @@ def delete_attachment(ticket_id: str, attachment_id: str, db: Session = Depends(
     db.delete(row); db.commit()
     _invalidate_all(db, t)
     return None
+# ------------------------- assignment: group --------------------------
+
+@router.post("/{ticket_id}/group", response_model=TicketOut)
+def assign_group(ticket_id: str, body: AssignGroupBody, db: Session = Depends(get_db)):
+    t: Ticket | None = db.get(Ticket, ticket_id)
+    if not t:
+        raise HTTPException(404, "Ticket not found")
+
+    # Validate group when provided
+    if body.group_id:
+        from ..models.support import SupportGroup
+        g = db.get(SupportGroup, body.group_id)
+        if not g:
+            raise HTTPException(404, "Support group not found")
+        if g.org_id != t.org_id:
+            raise HTTPException(400, "Group belongs to a different organization")
+
+        t.group_id = body.group_id
+    else:
+        # clear
+        t.group_id = None
+
+    # activity bump
+    t.last_activity_at = datetime.utcnow()
+
+    db.commit(); db.refresh(t)
+    dto = TicketOut.model_validate(t, from_attributes=True)
+    RedisTicketService.cache_ticket(dto)
+    RedisTicketService.invalidate_org_lists_and_counts(t.org_id)
+    return dto
+
+
+# ------------------------- assignment: teams --------------------------
+
+@router.post("/{ticket_id}/teams", response_model=TicketOut)
+def patch_teams(ticket_id: str, body: PatchTeamsBody, db: Session = Depends(get_db)):
+    t: Ticket | None = db.get(Ticket, ticket_id)
+    if not t:
+        raise HTTPException(404, "Ticket not found")
+
+    # Validate teams against org
+    from ..models.support import SupportTeam
+    if body.team_ids:
+        teams = db.query(SupportTeam).filter(SupportTeam.team_id.in_(body.team_ids)).all()
+        found_ids = {x.team_id for x in teams}
+        missing = set(body.team_ids) - found_ids
+        if missing:
+            raise HTTPException(404, f"Teams not found: {sorted(missing)}")
+        # org guard
+        cross = [x.team_id for x in teams if x.org_id != t.org_id]
+        if cross:
+            raise HTTPException(400, f"Teams in different org: {sorted(cross)}")
+
+    new_team_ids = _merge_array(t.team_ids or [], body.team_ids, body.mode)
+    t.team_ids = new_team_ids
+
+    # activity bump
+    t.last_activity_at = datetime.utcnow()
+
+    db.commit(); db.refresh(t)
+    dto = TicketOut.model_validate(t, from_attributes=True)
+    RedisTicketService.cache_ticket(dto)
+    RedisTicketService.invalidate_org_lists_and_counts(t.org_id)
+    return dto
+
+
+# ------------------------- assignment: agents -------------------------
+
+@router.post("/{ticket_id}/agents", response_model=TicketOut)
+def patch_agents(ticket_id: str, body: PatchAgentsBody, db: Session = Depends(get_db)):
+    t: Ticket | None = db.get(Ticket, ticket_id)
+    if not t:
+        raise HTTPException(404, "Ticket not found")
+
+    # Validate users if the real User model is available
+    User = _import_user_model()
+    if User and body.agent_ids:
+        users = db.query(User).filter(User.uid.in_(body.agent_ids)).all()
+        found = {u.uid for u in users}
+        missing = set(body.agent_ids) - found
+        if missing:
+            # Soft warning route: you can choose 400 instead if you require hard validation
+            raise HTTPException(404, f"Agents not found: {sorted(missing)}")
+
+    new_agent_ids = _merge_array(t.agent_ids or [], body.agent_ids, body.mode)
+    t.agent_ids = new_agent_ids
+
+    # activity bump
+    t.last_activity_at = datetime.utcnow()
+
+    db.commit(); db.refresh(t)
+    dto = TicketOut.model_validate(t, from_attributes=True)
+    RedisTicketService.cache_ticket(dto)
+    RedisTicketService.invalidate_org_lists_and_counts(t.org_id)
+    return dto
+
+
+# ----------------------- quick participants view ----------------------
+
+@router.get("/{ticket_id}/participants", response_model=Dict[str, Any])
+def get_participants(ticket_id: str, db: Session = Depends(get_db)):
+    t: Ticket | None = db.get(Ticket, ticket_id)
+    if not t:
+        raise HTTPException(404, "Ticket not found")
+    return {
+        "ticket_id": t.ticket_id,
+        "org_id": t.org_id,
+        "group_id": t.group_id,
+        "team_ids": t.team_ids or [],
+        "agent_ids": t.agent_ids or [],
+        "assignee_id": t.assignee_id,
+        "updated_at": t.updated_at,
+    }

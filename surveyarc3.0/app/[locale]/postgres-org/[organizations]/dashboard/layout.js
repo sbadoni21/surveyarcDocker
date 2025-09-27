@@ -3,6 +3,8 @@ import Sidebar from "@/components/frontend/Sidebar";
 import BusinessCalendarsProvider from "@/providers/BusinessCalendarsProvider";
 import { OrganisationProvider } from "@/providers/postGresPorviders/organisationProvider";
 import { ProjectProvider } from "@/providers/postGresPorviders/projectProvider";
+import { SupportGroupProvider } from "@/providers/postGresPorviders/SupportGroupProvider";
+import { SupportTeamProvider } from "@/providers/postGresPorviders/SupportTeamProvider";
 import { UserProvider } from "@/providers/postGresPorviders/UserProvider";
 import { SLAProvider } from "@/providers/slaProvider";
 import { TicketProvider } from "@/providers/ticketsProvider";
@@ -17,6 +19,8 @@ export default function Layout({ children }) {
       <OrganisationProvider>
         <UserProvider>
               <TicketProvider>
+                <SupportGroupProvider>
+                  <SupportTeamProvider>
           <BusinessCalendarsProvider>
           <ProjectProvider>
             <Sidebar
@@ -37,7 +41,10 @@ export default function Layout({ children }) {
                   </SLAProvider>
 
           </ProjectProvider>
+          
           </BusinessCalendarsProvider>
+          </SupportTeamProvider>
+          </SupportGroupProvider>
               </TicketProvider>
 
         </UserProvider>

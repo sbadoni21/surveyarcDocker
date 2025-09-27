@@ -105,6 +105,8 @@ class TicketBase(BaseModel):
     due_at: Optional[datetime] = None
     custom_fields: Dict[str, Any] = Field(default_factory=dict)
     meta: Dict[str, Any] = Field(default_factory=dict)
+    team_ids: List[str] = Field(default_factory=list)
+    agent_ids: List[str] = Field(default_factory=list)
 
 
 class TicketCreate(TicketBase):
@@ -131,6 +133,8 @@ class TicketUpdate(BaseModel):
     custom_fields: Optional[Dict[str, Any]] = None
     meta: Optional[Dict[str, Any]] = None
     tags: Optional[List[str]] = None  # full replace set if provided
+    team_ids: Optional[List[str]] = None
+    agent_ids: Optional[List[str]] = None
 
 
 class TicketOut(TicketBase):
@@ -145,6 +149,14 @@ class TicketOut(TicketBase):
     last_public_comment_at: Optional[datetime] = None
     reply_count: int = 0
     follower_count: int = 0
+    attachment_count: int = 0
+    comment_count: int = 0
+    team_count: int = 0
+    agent_count: int = 0
+    team_ids: Optional[List[str]] = None
+    agent_ids: Optional[List[str]] = None
+    number: Optional[int] = None
+ 
 
     tags: List[TagOut] = Field(default_factory=list)
     sla_status: Optional[TicketSLAStatusOut] = None

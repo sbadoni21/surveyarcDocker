@@ -1,34 +1,18 @@
+// components/tickets/AgentMultiSelect.jsx
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { TextField, MenuItem, Chip, Box } from "@mui/material";
 import UserModel from "@/models/postGresModels/userModel";
-import {
-  Avatar, Box, CircularProgress, MenuItem, Stack, TextField, Typography,
-} from "@mui/material";
 import SupportGroupModel from "@/models/postGresModels/supportGroupModel";
 
-export default function AssigneeSelect({
-  orgId,
-  groupId,
-  value,
-  onChange,
-  label = "Assignee",
-  placeholder = "Select assignee",
-  onlyAgents = false,
-}) {
-  const [loading, setLoading] = useState(false);
-  const [users, setUsers] = useState([]);
+export default function AgentMultiSelect({ orgId, groupId, value = [], onChange, label = "Agents", disabled }) {
   const [options, setOptions] = useState([]);
-
-  // normalize incoming value to string ("" for unassigned)
-  const normalizedValue = value ? String(value) : "";
 
   useEffect(() => {
     let mounted = true;
     (async () => {
-      // If a group is selected, restrict to its members; else list org users
       if (groupId) {
         const members = await SupportGroupModel.listMembers(groupId);
-        // members array has user_id; fetch user details in parallel (or show raw)
         const users = await Promise.all(
           (members || []).map(async (m) => {
             try { return await UserModel.get(m.user_id); } catch { return { uid: m.user_id, display_name: m.user_id }; }
@@ -51,24 +35,32 @@ export default function AssigneeSelect({
     return () => { mounted = false; };
   }, [orgId, groupId]);
 
-  const v = useMemo(() => value || "", [value]);
+  const selected = useMemo(() => new Set(value || []), [value]);
 
   return (
-    <>    <TextField
+    <TextField
       select
       fullWidth
       label={label}
-      value={v}
-      onChange={(e) => onChange?.(e.target.value || "")}
-      placeholder={placeholder}
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange?.(Array.isArray(e.target.value) ? e.target.value : [])}
+      SelectProps={{
+        multiple: true,
+        renderValue: (vals) => (
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+            {(vals || []).map((id) => {
+              const u = options.find(o => o.uid === id);
+              return <Chip key={id} label={u?.displayName || id} />;
+            })}
+          </Box>
+        ),
+      }}
+      helperText={!groupId ? "Tip: choose a group to restrict agents" : undefined}
     >
-      <MenuItem value="">{placeholder}</MenuItem>
       {options.map((u) => (
         <MenuItem key={u.uid} value={u.uid}>{u.displayName}</MenuItem>
       ))}
- 
-
-    </TextField></>
- 
+    </TextField>
   );
 }

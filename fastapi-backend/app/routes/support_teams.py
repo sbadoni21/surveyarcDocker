@@ -8,13 +8,12 @@ import uuid
 
 from ..db import get_db
 from ..models.support import SupportTeam, SupportTeamMember, SupportGroup, UserStub
-from ..models.sla import BusinessCalendar
 from ..schemas.support import (
     SupportTeamCreate, SupportTeamUpdate, SupportTeamOut,
     TeamMemberAdd, TeamMemberOut, GroupMemberUpdate
 )
 from ..services.redis_support_service import RedisSupportService
-
+from ..models.business_calendar import BusinessCalendar, BusinessCalendarHour, BusinessCalendarHoliday
 router = APIRouter(prefix="/support-teams", tags=["Support Teams"])
 
 # New schemas for calendar integration

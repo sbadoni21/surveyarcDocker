@@ -50,6 +50,42 @@ export const TicketProvider = ({ children }) => {
     return TicketModel.count(params); // { count }
   }, []);
 
+  // ---------- NEW: assignment actions ----------
+
+  const assignGroup = useCallback(async (ticketId, groupId) => {
+    const updated = await TicketModel.assignGroup(ticketId, groupId);
+    setTickets((prev) => prev.map((t) => (t.ticketId === ticketId ? updated : t)));
+    setSelectedTicket((prev) => (prev && prev.ticketId === ticketId ? updated : prev));
+    return updated;
+  }, []);
+
+  const patchTeams = useCallback(async (ticketId, teamIds, mode = "add") => {
+    const updated = await TicketModel.patchTeams(ticketId, teamIds, mode);
+    setTickets((prev) => prev.map((t) => (t.ticketId === ticketId ? updated : t)));
+    setSelectedTicket((prev) => (prev && prev.ticketId === ticketId ? updated : prev));
+    return updated;
+  }, []);
+
+  const patchAgents = useCallback(async (ticketId, agentIds, mode = "add") => {
+    const updated = await TicketModel.patchAgents(ticketId, agentIds, mode);
+    setTickets((prev) => prev.map((t) => (t.ticketId === ticketId ? updated : t)));
+    setSelectedTicket((prev) => (prev && prev.ticketId === ticketId ? updated : prev));
+    return updated;
+  }, []);
+
+  const getParticipants = useCallback(async (ticketId) => {
+    return TicketModel.getParticipants(ticketId);
+  }, []);
+
+  // Sugar helpers
+  const addTeams = useCallback((ticketId, ids) => patchTeams(ticketId, ids, "add"), [patchTeams]);
+  const removeTeams = useCallback((ticketId, ids) => patchTeams(ticketId, ids, "remove"), [patchTeams]);
+  const setTeams = useCallback((ticketId, ids) => patchTeams(ticketId, ids, "replace"), [patchTeams]);
+
+  const addAgents = useCallback((ticketId, ids) => patchAgents(ticketId, ids, "add"), [patchAgents]);
+  const removeAgents = useCallback((ticketId, ids) => patchAgents(ticketId, ids, "remove"), [patchAgents]);
+  const setAgents = useCallback((ticketId, ids) => patchAgents(ticketId, ids, "replace"), [patchAgents]);
+
   const value = useMemo(
     () => ({
       tickets,
@@ -61,10 +97,23 @@ export const TicketProvider = ({ children }) => {
       update,
       remove,
       count,
+
+      // NEW
+      assignGroup,
+      patchTeams, addTeams, removeTeams, setTeams,
+      patchAgents, addAgents, removeAgents, setAgents,
+      getParticipants,
+
       setSelectedTicket,
       setTickets,
     }),
-    [tickets, selectedTicket, loading, list, get, create, update, remove, count]
+    [
+      tickets, selectedTicket, loading,
+      list, get, create, update, remove, count,
+      assignGroup, patchTeams, addTeams, removeTeams, setTeams,
+      patchAgents, addAgents, removeAgents, setAgents,
+      getParticipants,
+    ]
   );
 
   return <TicketContext.Provider value={value}>{children}</TicketContext.Provider>;
