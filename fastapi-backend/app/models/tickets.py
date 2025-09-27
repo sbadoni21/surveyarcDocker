@@ -159,36 +159,28 @@ class Tag(Base):
     __tablename__ = "tags"
 
     tag_id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
-    org_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
-    
-    name: Mapped[str] = mapped_column(String, nullable=False)
-    color: Mapped[str | None] = mapped_column(String, nullable=True)  # hex color code
+    org_id:  Mapped[str] = mapped_column(String, index=True, nullable=False)
+
+    # keep attribute names for ORM, physical names for DB
+    name:  Mapped[str] = mapped_column("tag_name", String, nullable=False)
+    color: Mapped[str] = mapped_column("tag_colour", String, nullable=False, server_default="#808080")
+
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    
-    # Tag categories for organization
-    category: Mapped[str | None] = mapped_column(String, nullable=True)
-    
-    # Usage statistics
-    usage_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    
-    # Metadata
-    meta: Mapped[dict] = mapped_column(JSONB, default=dict)
-    
-    created_at: Mapped[DateTime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[DateTime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-    
-    # Relationships
+    category:    Mapped[str | None] = mapped_column(String, nullable=True)
+    usage_count: Mapped[int]        = mapped_column(Integer, default=0, nullable=False)
+    meta:        Mapped[dict]       = mapped_column(JSONB, default=dict)
+    created_at:  Mapped[datetime]   = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at:  Mapped[datetime]   = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
     tickets = relationship("Ticket", secondary=ticket_tags, back_populates="tags")
-    
+
     __table_args__ = (
-        UniqueConstraint("org_id", "name", name="uq_tag_org_name"),
-        Index("ix_tag_org_name", "org_id", "name"),
+        # USE PHYSICAL COLUMN NAMES HERE (table keys)
+        UniqueConstraint("org_id", "tag_name", name="uq_tag_org_name"),
+        Index("ix_tag_org_name", "org_id", "tag_name"),
         Index("ix_tag_category", "org_id", "category"),
     )
+
     
 class TicketAttachment(Base):
     __tablename__ = "ticket_attachments"
@@ -342,4 +334,5 @@ class TicketWorklog(Base):
     kind:       Mapped[WorklogType] = mapped_column(Enum(WorklogType), default=WorklogType.other)
     note:       Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
 

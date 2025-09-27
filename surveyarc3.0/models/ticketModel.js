@@ -74,38 +74,49 @@ const TicketModel = {
     return toCamel(t);
   },
 
-  async create(data) {
-    const payloadRaw = {
-      org_id: data.orgId,
-      project_id: data.projectId ?? null,
-      requester_id: data.requesterId,
-      assignee_id: data.assigneeId ?? null,
-      subject: data.subject,
-      description: data.description ?? "",
-      priority: normalizePriority(data.priority ?? "normal"),
-      severity: data.severity ? data.severity : undefined,
-      status: data.status ?? "new",
-      category: data.category ?? null,
-      subcategory: data.subcategory ?? null,
-      product_id: data.productId ?? null,
-      sla_id: data.slaId ?? null,
-      due_at: data.dueAt ?? null,
-      tags: Array.isArray(data.tags) ? data.tags : undefined,
-      custom_fields: data.custom ?? {},
-      // allow create with arrays if you pass them
-      team_ids: Array.isArray(data.teamIds) ? data.teamIds : undefined,
-      agent_ids: Array.isArray(data.agentIds) ? data.agentIds : undefined,
-    };
-    const payload = omitNullish(payloadRaw);
-    const res = await fetch(`${BASE}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      cache: "no-store",
-    });
-    const t = await json(res);
-    return toCamel(t);
-  },
+async create(data) {
+  const payloadRaw = {
+    // Core Ticket model fields only
+    org_id: data.orgId,
+    project_id: data.projectId ?? null,
+    requester_id: data.requesterId,
+    assignee_id: data.assigneeId ?? null,
+    subject: data.subject,
+    description: data.description ?? "",
+    priority: normalizePriority(data.priority ?? "normal"),
+    severity: data.severity ? data.severity : undefined,
+    status: data.status ?? "new",
+    category: data.category ?? null,
+    subcategory: data.subcategory ?? null,
+    product_id: data.productId ?? null,
+    sla_id: data.slaId ?? null,
+    due_at: data.dueAt ?? null,
+    tags: Array.isArray(data.tags) ? data.tags : undefined,
+    custom_fields: data.custom ?? {},
+    team_ids: Array.isArray(data.teamIds) ? data.teamIds : undefined,
+    agent_ids: Array.isArray(data.agentIds) ? data.agentIds : undefined,
+    
+    // SLA processing metadata (for backend logic, not stored in Ticket model)
+    sla_processing: {
+      first_response_due_at: data.firstResponseDueAt ?? null,
+      resolution_due_at: data.resolutionDueAt ?? null,
+      sla_mode: data.slaMode ?? null,
+      calendar_id: data.calendarId ?? null,
+    }
+  };
+  
+  console.log('Ticket payload:', payloadRaw);
+  const payload = omitNullish(payloadRaw);
+  
+  const res = await fetch(`${BASE}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  });
+  const t = await json(res);
+  return toCamel(t);
+},
 
   async update(ticketId, patch) {
     const map = (p) => {

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session,selectinload,joinedload
 from sqlalchemy import func, select
 from typing import List, Optional, Dict, Any
 import uuid
@@ -11,6 +11,9 @@ from datetime import datetime
 from ..db import get_db
 from ..services.redis_ticket_service import RedisTicketService
 from ..services.redis_sla_service import get_ticket_sla_status  # optional use
+from ..models.tickets import Ticket, TicketWorklog
+from ..schemas.tickets import WorklogCreate, WorklogOut
+from ..policies.tickets import can_view_ticket, can_edit_ticket
 
 from ..models.tickets import (
     Ticket,
@@ -23,7 +26,8 @@ from ..models.tickets import (
     TicketCollaboratorRole,
     TicketSLAStatus,
     PatchAgentsBody,
-    PatchTeamsBody
+    PatchTeamsBody,
+    AssignGroupBody
 )
 
 from ..schemas.tickets import (
@@ -36,6 +40,9 @@ from ..schemas.tickets import (
     AttachmentOut,
     CollaboratorCreate,
     CollaboratorOut,
+    AssignmentMeta,
+    SLAProcessingData
+    
 )
 
 from ..models.sla import SLADimension,SLA
@@ -88,6 +95,180 @@ def _import_user_model():
 
 # ------------------------------- CRUD --------------------------------
 
+def _create_sla_status_with_processing(
+    db: Session, 
+    ticket: Ticket, 
+    sla_processing: Optional[SLAProcessingData]
+):
+    """Create TicketSLAStatus with SLA processing data from frontend"""
+    
+    # Create base SLA status
+    sla_status_data = {
+        "ticket_id": ticket.ticket_id,
+        "sla_id": ticket.sla_id,
+        "first_response_started_at": datetime.utcnow(),
+        "resolution_started_at": datetime.utcnow(),
+        "last_resume_first_response": datetime.utcnow(),
+        "last_resume_resolution": datetime.utcnow(),
+        "paused": False,
+        "breached_first_response": False,
+        "breached_resolution": False,
+        "elapsed_first_response_minutes": 0,
+        "elapsed_resolution_minutes": 0,
+    }
+    
+    # Add SLA processing data if provided (calculated due dates from frontend)
+    if sla_processing:
+        if sla_processing.first_response_due_at:
+            try:
+                # Handle ISO string from frontend
+                due_date_str = sla_processing.first_response_due_at
+                if due_date_str.endswith('Z'):
+                    due_date_str = due_date_str[:-1] + '+00:00'
+                sla_status_data["first_response_due_at"] = datetime.fromisoformat(due_date_str)
+            except (ValueError, AttributeError):
+                pass  # Skip invalid dates
+        
+        if sla_processing.resolution_due_at:
+            try:
+                due_date_str = sla_processing.resolution_due_at
+                if due_date_str.endswith('Z'):
+                    due_date_str = due_date_str[:-1] + '+00:00'
+                sla_status_data["resolution_due_at"] = datetime.fromisoformat(due_date_str)
+            except (ValueError, AttributeError):
+                pass
+        
+        if sla_processing.calendar_id:
+            sla_status_data["calendar_id"] = sla_processing.calendar_id
+    
+    # Create and add the SLA status record
+    sla_status = TicketSLAStatus(**sla_status_data)
+    db.add(sla_status)
+    
+    # Link to ticket
+    ticket.sla_status = sla_status
+
+
+def _handle_assignment_on_create(
+    db: Session, 
+    ticket: Ticket, 
+    assignment: AssignmentMeta
+):
+    """Handle assignment metadata during ticket creation"""
+    
+    if assignment.is_group_selected and assignment.group_id:
+        # Validate group exists and belongs to same org
+        from ..models.support import SupportGroup
+        group = db.get(SupportGroup, assignment.group_id)
+        if group and group.org_id == ticket.org_id:
+            ticket.group_id = assignment.group_id
+    
+    if assignment.is_team_selected and assignment.team_ids:
+        # Validate teams exist and belong to same org
+        from ..models.support import SupportTeam
+        teams = db.query(SupportTeam).filter(
+            SupportTeam.team_id.in_(assignment.team_ids),
+            SupportTeam.org_id == ticket.org_id
+        ).all()
+        valid_team_ids = [team.team_id for team in teams]
+        ticket.team_ids = valid_team_ids
+    
+    if assignment.is_agents_selected and assignment.agent_ids:
+        # Validate agents if User model is available
+        User = _import_user_model()
+        if User:
+            users = db.query(User).filter(User.uid.in_(assignment.agent_ids)).all()
+            valid_agent_ids = [user.uid for user in users]
+            ticket.agent_ids = valid_agent_ids
+        else:
+            # If no User model validation, trust the frontend
+            ticket.agent_ids = assignment.agent_ids
+
+
+def _create_ticket_creation_event(
+    db: Session, 
+    ticket: Ticket, 
+    payload: TicketCreate
+):
+    """Create audit event for ticket creation"""
+    
+    from ..models.tickets import TicketEvent
+    
+    # Build event metadata
+    event_meta = {
+        "creation_method": "web_form",
+        "has_sla": bool(ticket.sla_id),
+        "has_sla_processing": bool(payload.sla_processing),
+        "team_count": len(ticket.team_ids) if ticket.team_ids else 0,
+        "agent_count": len(ticket.agent_ids) if ticket.agent_ids else 0,
+        "tag_count": len(payload.tags) if payload.tags else 0,
+    }
+    
+    # Add SLA processing metadata
+    if payload.sla_processing:
+        event_meta.update({
+            "sla_mode": payload.sla_processing.sla_mode,
+            "has_calendar": bool(payload.sla_processing.calendar_id),
+            "has_calculated_due_dates": bool(
+                payload.sla_processing.first_response_due_at or 
+                payload.sla_processing.resolution_due_at
+            )
+        })
+    
+    # Add assignment metadata
+    if payload.assignment:
+        event_meta.update({
+            "assignment_group_selected": payload.assignment.is_group_selected,
+            "assignment_team_selected": payload.assignment.is_team_selected,
+            "assignment_agents_selected": payload.assignment.is_agents_selected,
+            "initiated_by": payload.assignment.initiated_by,
+        })
+    
+    event = TicketEvent(
+        event_id=f"evt_{uuid.uuid4().hex[:10]}",
+        ticket_id=ticket.ticket_id,
+        actor_id=ticket.requester_id,
+        event_type="ticket_created",
+        from_value={},
+        to_value={
+            "status": ticket.status.value,
+            "priority": ticket.priority.value,
+            "severity": ticket.severity.value,
+            "assignee_id": ticket.assignee_id,
+            "group_id": ticket.group_id,
+            "sla_id": ticket.sla_id,
+            "team_ids": ticket.team_ids,
+            "agent_ids": ticket.agent_ids,
+        },
+        meta=event_meta
+    )
+    db.add(event)
+
+
+# Updated get_ticket to include SLA status
+@router.get("/{ticket_id}", response_model=TicketOut)
+def get_ticket(ticket_id: str, db: Session = Depends(get_db)):
+    """Get ticket with SLA status"""
+    cached = RedisTicketService.get_ticket(ticket_id)
+    if cached:
+        return cached
+
+    # Load ticket with SLA status relationship
+    from sqlalchemy.orm import joinedload
+    t = db.query(Ticket).options(
+        joinedload(Ticket.sla_status),
+        joinedload(Ticket.tags)
+    ).filter(Ticket.ticket_id == ticket_id).first()
+    
+    if not t:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    dto = TicketOut.model_validate(t, from_attributes=True)
+    RedisTicketService.cache_ticket(dto)
+    return dto
+
+
+# Updated list_tickets to include SLA status
 @router.get("/", response_model=List[TicketOut])
 def list_tickets(
     org_id: str = Query(...),
@@ -99,12 +280,18 @@ def list_tickets(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
+    """List tickets with SLA status"""
     if status is None and assignee_id is None and q is None and group_id is None and offset == 0:
         cached = RedisTicketService.get_org_list(org_id)
         if cached:
             return cached
 
-    stmt = select(Ticket).where(Ticket.org_id == org_id)
+    from sqlalchemy.orm import joinedload
+    stmt = select(Ticket).options(
+        joinedload(Ticket.sla_status),
+        joinedload(Ticket.tags)
+    ).where(Ticket.org_id == org_id)
+    
     if status is not None:
         stmt = stmt.where(Ticket.status == status)
     if assignee_id:
@@ -115,51 +302,86 @@ def list_tickets(
         like = f"%{q.lower()}%"
         stmt = stmt.where(func.lower(Ticket.subject).like(like))
 
-    stmt = stmt.order_by(Ticket.created_at.desc()).limit(limit).offset(offset)
+    stmt = (
+        select(Ticket)
+        .where(Ticket.org_id == org_id)
+        .options(
+            selectinload(Ticket.tags),         # was joinedload(...)
+            selectinload(Ticket.comments),     # was joinedload(...)
+            joinedload(Ticket.group),          # many-to-one is fine with joinedload
+        )
+    # .order_by(Ticket.created_at.desc())  # keep ordering on parent only
+        )  
     records = db.execute(stmt).scalars().all()
 
     if status is None and assignee_id is None and q is None and group_id is None and offset == 0:
-        RedisTicketService.cache_org_list(org_id, records)
+        ticket_outs = [TicketOut.model_validate(r, from_attributes=True) for r in records]
+        RedisTicketService.cache_org_list(org_id, ticket_outs)
+        return ticket_outs
 
     return [TicketOut.model_validate(r, from_attributes=True) for r in records]
 
 
-@router.get("/{ticket_id}", response_model=TicketOut)
-def get_ticket(ticket_id: str, db: Session = Depends(get_db)):
-    cached = RedisTicketService.get_ticket(ticket_id)
-    if cached:
-        return cached
-
-    t = db.get(Ticket, ticket_id)
-    if not t:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-
-    dto = TicketOut.model_validate(t, from_attributes=True)
-    RedisTicketService.cache_ticket(dto)
-    return dto
-
-
 @router.post("/", response_model=TicketOut, status_code=201)
 def create_ticket(payload: TicketCreate, db: Session = Depends(get_db)):
+    """Create a new ticket with SLA processing"""
+    
+    # Generate ticket ID
     ticket_id = getattr(payload, "ticket_id", None) or f"tkt_{uuid.uuid4().hex[:10]}"
-    t = Ticket(ticket_id=ticket_id, **payload.model_dump(exclude={"tags", "ticket_id"}))
+    
+    # Extract only valid Ticket model fields
+    ticket_data = payload.model_dump(exclude={
+        "tags", 
+        "ticket_id", 
+        "assignment", 
+        "sla_processing"
+    })
+    
+    # Create the main ticket
+    t = Ticket(ticket_id=ticket_id, **ticket_data)
     db.add(t)
-
+    
     if payload.tags:
-        tags = db.query(Tag).filter(Tag.tag_id.in_(payload.tags)).all()
-        t.tags = tags
-
+        existing_tags = db.query(Tag).filter(
+            Tag.tag_id.in_(payload.tags),
+            Tag.org_id == t.org_id  # Security: ensure tags belong to same org
+        ).all()
+        
+        # Only use tags that exist and belong to the org
+        if existing_tags:
+            t.tags = existing_tags
+            # Increment usage count for used tags
+            for tag in existing_tags:
+                tag.usage_count += 1
+    
+    # Flush to get the ticket in DB for relationships
     db.flush()
-    _ensure_sla_status_if_needed(db, t)
-
+    
+    # Create SLA status if SLA is configured
+    if t.sla_id:
+        _create_sla_status_with_processing(db, t, payload.sla_processing)
+    else:
+        # Still ensure SLA status exists for potential future SLA assignment
+        _ensure_sla_status_if_needed(db, t)
+    
+    # Handle assignment if provided
+    if payload.assignment:
+        _handle_assignment_on_create(db, t, payload.assignment)
+    
+    # Create audit event
+    _create_ticket_creation_event(db, t, payload)
+    
+    # Set activity timestamp
+    t.last_activity_at = datetime.utcnow()
+    
     db.commit()
     db.refresh(t)
-
+    
+    # Cache and return
     dto = TicketOut.model_validate(t, from_attributes=True)
     RedisTicketService.cache_ticket(dto)
     RedisTicketService.invalidate_org_lists_and_counts(t.org_id)
     return dto
-
 
 @router.patch("/{ticket_id}", response_model=TicketOut)
 def update_ticket(ticket_id: str, payload: TicketUpdate, db: Session = Depends(get_db)):
@@ -548,3 +770,43 @@ def get_participants(ticket_id: str, db: Session = Depends(get_db)):
         "assignee_id": t.assignee_id,
         "updated_at": t.updated_at,
     }
+    
+@router.get("/{ticket_id}/worklogs", response_model=list[WorklogOut])
+def list_worklogs(
+    ticket_id: str,
+    _t = Depends(can_view_ticket),
+    db: Session = Depends(get_db),
+):
+    return (
+        db.query(TicketWorklog)
+        .filter(TicketWorklog.ticket_id == ticket_id)
+        .order_by(TicketWorklog.created_at.desc())
+        .all()
+    )
+
+@router.post("/{ticket_id}/worklogs", response_model=WorklogOut, status_code=201)
+def create_worklog(
+    ticket_id: str,
+    payload: WorklogCreate,
+    _t = Depends(can_edit_ticket),
+    db: Session = Depends(get_db),
+):
+    if payload.user_id is None:
+        raise HTTPException(400, "user_id required")
+
+    t = db.get(Ticket, ticket_id)
+    if not t:
+        raise HTTPException(404, "Ticket not found")
+
+    wl = TicketWorklog(
+        worklog_id=f"twl_{uuid.uuid4().hex[:10]}",
+        ticket_id=ticket_id,
+        user_id=payload.user_id,
+        minutes=payload.minutes,
+        kind=payload.kind,
+        note=payload.note,
+    )
+    db.add(wl)
+    db.commit()
+    db.refresh(wl)
+    return wl

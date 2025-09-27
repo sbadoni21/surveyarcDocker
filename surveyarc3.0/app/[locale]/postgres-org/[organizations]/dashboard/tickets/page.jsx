@@ -10,6 +10,7 @@ import TicketForm from "@/components/tickets/TicketForm";
 import { useTickets } from "@/providers/ticketsProvider";
 import { usePathname } from "next/navigation";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
+import { useTags } from "@/providers/postGresPorviders/TagProvider";
 
 const STATUS_FOR_CARDS = ["new", "open", "pending", "on_hold", "resolved"];
 
@@ -33,7 +34,8 @@ export default function TicketsPage() {
   const orgId = path.split("/")[3];
   const { uid: currentUserId } = useUser() || {};
   const requesterId = currentUserId;
-
+  const { list: listTags, getCachedTags } = useTags();
+  const availableTags = getCachedTags(orgId);
   const {
     tickets, selectedTicket, setSelectedTicket, list, create, update, count, loading,
     // NEW provider methods
@@ -65,7 +67,9 @@ export default function TicketsPage() {
   };
 
   useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [filters, orgId, currentUserId]);
-
+ useEffect(() => {
+    if (orgId) listTags({ orgId }).catch(() => {});
+  }, [orgId, listTags]);
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -184,6 +188,7 @@ export default function TicketsPage() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         orgId={orgId}
+        availableTags={availableTags}
         requestorId={requesterId}
         currentUserId={currentUserId}
         onSubmit={async (payload) => {

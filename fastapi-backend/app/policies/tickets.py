@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from ..db import get_db
-from ..models.tickets import Ticket, TicketWatcher, SupportGroup, TicketCollaborator  # TicketCollaborator if you added it
+from ..models.tickets import Ticket, TicketWatcher, TicketCollaborator  # TicketCollaborator if you added it
 # If you didn't add TicketCollaborator yet, comment it out in checks.
-
+from ..models.support import SupportGroup, SupportGroupMember, GroupMemberRole
 # ---- Replace this with your real auth dependency ----
 def get_current_user():
     """

@@ -19,7 +19,7 @@ Base.metadata.create_all(bind=engine)
 from app.routes import (
     secure_crud, user, project, survey, questions, responses, tickets, webhook, answer,
     archive, audit_log, domains, integration, invite, invoice,
-    marketplace, metric, order, organisation, payment, pricing_plan, rule, contacts, support_groups, support_teams, support_routing,slas,business_calendars
+    marketplace, metric, order, organisation, payment, pricing_plan, rule, contacts, support_groups, support_teams, support_routing,slas,business_calendars,tags
 )
 
 app = FastAPI(
@@ -255,6 +255,7 @@ app.include_router(support_teams.router, tags=["Support Teams"])
 app.include_router(support_routing.router, tags=["Support Routing"])
 app.include_router(slas.router, tags=["Service Level Agreements"])
 app.include_router(business_calendars.router, tags=["Business Calendars"])
+app.include_router(tags.router, tags=["Tags"])
 
 
 # Add encryption middleware with configuration

@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from ..models.tickets import TicketStatus, TicketPriority, TicketSeverity, TicketLinkType
+from ..models.tickets import WorklogType  # your SQLAlchemy Enum
 
 
 # ------------------------------ Shared ------------------------------
@@ -17,7 +18,13 @@ class TagOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
-
+class SLAProcessingData(BaseModel):
+    """SLA processing data calculated by frontend"""
+    first_response_due_at: Optional[str] = None
+    resolution_due_at: Optional[str] = None
+    sla_mode: Optional[str] = None  # "priority" or "severity"
+    calendar_id: Optional[str] = None
+    
 class SupportGroupOut(BaseModel):
     group_id: str
     org_id: str
@@ -113,6 +120,8 @@ class TicketCreate(TicketBase):
     ticket_id: Optional[str] = None  # client-supplied or server-generated
     tags: List[str] = Field(default_factory=list)  # tag_ids to attach initially
     assignment: Optional[AssignmentMeta] = None   # <--- NEW
+    sla_processing: Optional[SLAProcessingData] = None
+
 
 
 
@@ -264,6 +273,11 @@ class TagCreate(BaseModel):
     org_id: str
     name: str
     color: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    usage_count: int = 0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 class TagUpdate(BaseModel):
@@ -339,3 +353,34 @@ class GroupMemberOut(BaseModel):
     group_id: str
     user_id: str
 
+# schemas/tickets.py
+class TagOut(BaseModel):
+    tag_id: str
+    org_id: str
+    name: str
+    color: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    usage_count: int = 0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class WorklogCreate(BaseModel):
+    user_id: str
+    minutes: int
+    kind: WorklogType
+    note: Optional[str] = None
+
+class WorklogOut(BaseModel):
+    worklog_id: str
+    ticket_id: str
+    user_id: str
+    minutes: int
+    kind: WorklogType
+    note: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}

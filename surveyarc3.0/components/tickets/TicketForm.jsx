@@ -3,18 +3,17 @@
 import { useEffect, useState, useMemo } from "react";
 import { 
   Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, 
-  FormControlLabel, MenuItem, Stack, TextField, Typography, Alert, Chip 
+  FormControlLabel, MenuItem, Stack, TextField, Typography, Alert, Chip,
+  RadioGroup, Radio, FormControl, FormLabel, Divider, Autocomplete, Avatar
 } from "@mui/material";
-import { AccessTime } from "@mui/icons-material";
+import { AccessTime, CalendarToday, Schedule } from "@mui/icons-material";
 import AssigneeSelect from "./AssigneeSelect";
 import GroupSelect from "./GroupSelect";
 import CollaboratorsSelect from "./CollaboratorsSelect";
 import TeamMultiSelect from "./TeamMultiSelect";
 import AgentMultiSelect from "./AgentMultiSelect";
 import { useSLA } from "@/providers/slaProvider";
-
-const PRIORITIES = ["low", "normal", "high", "urgent", "blocker"];
-const SEVERITIES = ["sev4", "sev3", "sev2", "sev1"];
+import { useBusinessCalendars } from "@/providers/BusinessCalendarsProvider";
 
 const formatMinutes = (minutes) => {
   if (!minutes) return "";
@@ -23,110 +22,141 @@ const formatMinutes = (minutes) => {
   return `${Math.floor(minutes / 1440)}d ${Math.floor((minutes % 1440) / 60)}h`;
 };
 
-const calculateDueDate = (minutes, businessHoursOnly = false) => {
+const calculateDueDateWithBusinessHours = (minutes, businessCalendar = null) => {
   if (!minutes) return null;
+  
   const now = new Date();
-  const dueDate = new Date(now.getTime() + (minutes * 60 * 1000));
-  return dueDate.toISOString();
-};
-
-// Helper function to get SLA targets from priority/severity maps
-const getSLATargets = (sla, priority, severity) => {
-  if (!sla) return null;
-
-  const targets = {
-    first_response: sla.first_response_minutes,
-    resolution: sla.resolution_minutes
-  };
-
-  // Check priority_map and severity_map in target_matrix
-  if (sla.target_matrix) {
-    let priorityResolution = null;
-    let severityResolution = null;
-
-    // Get resolution time from priority_map
-    if (sla.target_matrix.priority_map && sla.target_matrix.priority_map[priority]) {
-      priorityResolution = sla.target_matrix.priority_map[priority];
-    }
-
-    // Get resolution time from severity_map  
-    if (sla.target_matrix.severity_map && sla.target_matrix.severity_map[severity]) {
-      severityResolution = sla.target_matrix.severity_map[severity];
-    }
-
-    // Use the most restrictive (shortest) time between priority and severity
-    if (priorityResolution && severityResolution) {
-      targets.resolution = Math.min(priorityResolution, severityResolution);
-    } else if (priorityResolution) {
-      targets.resolution = priorityResolution;
-    } else if (severityResolution) {
-      targets.resolution = severityResolution;
-    }
-  }
-
-  return targets;
-};
-
-// Helper function to get available options from SLA maps
-const getAvailableOptionsFromSLA = (sla, type) => {
-  if (!sla || !sla.target_matrix) {
-    return type === 'priority' ? PRIORITIES : SEVERITIES;
-  }
-
-  if (type === 'priority' && sla.target_matrix.priority_map) {
-    return Object.keys(sla.target_matrix.priority_map);
+  
+  // If no calendar or no working hours defined, use simple calculation
+  if (!businessCalendar?.working_hours) {
+    return new Date(now.getTime() + (minutes * 60 * 1000)).toISOString();
   }
   
-  if (type === 'severity' && sla.target_matrix.severity_map) {
-    return Object.keys(sla.target_matrix.severity_map);
+  let remainingMinutes = minutes;
+  let currentDate = new Date(now);
+  
+  const workingHours = businessCalendar.working_hours;
+  const workingDays = businessCalendar.working_days || [1, 2, 3, 4, 5]; // Mon-Fri
+  const holidays = businessCalendar.holidays || [];
+  
+  while (remainingMinutes > 0) {
+    const dayOfWeek = currentDate.getDay();
+    const currentDateStr = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    
+    // Skip holidays
+    if (holidays.some(holiday => holiday.date === currentDateStr)) {
+      currentDate.setDate(currentDate.getDate() + 1);
+      currentDate.setHours(workingHours.start_hour || 9, workingHours.start_minute || 0, 0, 0);
+      continue;
+    }
+    
+    // Skip non-working days
+    if (!workingDays.includes(dayOfWeek)) {
+      currentDate.setDate(currentDate.getDate() + 1);
+      currentDate.setHours(workingHours.start_hour || 9, workingHours.start_minute || 0, 0, 0);
+      continue;
+    }
+    
+    const timeOfDay = currentDate.getHours() * 60 + currentDate.getMinutes();
+    const workStart = (workingHours.start_hour || 9) * 60 + (workingHours.start_minute || 0);
+    const workEnd = (workingHours.end_hour || 17) * 60 + (workingHours.end_minute || 0);
+    
+    // If before work hours, jump to start of work day
+    if (timeOfDay < workStart) {
+      currentDate.setHours(workingHours.start_hour || 9, workingHours.start_minute || 0, 0, 0);
+      continue;
+    }
+    
+    // If after work hours, jump to next work day
+    if (timeOfDay >= workEnd) {
+      currentDate.setDate(currentDate.getDate() + 1);
+      currentDate.setHours(workingHours.start_hour || 9, workingHours.start_minute || 0, 0, 0);
+      continue;
+    }
+    
+    // Calculate minutes available in current work day
+    const minutesLeftInWorkDay = workEnd - timeOfDay;
+    const minutesToAdd = Math.min(remainingMinutes, minutesLeftInWorkDay);
+    
+    currentDate.setMinutes(currentDate.getMinutes() + minutesToAdd);
+    remainingMinutes -= minutesToAdd;
+    
+    // If we still have minutes left, move to next work day
+    if (remainingMinutes > 0) {
+      currentDate.setDate(currentDate.getDate() + 1);
+      currentDate.setHours(workingHours.start_hour || 9, workingHours.start_minute || 0, 0, 0);
+    }
   }
-
-  return type === 'priority' ? PRIORITIES : SEVERITIES;
+  
+  return currentDate.toISOString();
 };
 
-export default function TicketForm({ open, onClose, onSubmit, initial, orgId, requestorId, title = "New Ticket", currentUserId }) {
+export default function TicketForm({ 
+  open, onClose, onSubmit, initial, orgId, requestorId, 
+  title = "New Ticket", currentUserId, availableTags = []
+}) {
   const { listSLAs, slasByOrg } = useSLA();
+  const { get: getCalendar } = useBusinessCalendars();
   const allSLAOptions = slasByOrg[orgId] || [];
 
   const [form, setForm] = useState(() => ({
     subject: initial?.subject || "",
     description: initial?.description || "",
-    priority: initial?.priority || "normal",
-    severity: initial?.severity || "sev4",
     queueOwned: Boolean(!initial?.assigneeId && initial?.groupId),
     groupId: initial?.groupId || "",
-    teamIds: initial?.teamIds || [],
+    selectedTeams: initial?.selectedTeams || [], // Array of team objects with calendar_id
     agentIds: initial?.agentIds || [],
     assigneeId: initial?.assigneeId || "",
+    
     // classification
     category: initial?.category || "",
     subcategory: initial?.subcategory || "",
     productId: initial?.productId || "",
 
-    // SLA / due
+    // SLA configuration
     slaId: initial?.slaId || "",
+    slaMode: "priority", // "priority" or "severity"
+    priority: "normal",
+    severity: "sev4",
+    
+    // calculated fields
     dueAt: initial?.dueAt || "",
     firstResponseDueAt: initial?.firstResponseDueAt || "",
     resolutionDueAt: initial?.resolutionDueAt || "",
 
     // tags
-    tagsCsv: (initial?.tags || []).map((t) => t.tag_id || t).join(","),
-
+    selectedTags: Array.isArray(initial?.tags)
+      ? initial.tags.map((t) =>
+          typeof t === "string"
+            ? { tag_id: t, tagId: t, name: t } // fallback if only id provided
+            : ({ ...t, tagId: t.tag_id ?? t.tagId })
+        )
+      : [],    
     // collaborators
     collaborators: [],
   }));
-
+  useEffect(() => {
+    if (!open) return;
+    setForm((f) => {
+      const byId = new Map(availableTags.map(t => [t.tagId ?? t.tag_id, t]));
+      const hydrated = (f.selectedTags || []).map(t => byId.get(t.tagId ?? t.tag_id) || t);
+      return { ...f, selectedTags: hydrated };
+    });
+  }, [open, availableTags]);
   const [saving, setSaving] = useState(false);
+  const [teamCalendar, setTeamCalendar] = useState(null);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const isQueueOwned = form.queueOwned === true;
 
-  // Get available SLAs (filter by group if needed)
+  // Get available SLAs
   const availableSLAOptions = useMemo(() => {
     return allSLAOptions.filter(sla => {
       if (!sla.active) return false;
       
       // Check group filter if SLA has group restrictions
-      if (sla.rules && sla.rules.applies_to && sla.rules.applies_to.group_id_in) {
+      if (sla.rules?.applies_to?.group_id_in) {
         if (!form.groupId || !sla.rules.applies_to.group_id_in.includes(form.groupId)) {
           return false;
         }
@@ -136,63 +166,109 @@ export default function TicketForm({ open, onClose, onSubmit, initial, orgId, re
     });
   }, [allSLAOptions, form.groupId]);
 
-  // Get available priorities/severities based on selected SLA
-  const getAvailableOptions = (sla, type) => {
-    if (!sla || !sla.rules || !sla.rules.applies_to) {
-      return type === 'priority' ? PRIORITIES : SEVERITIES;
-    }
-    
-    const applies_to = sla.rules.applies_to;
-    if (type === 'priority' && applies_to.priority_in) {
-      return applies_to.priority_in;
-    }
-    if (type === 'severity' && applies_to.severity_in) {
-      return applies_to.severity_in;
-    }
-    
-    return type === 'priority' ? PRIORITIES : SEVERITIES;
-  };
-
   // Get current SLA details
   const selectedSLA = availableSLAOptions.find(sla => sla.sla_id === form.slaId);
-  const availablePriorities = selectedSLA ? getAvailableOptionsFromSLA(selectedSLA, 'priority') : PRIORITIES;
-  const availableSeverities = selectedSLA ? getAvailableOptionsFromSLA(selectedSLA, 'severity') : SEVERITIES;
-  const slaTargets = selectedSLA ? getSLATargets(selectedSLA, form.priority, form.severity) : null;
-
-  // Check if current priority/severity is valid for selected SLA
-  const isPriorityValid = availablePriorities.includes(form.priority);
-  const isSeverityValid = availableSeverities.includes(form.severity);
-
-  // Auto-adjust priority/severity when SLA changes if current selection is invalid
+  
+  // Check if SLA has priority or severity maps
+  const hasPriorityMap = selectedSLA?.rules?.priority_map && Object.keys(selectedSLA.rules.priority_map).length > 0;
+  const hasSeverityMap = selectedSLA?.rules?.severity_map && Object.keys(selectedSLA.rules.severity_map).length > 0;
+  
+  // Memoize available options to prevent re-render loops
+  const availableOptions = useMemo(() => {
+    if (!selectedSLA?.rules) return [];
+    
+    if (form.slaMode === "priority" && hasPriorityMap) {
+      return Object.keys(selectedSLA.rules.priority_map);
+    } else if (form.slaMode === "severity" && hasSeverityMap) {
+      return Object.keys(selectedSLA.rules.severity_map);
+    }
+    return [];
+  }, [selectedSLA?.rules, form.slaMode, hasPriorityMap, hasSeverityMap]);
+  
+  // Memoize current resolution time calculation
+  const currentResolutionTime = useMemo(() => {
+    if (!selectedSLA) return null;
+    
+    if (form.slaMode === "priority" && hasPriorityMap) {
+      return selectedSLA.rules.priority_map[form.priority] || selectedSLA.resolution_minutes;
+    } else if (form.slaMode === "severity" && hasSeverityMap) {
+      return selectedSLA.rules.severity_map[form.severity] || selectedSLA.resolution_minutes;
+    }
+    
+    return selectedSLA.resolution_minutes;
+  }, [selectedSLA, form.slaMode, form.priority, form.severity, hasPriorityMap, hasSeverityMap]);
+  
+  // Debug logging - only when selectedSLA changes
   useEffect(() => {
     if (selectedSLA) {
-      if (!isPriorityValid && availablePriorities.length > 0) {
-        // Reset to first available priority
-        setForm(f => ({ ...f, priority: availablePriorities[0] }));
-      }
-      if (!isSeverityValid && availableSeverities.length > 0) {
-        // Reset to first available severity  
-        setForm(f => ({ ...f, severity: availableSeverities[0] }));
+      console.log('Selected SLA:', selectedSLA);
+      console.log('SLA Rules:', selectedSLA?.rules);
+      console.log('Has Priority Map:', hasPriorityMap);
+      console.log('Has Severity Map:', hasSeverityMap);
+      console.log('Priority Map:', selectedSLA?.rules?.priority_map);
+      console.log('Severity Map:', selectedSLA?.rules?.severity_map);
+    }
+  }, [selectedSLA, hasPriorityMap, hasSeverityMap]);
+  const firstResponseTime = selectedSLA?.first_response_minutes;
+
+  // Reset SLA mode when SLA changes
+  useEffect(() => {
+    if (selectedSLA) {
+      // Default to priority mode if available, otherwise severity
+      const defaultMode = hasPriorityMap ? "priority" : hasSeverityMap ? "severity" : "priority";
+      setForm(f => ({ ...f, slaMode: defaultMode }));
+    }
+  }, [selectedSLA, hasPriorityMap, hasSeverityMap]);
+
+  // Reset selection when SLA mode changes or available options change
+  useEffect(() => {
+    if (selectedSLA && availableOptions.length > 0) {
+      if (form.slaMode === "priority" && !availableOptions.includes(form.priority)) {
+        setForm(f => ({ ...f, priority: availableOptions[0] }));
+      } else if (form.slaMode === "severity" && !availableOptions.includes(form.severity)) {
+        setForm(f => ({ ...f, severity: availableOptions[0] }));
       }
     }
-  }, [selectedSLA, isPriorityValid, isSeverityValid, availablePriorities, availableSeverities]);
+  }, [form.slaMode, selectedSLA?.sla_id, availableOptions.join(','), form.priority, form.severity]);
 
-  // Get resolution times for display
-  const getPriorityResolutionTime = (priority) => {
-    if (!selectedSLA || !selectedSLA.target_matrix || !selectedSLA.target_matrix.priority_map) return null;
-    return selectedSLA.target_matrix.priority_map[priority];
-  };
-
-  const getSeverityResolutionTime = (severity) => {
-    if (!selectedSLA || !selectedSLA.target_matrix || !selectedSLA.target_matrix.severity_map) return null;
-    return selectedSLA.target_matrix.severity_map[severity];
-  };
-
-  // Update due dates when SLA or priority/severity changes
+  // Fetch team calendar when teams change
   useEffect(() => {
-    if (selectedSLA && slaTargets) {
-      const firstResponseDue = calculateDueDate(slaTargets.first_response);
-      const resolutionDue = calculateDueDate(slaTargets.resolution);
+    if (form.selectedTeams.length > 0) {
+      const getTeamCalendar = async () => {
+        setCalendarLoading(true);
+        try {
+          // Get the first team's calendar (you could implement merging logic for multiple calendars)
+          const firstTeam = form.selectedTeams[0];
+          
+          if (firstTeam?.calendar_id) {
+            const calendar = await getCalendar(firstTeam.calendar_id);
+            setTeamCalendar(calendar);
+          } else {
+            setTeamCalendar(null);
+          }
+        } catch (error) {
+          console.error('Failed to fetch team calendar:', error);
+          setTeamCalendar(null);
+        } finally {
+          setCalendarLoading(false);
+        }
+      };
+      
+      getTeamCalendar();
+    } else {
+      setTeamCalendar(null);
+    }
+  }, [form.selectedTeams, getCalendar]);
+
+  // Calculate due dates when SLA parameters or calendar change
+  useEffect(() => {
+    if (selectedSLA && (currentResolutionTime || firstResponseTime)) {
+      const firstResponseDue = firstResponseTime 
+        ? calculateDueDateWithBusinessHours(firstResponseTime, teamCalendar)
+        : null;
+      const resolutionDue = currentResolutionTime
+        ? calculateDueDateWithBusinessHours(currentResolutionTime, teamCalendar)
+        : null;
       
       setForm(f => ({
         ...f,
@@ -206,25 +282,31 @@ export default function TicketForm({ open, onClose, onSubmit, initial, orgId, re
         resolutionDueAt: ""
       }));
     }
-  }, [selectedSLA, slaTargets]);
+  }, [selectedSLA, currentResolutionTime, firstResponseTime, teamCalendar]);
+
+  // Reset teams & agentIds when group changes
+  useEffect(() => {
+    setForm((f) => ({ ...f, selectedTeams: [], agentIds: [] }));
+  }, [form.groupId]);
 
   useEffect(() => {
     if (isQueueOwned && form.assigneeId) setForm((f) => ({ ...f, assigneeId: "" }));
   }, [isQueueOwned]);
 
-  // Reset teams & agentIds when group changes
-  useEffect(() => {
-    setForm((f) => ({ ...f, teamIds: [], agentIds: [] }));
-  }, [form.groupId]);
-
   const subjectOK = form.subject.trim().length > 0;
   const groupOK = !isQueueOwned || (isQueueOwned && form.groupId.trim().length > 0);
-  const canSave = subjectOK && groupOK;
+  const slaConfigOK = !selectedSLA || (selectedSLA && availableOptions.length > 0);
+  const canSave = subjectOK && groupOK && slaConfigOK;
 
   const handleSubmit = async () => {
     setSaving(true);
     try {
-      const tagIds = form.tagsCsv.split(",").map((s) => s.trim()).filter(Boolean);
+     const tagIds = (form.selectedTags || [])
+        .map(t => t.tagId ?? t.tag_id)
+        .filter(Boolean);      
+      // Convert team objects back to IDs for API
+      const teamIds = form.selectedTeams.map(team => team.team_id || team);
+      
       const payload = {
         orgId,
         requesterId: requestorId,
@@ -234,7 +316,7 @@ export default function TicketForm({ open, onClose, onSubmit, initial, orgId, re
         severity: form.severity,
 
         groupId: form.groupId || null,
-        teamIds: form.teamIds || [],
+        teamIds: teamIds,
         agentIds: form.agentIds || [],
         assigneeId: isQueueOwned ? null : (form.assigneeId || null),
 
@@ -242,14 +324,19 @@ export default function TicketForm({ open, onClose, onSubmit, initial, orgId, re
         subcategory: form.subcategory || null,
         productId: form.productId || null,
         
-        // Enhanced SLA data
+        // SLA data
         slaId: form.slaId || null,
         dueAt: form.dueAt || null,
         firstResponseDueAt: form.firstResponseDueAt || null,
         resolutionDueAt: form.resolutionDueAt || null,
         
+        // Additional SLA context for backend processing
+        slaMode: form.slaMode,
+        calendarId: teamCalendar?.calendar_id || null,
+        
         tags: tagIds.length ? tagIds : undefined,
       };
+      
       const created = await onSubmit(payload);
       onClose?.();
       return created;
@@ -268,14 +355,20 @@ export default function TicketForm({ open, onClose, onSubmit, initial, orgId, re
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>{title}</DialogTitle>
       <DialogContent dividers>
-        <Stack spacing={1.5} sx={{ mt: 1 }}>
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          {/* Basic Information */}
+          <Typography variant="h6" gutterBottom>Basic Information</Typography>
+          
           <TextField 
             label="Subject" 
             value={form.subject} 
             onChange={(e) => update("subject", e.target.value)} 
             fullWidth 
             required 
+            error={!subjectOK}
+            helperText={!subjectOK ? "Subject is required" : ""}
           />
+          
           <TextField 
             label="Description" 
             value={form.description} 
@@ -283,7 +376,13 @@ export default function TicketForm({ open, onClose, onSubmit, initial, orgId, re
             fullWidth 
             multiline 
             minRows={3} 
+            placeholder="Describe the issue or request..."
           />
+
+          <Divider />
+          
+          {/* Assignment */}
+          <Typography variant="h6" gutterBottom>Assignment</Typography>
 
           <FormControlLabel
             control={<Checkbox checked={isQueueOwned} onChange={(e) => update("queueOwned", e.target.checked)} />}
@@ -306,16 +405,22 @@ export default function TicketForm({ open, onClose, onSubmit, initial, orgId, re
               />
             </Box>
           </Stack>
-          {!groupOK && <Typography variant="caption" color="error">Group is required when creating a queue-owned ticket.</Typography>}
+          
+          {!groupOK && (
+            <Alert severity="error">
+              Group is required when creating a queue-owned ticket.
+            </Alert>
+          )}
 
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
             <Box sx={{ flex: 1, minWidth: 220 }}>
               <TeamMultiSelect
                 groupId={form.groupId || undefined}
-                value={form.teamIds}
-                onChange={(arr) => update("teamIds", arr)}
+                value={form.selectedTeams}
+                onChange={(teams) => update("selectedTeams", teams)}
                 label="Teams (within group)"
                 disabled={!form.groupId}
+                returnFullObjects={true} // Ensure component returns team objects with calendar_id
               />
             </Box>
             <Box sx={{ flex: 1, minWidth: 240 }}>
@@ -330,190 +435,286 @@ export default function TicketForm({ open, onClose, onSubmit, initial, orgId, re
             </Box>
           </Stack>
 
+          {/* Calendar Status */}
+          {form.selectedTeams.length > 0 && (
+            <Box sx={{ p: 1, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <CalendarToday fontSize="small" />
+                <Typography variant="body2">
+                  {calendarLoading ? (
+                    "Loading calendar..."
+                  ) : teamCalendar ? (
+                    `Business Calendar: ${teamCalendar.name} (${teamCalendar.timezone || 'UTC'})`
+                  ) : (
+                    "No business calendar configured for selected teams"
+                  )}
+                </Typography>
+                {teamCalendar && (
+                  <Chip 
+                    size="small" 
+                    label="Business Hours Applied" 
+                    color="success" 
+                    variant="outlined"
+                  />
+                )}
+              </Stack>
+            </Box>
+          )}
+
+          <Divider />
+
+          {/* Classification */}
+          <Typography variant="h6" gutterBottom>Classification</Typography>
+          
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
             <TextField 
               label="Category" 
               value={form.category} 
               onChange={(e) => update("category", e.target.value)} 
               fullWidth 
+              placeholder="e.g., Bug, Feature Request"
             />
             <TextField 
               label="Subcategory" 
               value={form.subcategory} 
               onChange={(e) => update("subcategory", e.target.value)} 
               fullWidth 
+              placeholder="e.g., UI Bug, API Issue"
             />
-          </Stack>
-
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-            <TextField 
-              label="Priority" 
-              select 
-              fullWidth 
-              value={form.priority} 
-              onChange={(e) => update("priority", e.target.value)}
-              disabled={!selectedSLA}
-              error={selectedSLA && !isPriorityValid}
-              helperText={
-                selectedSLA 
-                  ? `Select priority level for ${selectedSLA.name}`
-                  : "Select an SLA first to choose priority"
-              }
-            >
-              {availablePriorities.map((p) => {
-                const resolutionTime = getPriorityResolutionTime(p);
-                return (
-                  <MenuItem key={p} value={p}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                      <Typography component="span">
-                        {p.toUpperCase()}
-                      </Typography>
-                      {resolutionTime && (
-                        <Chip 
-                          size="small" 
-                          label={formatMinutes(resolutionTime)}
-                          color="primary"
-                          variant="outlined"
-                        />
-                      )}
-                    </Box>
-                  </MenuItem>
-                );
-              })}
-            </TextField>
-            <TextField 
-              label="Severity" 
-              select 
-              fullWidth 
-              value={form.severity} 
-              onChange={(e) => update("severity", e.target.value)}
-              disabled={!selectedSLA}
-              error={selectedSLA && !isSeverityValid}
-              helperText={
-                selectedSLA 
-                  ? `Select severity level for ${selectedSLA.name}`
-                  : "Select an SLA first to choose severity"
-              }
-            >
-              {availableSeverities.map((s) => {
-                const resolutionTime = getSeverityResolutionTime(s);
-                return (
-                  <MenuItem key={s} value={s}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                      <Typography component="span">
-                        {s.toUpperCase()}
-                      </Typography>
-                      {resolutionTime && (
-                        <Chip 
-                          size="small" 
-                          label={formatMinutes(resolutionTime)}
-                          color="secondary"
-                          variant="outlined"
-                        />
-                      )}
-                    </Box>
-                  </MenuItem>
-                );
-              })}
-            </TextField>
-          </Stack>
-
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
             <TextField 
               label="Product ID" 
               value={form.productId} 
               onChange={(e) => update("productId", e.target.value)} 
               fullWidth 
+              placeholder="e.g., web-app, mobile-ios"
             />
           </Stack>
 
-          {/* SLA Selection - Move this up to be selected first */}
+          <Divider />
+
+          {/* SLA Configuration */}
+          <Typography variant="h6" gutterBottom>SLA Configuration</Typography>
+
+          {/* SLA Selection */}
           <TextField
             select
             label="SLA Policy"
             fullWidth
             value={form.slaId}
             onChange={(e) => update("slaId", e.target.value)}
-            helperText="Choose an SLA policy to see available priority and severity options"
+            helperText="Choose an SLA policy to set response and resolution targets"
           >
             <MenuItem key="" value="">
-              <Box>
-                <Typography component="span" color="text.secondary">
-                  None - No SLA requirements
-                </Typography>
-              </Box>
+              <Typography component="span" color="text.secondary">
+                None - No SLA requirements
+              </Typography>
             </MenuItem>
-            {availableSLAOptions.map((sla) => {
-              const priorityOptions = sla.target_matrix?.priority_map ? Object.keys(sla.target_matrix.priority_map) : [];
-              const severityOptions = sla.target_matrix?.severity_map ? Object.keys(sla.target_matrix.severity_map) : [];
-              
-              return (
-                <MenuItem key={sla.sla_id} value={sla.sla_id}>
-                  <Box sx={{ width: '100%' }}>
-                    <Typography component="span" sx={{ fontWeight: 'medium' }}>
-                      {sla.name}
+            {availableSLAOptions.map((sla) => (
+              <MenuItem key={sla.sla_id} value={sla.sla_id}>
+                <Box sx={{ width: '100%' }}>
+                  <Typography component="span" sx={{ fontWeight: 'medium' }}>
+                    {sla.name}
+                  </Typography>
+                  {sla.description && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                      {sla.description}
                     </Typography>
-                    {sla.description && (
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                        {sla.description}
-                      </Typography>
+                  )}
+                  
+                  <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
+                    {sla.first_response_minutes && (
+                      <Chip 
+                        size="small" 
+                        icon={<AccessTime />}
+                        label={`First Response: ${formatMinutes(sla.first_response_minutes)}`}
+                        variant="outlined"
+                        color="primary"
+                      />
                     )}
-                    
-                    {/* Show baseline times if available */}
-                    <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
-                      {sla.first_response_minutes && (
-                        <Chip 
-                          size="small" 
-                          icon={<AccessTime />}
-                          label={`FR: ${formatMinutes(sla.first_response_minutes)}`}
-                          variant="outlined"
-                          color="primary"
-                        />
-                      )}
-                      {sla.resolution_minutes && (
-                        <Chip 
-                          size="small" 
-                          icon={<AccessTime />}
-                          label={`Base RES: ${formatMinutes(sla.resolution_minutes)}`}
-                          variant="outlined"
-                          color="secondary"
-                        />
-                      )}
-                    </Box>
-
-                    {/* Show available priorities and severities */}
-                    {(priorityOptions.length > 0 || severityOptions.length > 0) && (
-                      <Box sx={{ mt: 1 }}>
-                        {priorityOptions.length > 0 && (
-                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                            <strong>Priorities:</strong> {priorityOptions.map(p => p.toUpperCase()).join(', ')}
-                          </Typography>
-                        )}
-                        {severityOptions.length > 0 && (
-                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                            <strong>Severities:</strong> {severityOptions.map(s => s.toUpperCase()).join(', ')}
-                          </Typography>
-                        )}
-                      </Box>
+                    {sla.resolution_minutes && (
+                      <Chip 
+                        size="small" 
+                        icon={<Schedule />}
+                        label={`Base Resolution: ${formatMinutes(sla.resolution_minutes)}`}
+                        variant="outlined"
+                        color="secondary"
+                      />
                     )}
                   </Box>
-                </MenuItem>
-              );
-            })}
+                </Box>
+              </MenuItem>
+            ))}
           </TextField>
 
-          {/* SLA Status and Real-time Calculation */}
-          {selectedSLA && isPriorityValid && isSeverityValid && (
-            <Alert severity="success" sx={{ mt: 2 }}>
+          {/* Temporary Debug Section - Remove this later */}
+          {selectedSLA && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>Debug Info:</Typography>
+              <Typography variant="body2">
+                <strong>SLA Name:</strong> {selectedSLA.name}<br/>
+                <strong>Has Priority Map:</strong> {hasPriorityMap ? 'Yes' : 'No'}<br/>
+                <strong>Has Severity Map:</strong> {hasSeverityMap ? 'Yes' : 'No'}<br/>
+                <strong>Rules Object:</strong> {JSON.stringify(selectedSLA.rules, null, 2)}
+              </Typography>
+            </Alert>
+          )}
+
+          {/* Priority/Severity Toggle - Always visible when SLA is selected */}
+          {selectedSLA && (
+            <FormControl component="fieldset" fullWidth>
+              <FormLabel component="legend">SLA Resolution Mode</FormLabel>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                Choose how resolution time will be determined for this ticket
+              </Typography>
+              <RadioGroup
+                row
+                value={form.slaMode}
+                onChange={(e) => update("slaMode", e.target.value)}
+                sx={{ mb: 2 }}
+              >
+                <FormControlLabel 
+                  value="priority" 
+                  control={<Radio />} 
+                  label={`Priority-based ${hasPriorityMap ? '' : '(not available)'}`}
+                  disabled={!hasPriorityMap}
+                />
+                <FormControlLabel 
+                  value="severity" 
+                  control={<Radio />} 
+                  label={`Severity-based ${hasSeverityMap ? '' : '(not available)'}`}
+                  disabled={!hasSeverityMap}
+                />
+              </RadioGroup>
+            </FormControl>
+          )}
+
+          {/* Priority Selection Field */}
+          {selectedSLA && form.slaMode === "priority" && (
+            <TextField 
+              label="Priority Level" 
+              select 
+              fullWidth 
+              value={form.priority} 
+              onChange={(e) => update("priority", e.target.value)}
+              disabled={!hasPriorityMap}
+              error={!hasPriorityMap}
+              helperText={
+                hasPriorityMap 
+                  ? "Choose priority level - resolution time will be calculated from priority map"
+                  : "Priority-based SLA not available for this policy"
+              }
+            >
+              {hasPriorityMap && Object.keys(selectedSLA.rules.priority_map || {}).map((p) => {
+                const resolutionTime = selectedSLA.rules.priority_map[p];
+                return (
+                  <MenuItem key={p} value={p}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                      <Typography component="span">
+                        {p.charAt(0).toUpperCase() + p.slice(1)}
+                      </Typography>
+                      <Chip 
+                        size="small" 
+                        label={formatMinutes(resolutionTime)}
+                        color="primary"
+                        variant="outlined"
+                      />
+                    </Box>
+                  </MenuItem>
+                );
+              })}
+            </TextField>
+          )}
+
+          {/* Severity Selection Field */}
+          {selectedSLA && form.slaMode === "severity" && (
+            <TextField 
+              label="Severity Level" 
+              select 
+              fullWidth 
+              value={form.severity} 
+              onChange={(e) => update("severity", e.target.value)}
+              disabled={!hasSeverityMap}
+              error={!hasSeverityMap}
+              helperText={
+                hasSeverityMap 
+                  ? "Choose severity level - resolution time will be calculated from severity map"
+                  : "Severity-based SLA not available for this policy"
+              }
+            >
+              {hasSeverityMap && Object.keys(selectedSLA.rules.severity_map || {}).map((s) => {
+                const resolutionTime = selectedSLA.rules.severity_map[s];
+                return (
+                  <MenuItem key={s} value={s}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                      <Typography component="span">
+                        {s.toUpperCase()}
+                      </Typography>
+                      <Chip 
+                        size="small" 
+                        label={formatMinutes(resolutionTime)}
+                        color="secondary"
+                        variant="outlined"
+                      />
+                    </Box>
+                  </MenuItem>
+                );
+              })}
+            </TextField>
+          )}
+
+          {/* Show basic priority/severity when no SLA is selected */}
+          {!selectedSLA && (
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+              <TextField 
+                label="Priority" 
+                select 
+                fullWidth 
+                value={form.priority} 
+                onChange={(e) => update("priority", e.target.value)}
+                helperText="Basic priority level (no SLA applied)"
+              >
+                {["low", "normal", "high", "urgent", "blocker"].map((p) => (
+                  <MenuItem key={p} value={p}>
+                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                  </MenuItem>
+                ))}
+              </TextField>
+              
+              <TextField 
+                label="Severity" 
+                select 
+                fullWidth 
+                value={form.severity} 
+                onChange={(e) => update("severity", e.target.value)}
+                helperText="Basic severity level (no SLA applied)"
+              >
+                {["sev4", "sev3", "sev2", "sev1"].map((s) => (
+                  <MenuItem key={s} value={s}>
+                    {s.toUpperCase()}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Stack>
+          )}
+
+          {/* SLA Status Display */}
+          {selectedSLA && currentResolutionTime && (
+            <Alert severity="success">
               <Typography variant="subtitle2" gutterBottom>
-                Active SLA: {selectedSLA.name} ({form.priority.toUpperCase()}/{form.severity.toUpperCase()})
+                Active SLA: {selectedSLA.name} 
+                {(hasPriorityMap || hasSeverityMap) && (
+                  <span> ({form.slaMode === "priority" ? form.priority.toUpperCase() : form.severity.toUpperCase()})</span>
+                )}
+                {teamCalendar && (
+                  <Chip size="small" label="Business Hours Applied" color="info" sx={{ ml: 1 }} />
+                )}
               </Typography>
               
               <Stack direction="row" spacing={3} flexWrap="wrap" sx={{ mt: 1 }}>
-                {slaTargets && slaTargets.first_response && (
+                {firstResponseTime && (
                   <Box>
                     <Typography variant="body2" color="primary">
-                      <strong>First Response:</strong> {formatMinutes(slaTargets.first_response)}
+                      <strong>First Response:</strong> {formatMinutes(firstResponseTime)}
                     </Typography>
                     {form.firstResponseDueAt && (
                       <Typography variant="caption" color="text.secondary">
@@ -523,10 +724,10 @@ export default function TicketForm({ open, onClose, onSubmit, initial, orgId, re
                   </Box>
                 )}
                 
-                {slaTargets && slaTargets.resolution && (
+                {currentResolutionTime && (
                   <Box>
                     <Typography variant="body2" color="secondary">
-                      <strong>Resolution:</strong> {formatMinutes(slaTargets.resolution)}
+                      <strong>Resolution:</strong> {formatMinutes(currentResolutionTime)}
                     </Typography>
                     {form.resolutionDueAt && (
                       <Typography variant="caption" color="text.secondary">
@@ -537,57 +738,32 @@ export default function TicketForm({ open, onClose, onSubmit, initial, orgId, re
                 )}
               </Stack>
 
-              {/* Show breakdown of how resolution time was calculated */}
-              {selectedSLA.target_matrix && (
-                <Box sx={{ mt: 2, p: 1, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 1 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'medium' }}>
-                    Resolution Time Calculation:
+              {/* Show calculation details for transparency */}
+              {selectedSLA.rules && form.slaMode === "priority" && hasPriorityMap && (
+                <Box sx={{ mt: 1, p: 1, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 1 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'medium' }}>
+                    Resolution time from Priority Map: {form.priority.toUpperCase()} → {formatMinutes(currentResolutionTime)}
                   </Typography>
-                  <Stack direction="row" spacing={2} sx={{ mt: 0.5 }}>
-                    {getPriorityResolutionTime(form.priority) && (
-                      <Typography variant="caption" color="text.secondary">
-                        Priority {form.priority.toUpperCase()}: {formatMinutes(getPriorityResolutionTime(form.priority))}
-                      </Typography>
-                    )}
-                    {getSeverityResolutionTime(form.severity) && (
-                      <Typography variant="caption" color="text.secondary">
-                        Severity {form.severity.toUpperCase()}: {formatMinutes(getSeverityResolutionTime(form.severity))}
-                      </Typography>
-                    )}
-                    {getPriorityResolutionTime(form.priority) && getSeverityResolutionTime(form.severity) && (
-                      <Typography variant="caption" color="primary" sx={{ fontWeight: 'medium' }}>
-                        → Using shortest: {formatMinutes(slaTargets.resolution)}
-                      </Typography>
-                    )}
-                  </Stack>
+                </Box>
+              )}
+              
+              {selectedSLA.rules && form.slaMode === "severity" && hasSeverityMap && (
+                <Box sx={{ mt: 1, p: 1, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 1 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'medium' }}>
+                    Resolution time from Severity Map: {form.severity.toUpperCase()} → {formatMinutes(currentResolutionTime)}
+                  </Typography>
                 </Box>
               )}
             </Alert>
           )}
 
-          {selectedSLA && (!isPriorityValid || !isSeverityValid) && (
-            <Alert severity="warning" sx={{ mt: 2 }}>
+          {selectedSLA && !slaConfigOK && (
+            <Alert severity="warning">
               <Typography variant="subtitle2" gutterBottom>
-                Invalid SLA Configuration
+                SLA Configuration Required
               </Typography>
               <Typography variant="body2">
-                The selected SLA "{selectedSLA.name}" doesn't support the current priority/severity combination.
-              </Typography>
-              <Box sx={{ mt: 1 }}>
-                <Typography variant="body2">
-                  <strong>Available Priorities:</strong> {availablePriorities.map(p => p.toUpperCase()).join(', ')}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Available Severities:</strong> {availableSeverities.map(s => s.toUpperCase()).join(', ')}
-                </Typography>
-              </Box>
-            </Alert>
-          )}
-
-          {!selectedSLA && (
-            <Alert severity="info" sx={{ mt: 2 }}>
-              <Typography variant="body2">
-                <strong>Select an SLA Policy above</strong> to set automatic response and resolution targets based on priority and severity levels.
+                The selected SLA "{selectedSLA.name}" requires priority or severity configuration, but no valid options are available.
               </Typography>
             </Alert>
           )}
@@ -598,16 +774,65 @@ export default function TicketForm({ open, onClose, onSubmit, initial, orgId, re
             onChange={(e) => update("dueAt", e.target.value)} 
             fullWidth 
             placeholder="2025-09-25T17:30:00Z" 
-            helperText="Optional custom due date (overrides SLA)"
+            helperText="Optional custom due date (overrides SLA calculations)"
           />
 
-          <TextField 
-            label="Tag IDs (comma-separated)" 
-            value={form.tagsCsv} 
-            onChange={(e) => update("tagsCsv", e.target.value)} 
-            fullWidth 
-            placeholder="tag_vip,tag_bug" 
-          />
+          <Divider />
+
+          {/* Additional Options */}
+          <Typography variant="h6" gutterBottom>Additional Options</Typography>
+          <Box>
+            <Typography variant="h6" gutterBottom>Tags</Typography>
+            <Autocomplete
+              multiple
+              options={availableTags}
+              value={form.selectedTags}
+              onChange={(_, newValue) => update("selectedTags", newValue)}
+              getOptionLabel={(opt) => opt.name || opt.tag_name || opt.tagId || opt.tag_id || ""}
+              isOptionEqualToValue={(o, v) => (o.tagId ?? o.tag_id) === (v.tagId ?? v.tag_id)}
+              renderTags={(value, getTagProps) =>
+                value.map((option, index) => {
+                  const color = option.color || option.tag_colour || "#808080";
+                  return (
+                    <Chip
+                      {...getTagProps({ index })}
+                      key={(option.tagId ?? option.tag_id) || index}
+                      label={option.name || option.tag_name || ""}
+                      variant="outlined"
+                      sx={{
+                        borderColor: color,
+                        backgroundColor: `${color}1A`,
+                        color,
+                      }}
+                    />
+                  );
+                })
+              }
+              renderOption={(props, option) => {
+                const color = option.color || option.tag_colour || "#808080";
+                return (
+                  <li {...props} key={option.tagId ?? option.tag_id}>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Avatar sx={{ width: 18, height: 18, bgcolor: color }} />
+                      <Typography>{option.name}</Typography>
+                      {option.category && (
+                        <Chip size="small" variant="outlined" label={option.category} />
+                      )}
+                    </Stack>
+                  </li>
+                );
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Select tags"
+                  placeholder="Search tags…"
+                  helperText="Pick from the tags you created"
+                  fullWidth
+                />
+              )}
+            />
+          </Box>
 
           <CollaboratorsSelect 
             orgId={orgId} 
@@ -619,8 +844,13 @@ export default function TicketForm({ open, onClose, onSubmit, initial, orgId, re
 
       <DialogActions>
         <Button onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button onClick={handleSubmit} variant="contained" disabled={saving || !canSave}>
-          {saving ? "Saving…" : "Save"}
+        <Button 
+          onClick={handleSubmit} 
+          variant="contained" 
+          disabled={saving || !canSave}
+          color="primary"
+        >
+          {saving ? "Creating..." : "Create Ticket"}
         </Button>
       </DialogActions>
     </Dialog>

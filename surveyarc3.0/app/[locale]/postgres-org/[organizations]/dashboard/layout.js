@@ -5,6 +5,7 @@ import { OrganisationProvider } from "@/providers/postGresPorviders/organisation
 import { ProjectProvider } from "@/providers/postGresPorviders/projectProvider";
 import { SupportGroupProvider } from "@/providers/postGresPorviders/SupportGroupProvider";
 import { SupportTeamProvider } from "@/providers/postGresPorviders/SupportTeamProvider";
+import { TagProvider } from "@/providers/postGresPorviders/TagProvider";
 import { UserProvider } from "@/providers/postGresPorviders/UserProvider";
 import { SLAProvider } from "@/providers/slaProvider";
 import { TicketProvider } from "@/providers/ticketsProvider";
@@ -16,6 +17,7 @@ export default function Layout({ children }) {
 
   return (
     <div className="flex w-full bg-[#F5F5F5] dark:bg-[#121214]">
+      <TagProvider>
       <OrganisationProvider>
         <UserProvider>
               <TicketProvider>
@@ -49,6 +51,7 @@ export default function Layout({ children }) {
 
         </UserProvider>
       </OrganisationProvider>
+      </TagProvider>
     </div>
   );
 }
