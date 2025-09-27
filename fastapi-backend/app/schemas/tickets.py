@@ -29,7 +29,15 @@ class SupportGroupOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
-
+# -------- Collaborators --------
+class AssignmentMeta(BaseModel):
+    is_group_selected: bool = False
+    is_team_selected: bool = False
+    is_agents_selected: bool = False
+    group_id: Optional[str] = None
+    team_ids: List[str] = Field(default_factory=list)
+    agent_ids: List[str] = Field(default_factory=list)
+    initiated_by: Optional[str] = None
 # ------------------------------- SLA --------------------------------
 
 class SLABase(BaseModel):
@@ -102,6 +110,8 @@ class TicketBase(BaseModel):
 class TicketCreate(TicketBase):
     ticket_id: Optional[str] = None  # client-supplied or server-generated
     tags: List[str] = Field(default_factory=list)  # tag_ids to attach initially
+    assignment: Optional[AssignmentMeta] = None   # <--- NEW
+
 
 
 class TicketUpdate(BaseModel):
@@ -113,6 +123,7 @@ class TicketUpdate(BaseModel):
     assignee_id: Optional[str] = None
     group_id: Optional[str] = None
     category: Optional[str] = None
+    assignment: Optional[AssignmentMeta] = None   # <--- NEW
     subcategory: Optional[str] = None
     product_id: Optional[str] = None
     sla_id: Optional[str] = None
@@ -274,3 +285,45 @@ class CollaboratorOut(BaseModel):
     role: str
     created_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
+    
+class SupportGroupCreate(BaseModel):
+    group_id: Optional[str] = None
+    org_id: str
+    name: str
+    email: Optional[str] = None
+    description: Optional[str] = None
+
+class SupportGroupUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    description: Optional[str] = None
+
+# members
+class GroupMemberAdd(BaseModel):
+    user_id: str
+
+class GroupMemberOut(BaseModel):
+    group_id: str
+    user_id: str
+
+# -------- Collaborators --------
+class SupportGroupCreate(BaseModel):
+    group_id: Optional[str] = None
+    org_id: str
+    name: str
+    email: Optional[str] = None
+    description: Optional[str] = None
+
+class SupportGroupUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    description: Optional[str] = None
+
+# members
+class GroupMemberAdd(BaseModel):
+    user_id: str
+
+class GroupMemberOut(BaseModel):
+    group_id: str
+    user_id: str
+

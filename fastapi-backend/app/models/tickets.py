@@ -1,13 +1,18 @@
 # app/models/tickets.py
 from sqlalchemy import (
     Column, String, Integer, Boolean, DateTime, Text, ForeignKey, Enum, Index,
+    
     UniqueConstraint, BigInteger
 )
+from typing import Optional, List
+from datetime import datetime
+from pydantic import Field
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import Table
 import enum
+from .sla import SLADimension
 
 from ..db import Base
 
@@ -60,62 +65,10 @@ ticket_tags = Table(
 )
 
 
-support_group_members = Table(
-    "support_group_members",
-    Base.metadata,
-    Column(
-        "group_id",
-        String,
-        ForeignKey("support_groups.group_id", ondelete="CASCADE"),
-        primary_key=True,
-    ),
-    Column(
-        "user_id",
-        String,
-        ForeignKey("user_stub.user_id", ondelete="CASCADE"),  # 👈 FIX
-        primary_key=True,
-    ),
-    Index("ix_support_group_members_group", "group_id"),
-    Index("ix_support_group_members_user", "user_id"),
-)
 
 
-# -------------------------------- Core --------------------------------
-class SupportGroup(Base):
-    __tablename__ = "support_groups"
-
-    group_id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
-    org_id:   Mapped[str] = mapped_column(String, index=True, nullable=False)
-
-    name:        Mapped[str] = mapped_column(String, nullable=False)
-    email:       Mapped[str | None] = mapped_column(String, nullable=True)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    created_at: Mapped[DateTime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[DateTime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-    members = relationship(
-        "UserStub",
-        secondary=support_group_members,
-        back_populates="groups",
-    )
-    tickets = relationship("Ticket", back_populates="group")
 
 
-class UserStub(Base):
-    __tablename__ = "user_stub"
-
-    user_id: Mapped[str] = mapped_column(String, primary_key=True)
-
-    groups = relationship(
-        "SupportGroup",
-        secondary=support_group_members,
-        back_populates="members",
-    )
 
 class SLA(Base):
     """
@@ -149,44 +102,33 @@ class Ticket(Base):
     __tablename__ = "tickets"
 
     ticket_id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
-    # Sequential number per org/project for human-friendly references (e.g., NCZ-1234)
     org_id:    Mapped[str] = mapped_column(String, index=True, nullable=False)
     project_id: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
     number:    Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-
     subject:     Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)  # initial body
-
     status:   Mapped[TicketStatus]  = mapped_column(Enum(TicketStatus), default=TicketStatus.new, index=True, nullable=False)
     priority: Mapped[TicketPriority] = mapped_column(Enum(TicketPriority), default=TicketPriority.normal, index=True, nullable=False)
     severity: Mapped[TicketSeverity] = mapped_column(Enum(TicketSeverity), default=TicketSeverity.sev4, index=True, nullable=False)
-
     requester_id: Mapped[str] = mapped_column(String, index=True, nullable=False)  # who opened
     assignee_id:  Mapped[str | None] = mapped_column(String, index=True, nullable=True)
     group_id:     Mapped[str | None] = mapped_column(String, ForeignKey("support_groups.group_id"), index=True, nullable=True)
-
     category:     Mapped[str | None] = mapped_column(String, nullable=True)
     subcategory:  Mapped[str | None] = mapped_column(String, nullable=True)
     product_id:   Mapped[str | None] = mapped_column(String, nullable=True)
-
     sla_id:       Mapped[str | None] = mapped_column(String, ForeignKey("slas.sla_id"), nullable=True)
-
     due_at:                 Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     first_response_at:      Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     resolved_at:            Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_at:              Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_activity_at:       Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), index=True, nullable=True)
     last_public_comment_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
     reply_count:   Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     follower_count:Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
     custom_fields: Mapped[dict] = mapped_column(JSONB, default=dict)   # arbitrary per-org fields
     meta:          Mapped[dict] = mapped_column(JSONB, default=dict)
-
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
     group = relationship("SupportGroup", back_populates="tickets")
     tags  = relationship("Tag", secondary=ticket_tags, back_populates="tickets")
     comments = relationship("TicketComment", back_populates="ticket", cascade="all, delete-orphan")
@@ -194,7 +136,8 @@ class Ticket(Base):
     watchers = relationship("TicketWatcher", back_populates="ticket", cascade="all, delete-orphan")
     events   = relationship("TicketEvent", back_populates="ticket", cascade="all, delete-orphan")
     sla_status = relationship("TicketSLAStatus", uselist=False, back_populates="ticket", cascade="all, delete-orphan")
-
+    team_ids = relationship("SupportTeam", secondary="support_team_tickets", back_populates="tickets")
+    
     __table_args__ = (
         Index("ix_ticket_org_status", "org_id", "status"),
         Index("ix_ticket_org_assignee", "org_id", "assignee_id"),
@@ -218,7 +161,6 @@ class TicketComment(Base):
     ticket = relationship("Ticket", back_populates="comments")
     attachments = relationship("TicketAttachment", back_populates="comment", cascade="all, delete-orphan")
 
-# Add this Tag model to your tickets.py file
 
 class Tag(Base):
     __tablename__ = "tags"
@@ -330,6 +272,19 @@ class TicketSLAStatus(Base):
 
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    first_response_started_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolution_started_at:     Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    elapsed_first_response_minutes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    elapsed_resolution_minutes:     Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # last_resume_{dimension} is useful to accumulate elapsed segments
+    last_resume_first_response: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_resume_resolution:     Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Which calendar governs this ticket’s SLA (optional; falls back to org/team default)
+    calendar_id: Mapped[str | None] = mapped_column(String, ForeignKey("biz_calendars.calendar_id"), nullable=True)
+
     ticket = relationship("Ticket", back_populates="sla_status")
     sla    = relationship("SLA", back_populates="statuses")
 
@@ -394,3 +349,4 @@ class TicketWorklog(Base):
     kind:       Mapped[WorklogType] = mapped_column(Enum(WorklogType), default=WorklogType.other)
     note:       Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+

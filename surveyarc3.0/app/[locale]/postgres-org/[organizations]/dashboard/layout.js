@@ -1,8 +1,10 @@
 "use client";
 import Sidebar from "@/components/frontend/Sidebar";
+import BusinessCalendarsProvider from "@/providers/BusinessCalendarsProvider";
 import { OrganisationProvider } from "@/providers/postGresPorviders/organisationProvider";
 import { ProjectProvider } from "@/providers/postGresPorviders/projectProvider";
 import { UserProvider } from "@/providers/postGresPorviders/UserProvider";
+import { SLAProvider } from "@/providers/slaProvider";
 import { TicketProvider } from "@/providers/ticketsProvider";
 import React, { useState } from "react";
 
@@ -15,12 +17,14 @@ export default function Layout({ children }) {
       <OrganisationProvider>
         <UserProvider>
               <TicketProvider>
-          
+          <BusinessCalendarsProvider>
           <ProjectProvider>
             <Sidebar
               isCollapsed={isCollapsed}
               setIsCollapsed={setIsCollapsed}
             />
+                  <SLAProvider>
+
             <main
               className={`transition-all  duration-300 ${
                 isCollapsed
@@ -30,7 +34,10 @@ export default function Layout({ children }) {
             >
               {children}
             </main>
+                  </SLAProvider>
+
           </ProjectProvider>
+          </BusinessCalendarsProvider>
               </TicketProvider>
 
         </UserProvider>

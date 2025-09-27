@@ -24,3 +24,5 @@ def init_models():
     from .payment import Payment
     from .rule import Rule
     from .contact import Contact, ContactList
+    from .tickets import Ticket, Tag, TicketComment, TicketAttachment, TicketCollaborator
+    from .support import SupportGroupMember, GroupMemberRole, ProficiencyLevel, SupportGroup, SupportTeam

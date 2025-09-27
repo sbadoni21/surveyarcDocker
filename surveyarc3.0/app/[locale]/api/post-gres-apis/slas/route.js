@@ -1,27 +1,16 @@
+// app/api/post-gres-apis/slas/route.js
 import { NextResponse } from "next/server";
 import { decryptGetResponse } from "@/utils/crypto_client";
 import { encryptPayload } from "@/utils/crypto_utils";
 
 const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
-const ENC  = process.env.ENCRYPT_SUPPORT === "1";
+const ENC = process.env.ENCRYPT_SURVEYS === "1";
 
-/** Decrypt-if-needed helper (array/object/primitive safe) */
+// ----- shared decrypt helper (GET) -----
 async function forceDecryptResponse(res) {
   const text = await res.text();
   try {
     const json = JSON.parse(text);
-
-    // try decrypt object
-    if (json && typeof json === "object" && !Array.isArray(json)) {
-      try {
-        const dec = await decryptGetResponse(json);
-        return NextResponse.json(dec, { status: res.status });
-      } catch {
-        return NextResponse.json(json, { status: res.status });
-      }
-    }
-
-    // try decrypt each array item
     if (Array.isArray(json)) {
       try {
         const dec = await Promise.all(
@@ -33,49 +22,54 @@ async function forceDecryptResponse(res) {
           })
         );
         return NextResponse.json(dec, { status: res.status });
-      } catch {
-        return NextResponse.json(json, { status: res.status });
-      }
+      } catch { return NextResponse.json(json, { status: res.status }); }
     }
-
-    // primitive
+    if (json && typeof json === "object") {
+      try { return NextResponse.json(await decryptGetResponse(json), { status: res.status }); }
+      catch { return NextResponse.json(json, { status: res.status }); }
+    }
     return NextResponse.json(json, { status: res.status });
   } catch {
-    // not JSON
-    return NextResponse.json({ raw: text }, { status: res.status });
+    return NextResponse.json({ status: "error", raw: text }, { status: res.status });
   }
 }
 
+// GET /api/post-gres-apis/slas?org_id=...&active=...
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
-  const orgId = searchParams.get("org_id");
-  if (!orgId) {
-    return NextResponse.json({ error: "org_id is required" }, { status: 400 });
+  const qs = new URLSearchParams();
+  
+  for (const k of ["org_id", "active"]) {
+    const v = searchParams.get(k);
+    if (v !== null && v !== "") qs.set(k, v);
   }
+
   try {
-    const res = await fetch(`${BASE}/support-groups?org_id=${encodeURIComponent(orgId)}`, {
-      cache: "no-store",
+    const res = await fetch(`${BASE}/business-calendars?${qs.toString()}`, {
       signal: AbortSignal.timeout(30000),
+      cache: "no-store",
     });
     return forceDecryptResponse(res);
   } catch (e) {
-    return NextResponse.json({ error: "Failed to fetch support groups", detail: String(e?.message || e) }, { status: 500 });
+    return NextResponse.json({ detail: "Upstream error", message: String(e?.message || e) }, { status: 500 });
   }
 }
 
+// POST /api/post-gres-apis/slas
 export async function POST(req) {
   try {
-    const raw = await req.json(); // { org_id, name, email?, description? , group_id? }
+    const raw = await req.json();
     const payload = ENC ? await encryptPayload(raw) : raw;
-
-    const res = await fetch(`${BASE}/support-groups`, {
+console.log(payload)
+    const res = await fetch(`${BASE}/business-calendars`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(ENC ? { "x-encrypted": "1" } : {}) },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30000),
+      cache: "no-store",
     });
     return forceDecryptResponse(res);
   } catch (e) {
-    return NextResponse.json({ error: "Failed to create support group", detail: String(e?.message || e) }, { status: 500 });
+    return NextResponse.json({ detail: "Upstream error", message: String(e?.message || e) }, { status: 500 });
   }
 }

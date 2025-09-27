@@ -13,6 +13,8 @@ import GroupSelect from "./GroupSelect";
 import CollaboratorsSelect from "./CollaboratorsSelect";
 import WorklogModel from "@/models/postGresModels/worklogModel";
 import CollaboratorModel from "@/models/postGresModels/collaboratorModel"; // you created earlier
+import SLAStatusBar from "./SLAStatusBar";
+import { useSLA } from "@/providers/slaProvider";
 
 const STATUSES = ["new", "open", "pending", "on_hold", "resolved", "closed", "canceled"];
 const PRIORITIES = ["low", "normal", "high", "urgent"];
@@ -30,7 +32,11 @@ export default function TicketDetail({ ticket, orgId, onUpdate, currentUserId })
   // collaborators
   const [collabs, setCollabs] = useState([]);
   const [addOpen, setAddOpen] = useState(false);
+  const { refreshTicketSLA } = useSLA();
 
+  useEffect(() => {
+    if (ticket?.ticketId) refreshTicketSLA(ticket.ticketId).catch(() => {});
+  }, [ticket?.ticketId, refreshTicketSLA]);
   useEffect(() => setDraft(ticket), [ticket]);
 
   useEffect(() => {
@@ -79,6 +85,8 @@ export default function TicketDetail({ ticket, orgId, onUpdate, currentUserId })
 
   return (
     <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+            <SLAStatusBar ticket={ticket} />
+
       <Stack spacing={2}>
         {/* Header */}
         <Stack direction="row" alignItems="center" justifyContent="space-between">

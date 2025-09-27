@@ -4,11 +4,14 @@ import { Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitl
 import AssigneeSelect from "./AssigneeSelect";
 import GroupSelect from "./GroupSelect";
 import CollaboratorsSelect from "./CollaboratorsSelect";
+import { useSLA } from "@/providers/slaProvider";
 
 const PRIORITIES = ["low", "normal", "high", "urgent"];
 const SEVERITIES = ["sev4", "sev3", "sev2", "sev1"];
 
 export default function TicketForm({ open, onClose, onSubmit, initial, orgId, requestorId, title = "New Ticket", currentUserId }) {
+    const { listSLAs, slasByOrg } = useSLA();
+ const slaOptions = slasByOrg[orgId] || [];
   const [form, setForm] = useState(() => ({
     subject: initial?.subject || "",
     description: initial?.description || "",
@@ -78,7 +81,11 @@ export default function TicketForm({ open, onClose, onSubmit, initial, orgId, re
       setSaving(false);
     }
   };
-
+  useEffect(() => {
+    if (open && orgId) {
+      listSLAs(orgId).catch(() => {});
+    }
+  }, [open, orgId, listSLAs]);
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>{title}</DialogTitle>
@@ -124,11 +131,24 @@ export default function TicketForm({ open, onClose, onSubmit, initial, orgId, re
             </TextField>
           </Stack>
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-            <TextField label="Product ID" value={form.productId} onChange={(e) => update("productId", e.target.value)} fullWidth />
-            <TextField label="SLA ID" value={form.slaId} onChange={(e) => update("slaId", e.target.value)} fullWidth />
-          </Stack>
-
+  <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+    <TextField label="Product ID" value={form.productId} onChange={(e) => update("productId", e.target.value)} fullWidth />
+    <TextField
+      select
+      label="SLA"
+      fullWidth
+      value={form.slaId}
+      onChange={(e) => update("slaId", e.target.value)}
+      helperText={slaOptions.length ? "Choose an SLA policy" : "No SLAs found for this org"}
+    >
+      <MenuItem key="" value="">None</MenuItem>
+      {slaOptions.map((s) => (
+        <MenuItem key={s.sla_id} value={s.sla_id}>
+          {s.name} {s.first_response_minutes ? `• FR ${s.first_response_minutes}m` : ""} {s.resolution_minutes ? `• RES ${s.resolution_minutes}m` : ""}
+        </MenuItem>
+      ))}
+    </TextField>
+  </Stack>
           <TextField label="Due at (ISO)" value={form.dueAt} onChange={(e) => update("dueAt", e.target.value)} fullWidth placeholder="2025-09-25T17:30:00Z" />
 
           <TextField label="Tag IDs (comma-separated)" value={form.tagsCsv} onChange={(e) => update("tagsCsv", e.target.value)} fullWidth placeholder="tag_vip,tag_bug" />

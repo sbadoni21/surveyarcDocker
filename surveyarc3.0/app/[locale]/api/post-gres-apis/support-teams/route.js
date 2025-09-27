@@ -1,9 +1,10 @@
+// app/api/post-gres-apis/support-teams/route.js
 import { NextResponse } from "next/server";
 import { decryptGetResponse } from "@/utils/crypto_client";
 import { encryptPayload } from "@/utils/crypto_utils";
 
 const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
-const ENC  = process.env.ENCRYPT_SUPPORT === "1";
+const ENC = process.env.ENCRYPT_SUPPORT === "1";
 
 /** Decrypt-if-needed helper (array/object/primitive safe) */
 async function forceDecryptResponse(res) {
@@ -49,33 +50,49 @@ async function forceDecryptResponse(res) {
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const orgId = searchParams.get("org_id");
-  if (!orgId) {
-    return NextResponse.json({ error: "org_id is required" }, { status: 400 });
+  const groupId = searchParams.get("group_id");
+  
+  if (!orgId && !groupId) {
+    return NextResponse.json({ error: "Either org_id or group_id is required" }, { status: 400 });
   }
+
   try {
-    const res = await fetch(`${BASE}/support-groups?org_id=${encodeURIComponent(orgId)}`, {
+    const params = new URLSearchParams();
+    if (orgId) params.set("org_id", orgId);
+    if (groupId) params.set("group_id", groupId);
+
+    const res = await fetch(`${BASE}/support-teams?${params.toString()}`, {
       cache: "no-store",
       signal: AbortSignal.timeout(30000),
     });
     return forceDecryptResponse(res);
   } catch (e) {
-    return NextResponse.json({ error: "Failed to fetch support groups", detail: String(e?.message || e) }, { status: 500 });
+    return NextResponse.json({ 
+      error: "Failed to fetch support teams", 
+      detail: String(e?.message || e) 
+    }, { status: 500 });
   }
 }
 
 export async function POST(req) {
   try {
-    const raw = await req.json(); // { org_id, name, email?, description? , group_id? }
+    const raw = await req.json(); // { org_id, group_id, name, description?, email?, target_proficiency?, routing_weight?, default_sla_id?, meta? }
     const payload = ENC ? await encryptPayload(raw) : raw;
 
-    const res = await fetch(`${BASE}/support-groups`, {
+    const res = await fetch(`${BASE}/support-teams`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...(ENC ? { "x-encrypted": "1" } : {}) },
+      headers: { 
+        "Content-Type": "application/json", 
+        ...(ENC ? { "x-encrypted": "1" } : {}) 
+      },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30000),
     });
     return forceDecryptResponse(res);
   } catch (e) {
-    return NextResponse.json({ error: "Failed to create support group", detail: String(e?.message || e) }, { status: 500 });
+    return NextResponse.json({ 
+      error: "Failed to create support team", 
+      detail: String(e?.message || e) 
+    }, { status: 500 });
   }
 }
