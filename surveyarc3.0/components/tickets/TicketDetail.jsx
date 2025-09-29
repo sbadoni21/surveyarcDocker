@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
   Divider, IconButton, MenuItem, Paper, Stack, TextField, Typography,
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import SaveIcon from "@mui/icons-material/Save";
@@ -12,7 +13,7 @@ import AssigneeSelect from "./AssigneeSelect";
 import GroupSelect from "./GroupSelect";
 import CollaboratorsSelect from "./CollaboratorsSelect";
 import WorklogModel from "@/models/postGresModels/worklogModel";
-import CollaboratorModel from "@/models/postGresModels/collaboratorModel"; // you created earlier
+import CollaboratorModel from "@/models/postGresModels/collaboratorModel";
 import SLAStatusBar from "./SLAStatusBar";
 import { useSLA } from "@/providers/slaProvider";
 
@@ -21,24 +22,38 @@ const PRIORITIES = ["low", "normal", "high", "urgent"];
 const SEVERITIES = ["sev4", "sev3", "sev2", "sev1"];
 const WORK_KINDS = ["analysis", "investigation", "comms", "fix", "review", "other"];
 
-export default function TicketDetail({ ticket, participants, onAssignGroup, onPatchTeams, onPatchAgents, onUpdate, ...rest }) {
+export default function TicketDetail({
+  ticket,
+  orgId,
+  participants,
+  currentUserId,
+  onAssignGroup,
+  onPatchTeams,
+  onPatchAgents,
+  onUpdate,
+}) {
+  const effectiveOrgId = orgId || ticket?.orgId;
+  const { refreshTicketSLA } = useSLA();
 
   const [edit, setEdit] = useState(false);
   const [draft, setDraft] = useState(ticket);
 
-  // worklogs
   const [logs, setLogs] = useState([]);
   const [logOpen, setLogOpen] = useState(false);
 
-  // collaborators
   const [collabs, setCollabs] = useState([]);
   const [addOpen, setAddOpen] = useState(false);
-  const { refreshTicketSLA } = useSLA();
+
+  const [teamsCsv, setTeamsCsv] = useState("");
+  const [agentsCsv, setAgentsCsv] = useState("");
+
+  const nn = (v) => (v === undefined || v === "" ? null : v);
+
+  useEffect(() => setDraft(ticket), [ticket]);
 
   useEffect(() => {
     if (ticket?.ticketId) refreshTicketSLA(ticket.ticketId).catch(() => {});
   }, [ticket?.ticketId, refreshTicketSLA]);
-  useEffect(() => setDraft(ticket), [ticket]);
 
   useEffect(() => {
     let mounted = true;
@@ -60,24 +75,24 @@ export default function TicketDetail({ ticket, participants, onAssignGroup, onPa
   const applyUpdate = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
 
   const save = async () => {
-    await onUpdate(ticket.ticketId, {
+    await onUpdate?.(ticket.ticketId, {
       subject: draft.subject,
       description: draft.description,
       status: draft.status,
       priority: draft.priority,
       severity: draft.severity,
-      groupId: draft.groupId || null,        // NEW
-      assigneeId: draft.assigneeId || null,
-      category: draft.category || null,
-      subcategory: draft.subcategory || null,
-      productId: draft.productId || null,
-      slaId: draft.slaId || null,
-      dueAt: draft.dueAt || null,
+      groupId: nn(draft.groupId),
+      assigneeId: nn(draft.assigneeId),
+      category: nn(draft.category),
+      subcategory: nn(draft.subcategory),
+      productId: nn(draft.productId),
+      slaId: nn(draft.slaId),
+      dueAt: nn(draft.dueAt),
     });
     setEdit(false);
   };
 
-  const queueOwned = !draft.assigneeId && !!draft.groupId;
+  const queueOwned = !draft?.assigneeId && !!draft?.groupId;
   const assigneeBadge = useMemo(() => {
     if (queueOwned) return `Queue: ${draft.groupName || draft.groupId || "—"}`;
     const name = draft.assigneeName || draft.assigneeId || "Unassigned";
@@ -86,10 +101,10 @@ export default function TicketDetail({ ticket, participants, onAssignGroup, onPa
 
   return (
     <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-            <SLAStatusBar ticket={ticket} />
+      <SLAStatusBar ticket={ticket} />
 
       <Stack spacing={2}>
-        {/* Header */}
+        {/* Title Bar */}
         <Stack direction="row" alignItems="center" justifyContent="space-between">
           <Typography variant="h6" noWrap>
             {ticket.subject}{" "}
@@ -111,151 +126,397 @@ export default function TicketDetail({ ticket, participants, onAssignGroup, onPa
           </Stack>
         </Stack>
 
-        {/* Quick editors */}
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-          <TextField
-            size="small"
-            select
-            label="Status"
-            value={(edit ? draft.status : ticket.status) || "open"}
-            onChange={(e) => edit && applyUpdate("status", e.target.value)}
-            sx={{ minWidth: 160 }}
-          >
-            {STATUSES.map((s) => <MenuItem key={s} value={s}>{s}</MenuItem>)}
-          </TextField>
-
-          <TextField
-            size="small" select label="Priority"
-            value={(edit ? draft.priority : ticket.priority) || "normal"}
-            onChange={(e) => edit && applyUpdate("priority", e.target.value)}
-            sx={{ minWidth: 160 }}
-          >
-            {PRIORITIES.map((p) => <MenuItem key={p} value={p}>{p.toUpperCase()}</MenuItem>)}
-          </TextField>
-
-          <TextField
-            size="small" select label="Severity"
-            value={(edit ? draft.severity : ticket.severity) || "sev4"}
-            onChange={(e) => edit && applyUpdate("severity", e.target.value)}
-            sx={{ minWidth: 160 }}
-          >
-            {SEVERITIES.map((s) => <MenuItem key={s} value={s}>{s.toUpperCase()}</MenuItem>)}
-          </TextField>
-
-          {/* Group + Assignee */}
-          <Box minWidth={220}>
-            <GroupSelect
-              orgId={orgId}
-              value={edit ? draft.groupId : ticket.groupId}
-              onChange={(v) => edit && applyUpdate("groupId", v)}
-            />
-          </Box>
-          <Box minWidth={240}>
-            <AssigneeSelect
-              groupId={draft.groupId || undefined}   // restrict by group
-              orgId={orgId}
-              value={edit ? draft.assigneeId : ticket.assigneeId}
-              onChange={(v) => { if (!edit) setEdit(true); setDraft((d) => ({ ...d, assigneeId: v })); }}
-              onlyAgents
-              placeholder={(!draft.assigneeId && draft.groupId) ? "Queue-owned (optional)" : "Select assignee"}
-            />
-          </Box>
-        </Stack>
-
-        {/* Participants strip */}
-        <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center">
-          <Chip label={assigneeBadge} color="primary" size="small" />
-          {!!ticket.tags?.length && ticket.tags.map((tg) => (
-            <Chip key={tg.tag_id || tg.name} label={tg.name} size="small" variant="outlined" />
-          ))}
-          <Chip
-            label={`Collaborators: ${collabs.length}`}
-            size="small"
-            onClick={() => setAddOpen(true)}
-            variant="outlined"
-          />
-        </Stack>
-
-        {/* Collaborators list (compact) */}
-        {!!collabs.length && (
-          <Stack direction="row" spacing={0.5} flexWrap="wrap">
-            {collabs.map((c) => (
-              <Chip
-                key={c.user_id}
-                label={`${c.user_id}${c.role ? ` • ${c.role}` : ""}`}
-                onDelete={async () => {
-                  await CollaboratorModel.remove(ticket.ticketId, c.user_id);
-                  const list = await CollaboratorModel.list(ticket.ticketId);
-                  setCollabs(Array.isArray(list) ? list : []);
-                }}
-                size="small"
+        {/* Properties Table */}
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ width: 220 }}>Property</TableCell>
+                <TableCell>Value</TableCell>
+                <TableCell sx={{ width: 260 }}>Notes</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {/* Status */}
+              <RowSelect
+                label="Status"
+                value={(edit ? draft.status : ticket.status) || "open"}
+                disabled={!edit}
+                options={STATUSES.map((s) => ({ value: s, label: s }))}
+                onChange={(v) => applyUpdate("status", v)}
+                hint="Lifecycle state"
               />
-            ))}
-          </Stack>
-        )}
 
-        <Divider />
+              {/* Priority */}
+              <RowSelect
+                label="Priority"
+                value={(edit ? draft.priority : ticket.priority) || "normal"}
+                disabled={!edit}
+                options={PRIORITIES.map((p) => ({ value: p, label: p.toUpperCase() }))}
+                onChange={(v) => applyUpdate("priority", v)}
+                hint="Business urgency"
+              />
 
-        {/* Description */}
-        <Stack spacing={1}>
-          <Typography variant="subtitle2" color="text.secondary">Description</Typography>
-          {edit ? (
-            <TextField fullWidth multiline minRows={4} value={draft.description || ""} onChange={(e) => applyUpdate("description", e.target.value)} />
-          ) : (
-            <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>{ticket.description || "—"}</Typography>
-          )}
-        </Stack>
+              {/* Severity */}
+              <RowSelect
+                label="Severity"
+                value={(edit ? draft.severity : ticket.severity) || "sev4"}
+                disabled={!edit}
+                options={SEVERITIES.map((s) => ({ value: s, label: s.toUpperCase() }))}
+                onChange={(v) => applyUpdate("severity", v)}
+                hint="Impact level"
+              />
 
-        {/* Category/Subcategory */}
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-          <TextField size="small" label="Category" value={edit ? (draft.category || "") : (ticket.category || "")} onChange={(e) => edit && applyUpdate("category", e.target.value)} fullWidth />
-          <TextField size="small" label="Subcategory" value={edit ? (draft.subcategory || "") : (ticket.subcategory || "")} onChange={(e) => edit && applyUpdate("subcategory", e.target.value)} fullWidth />
-        </Stack>
-   <Stack spacing={1} sx={{ mt: 1 }}>
-        <Typography variant="body2">Group: {participants?.groupId || "—"}</Typography>
-        <Typography variant="body2">Teams: {(participants?.teamIds || []).join(", ") || "—"}</Typography>
-        <Typography variant="body2">Agents: {(participants?.agentIds || []).join(", ") || "—"}</Typography>
+              {/* Group */}
+              <TableRow>
+                <TableCell>Group</TableCell>
+                <TableCell>
+                  <Box minWidth={260}>
+                    <GroupSelect
+                      orgId={effectiveOrgId}
+                      value={edit ? draft.groupId : ticket.groupId}
+                      onChange={(v) => {
+                        if (!edit) setEdit(true);
+                        setDraft((d) => {
+                          const nextGroup = v ?? null;
+                          return {
+                            ...d,
+                            groupId: nextGroup,
+                            assigneeId: d.groupId !== nextGroup ? null : d.assigneeId,
+                          };
+                        });
+                        // optionally persist immediately:
+                        // onAssignGroup?.(ticket.ticketId, v ?? null);
+                      }}
+                    />
+                  </Box>
+                </TableCell>
+                <TableCell>
+                  <Button
+                    size="small"
+                    onClick={async () => {
+                      if (!edit) setEdit(true);
+                      setDraft((d) => ({ ...d, groupId: null, assigneeId: null }));
+                      await onAssignGroup?.(ticket.ticketId, null);
+                    }}
+                  >
+                    Clear
+                  </Button>
+                </TableCell>
+              </TableRow>
 
-        {/* tiny inline editors (for demo) */}
-        <Stack direction="row" spacing={1}>
-          <Button size="small" onClick={() => onAssignGroup(ticket.ticketId, null)}>Clear Group</Button>
-        </Stack>
+              {/* Assignee */}
+              <TableRow>
+                <TableCell>Assignee</TableCell>
+                <TableCell>
+                  <Box minWidth={280}>
+                    <AssigneeSelect
+                      orgId={effectiveOrgId}
+                      groupId={draft.groupId || undefined}
+                      value={edit ? draft.assigneeId : ticket.assigneeId}
+                      onChange={(v) => {
+                        if (!edit) setEdit(true);
+                        setDraft((d) => ({ ...d, assigneeId: v ?? null }));
+                      }}
+                      onlyAgents
+                      placeholder={
+                        !draft.assigneeId && draft.groupId ? "Queue-owned (optional)" : "Select assignee"
+                      }
+                    />
+                  </Box>
+                </TableCell>
+                <TableCell>
+                  <Chip label={assigneeBadge} size="small" color="primary" />
+                </TableCell>
+              </TableRow>
 
-        <Stack direction="row" spacing={1} alignItems="center">
-          <TextField size="small" label="Teams CSV" value={teamsCsv} onChange={(e) => setTeamsCsv(e.target.value)} />
-          <Button size="small" onClick={() => onPatchTeams(ticket.ticketId, teamsCsv.split(",").map(s => s.trim()).filter(Boolean), "add")}>Add</Button>
-          <Button size="small" onClick={() => onPatchTeams(ticket.ticketId, teamsCsv.split(",").map(s => s.trim()).filter(Boolean), "remove")}>Remove</Button>
-          <Button size="small" onClick={() => onPatchTeams(ticket.ticketId, teamsCsv.split(",").map(s => s.trim()).filter(Boolean), "replace")}>Set</Button>
-        </Stack>
+              {/* Category/Subcategory */}
+              <RowText
+                label="Category"
+                value={edit ? (draft.category || "") : (ticket.category || "")}
+                disabled={!edit}
+                onChange={(v) => applyUpdate("category", v)}
+                hint="High-level area"
+              />
+              <RowText
+                label="Subcategory"
+                value={edit ? (draft.subcategory || "") : (ticket.subcategory || "")}
+                disabled={!edit}
+                onChange={(v) => applyUpdate("subcategory", v)}
+                hint="Specific area"
+              />
 
-        <Stack direction="row" spacing={1} alignItems="center">
-          <TextField size="small" label="Agents CSV" value={agentsCsv} onChange={(e) => setAgentsCsv(e.target.value)} />
-          <Button size="small" onClick={() => onPatchAgents(ticket.ticketId, agentsCsv.split(",").map(s => s.trim()).filter(Boolean), "add")}>Add</Button>
-          <Button size="small" onClick={() => onPatchAgents(ticket.ticketId, agentsCsv.split(",").map(s => s.trim()).filter(Boolean), "remove")}>Remove</Button>
-          <Button size="small" onClick={() => onPatchAgents(ticket.ticketId, agentsCsv.split(",").map(s => s.trim()).filter(Boolean), "replace")}>Set</Button>
-        </Stack>
-      </Stack>
-        {/* Worklogs */}
-        <Stack spacing={1}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between">
-            <Typography variant="subtitle2" color="text.secondary">Worklogs</Typography>
-            <Button size="small" startIcon={<AddIcon />} onClick={() => setLogOpen(true)}>Log work</Button>
-          </Stack>
-          {logs?.length ? (
-            <Stack spacing={0.75}>
-              {logs.map((wl) => (
-                <Paper key={wl.worklog_id} variant="outlined" sx={{ p: 1, borderRadius: 1.5 }}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Typography variant="body2"><b>{wl.kind}</b> • {wl.minutes}m{wl.note ? ` — ${wl.note}` : ""}</Typography>
-                    <Typography variant="caption" color="text.secondary">{new Date(wl.created_at).toLocaleString()}</Typography>
+              {/* Subject */}
+              <RowText
+                label="Subject"
+                value={edit ? (draft.subject || "") : (ticket.subject || "")}
+                disabled={!edit}
+                onChange={(v) => applyUpdate("subject", v)}
+              />
+
+              {/* Due At */}
+              <RowText
+                label="Due at"
+                value={edit ? (draft.dueAt || "") : (ticket.dueAt || "")}
+                disabled={!edit}
+                onChange={(v) => applyUpdate("dueAt", v)}
+                placeholder="ISO date or leave blank"
+              />
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        {/* Description Table */}
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ width: 220 }}>Description</TableCell>
+                <TableCell>Content</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              <TableRow>
+                <TableCell sx={{ verticalAlign: "top" }}>Details</TableCell>
+                <TableCell>
+                  {edit ? (
+                    <TextField
+                      fullWidth
+                      multiline
+                      minRows={4}
+                      value={draft.description || ""}
+                      onChange={(e) => applyUpdate("description", e.target.value)}
+                    />
+                  ) : (
+                    <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                      {ticket.description || "—"}
+                    </Typography>
+                  )}
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        {/* Participants Table */}
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ width: 220 }}>Participants</TableCell>
+                <TableCell>Value</TableCell>
+                <TableCell sx={{ width: 260 }}>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              <TableRow>
+                <TableCell>Group</TableCell>
+                <TableCell>{(edit ? draft.groupId : participants?.groupId) || "—"}</TableCell>
+                <TableCell>
+                  <Button
+                    size="small"
+                    onClick={async () => {
+                      if (!edit) setEdit(true);
+                      setDraft((d) => ({ ...d, groupId: null, assigneeId: null }));
+                      await onAssignGroup?.(ticket.ticketId, null);
+                    }}
+                  >
+                    Clear Group
+                  </Button>
+                </TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>Teams</TableCell>
+                <TableCell>{(participants?.teamIds || []).join(", ") || "—"}</TableCell>
+                <TableCell>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <TextField
+                      size="small"
+                      label="Teams CSV"
+                      value={teamsCsv}
+                      onChange={(e) => setTeamsCsv(e.target.value)}
+                    />
+                    <Button
+                      size="small"
+                      onClick={() =>
+                        onPatchTeams?.(
+                          ticket.ticketId,
+                          teamsCsv.split(",").map((s) => s.trim()).filter(Boolean),
+                          "add"
+                        )
+                      }
+                    >
+                      Add
+                    </Button>
+                    <Button
+                      size="small"
+                      onClick={() =>
+                        onPatchTeams?.(
+                          ticket.ticketId,
+                          teamsCsv.split(",").map((s) => s.trim()).filter(Boolean),
+                          "remove"
+                        )
+                      }
+                    >
+                      Remove
+                    </Button>
+                    <Button
+                      size="small"
+                      onClick={() =>
+                        onPatchTeams?.(
+                          ticket.ticketId,
+                          teamsCsv.split(",").map((s) => s.trim()).filter(Boolean),
+                          "replace"
+                        )
+                      }
+                    >
+                      Set
+                    </Button>
                   </Stack>
-                </Paper>
-              ))}
-            </Stack>
-          ) : <Typography variant="body2" color="text.secondary">No work logged yet.</Typography>}
-        </Stack>
+                </TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>Agents</TableCell>
+                <TableCell>{(participants?.agentIds || []).join(", ") || "—"}</TableCell>
+                <TableCell>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <TextField
+                      size="small"
+                      label="Agents CSV"
+                      value={agentsCsv}
+                      onChange={(e) => setAgentsCsv(e.target.value)}
+                    />
+                    <Button
+                      size="small"
+                      onClick={() =>
+                        onPatchAgents?.(
+                          ticket.ticketId,
+                          agentsCsv.split(",").map((s) => s.trim()).filter(Boolean),
+                          "add"
+                        )
+                      }
+                    >
+                      Add
+                    </Button>
+                    <Button
+                      size="small"
+                      onClick={() =>
+                        onPatchAgents?.(
+                          ticket.ticketId,
+                          agentsCsv.split(",").map((s) => s.trim()).filter(Boolean),
+                          "remove"
+                        )
+                      }
+                    >
+                      Remove
+                    </Button>
+                    <Button
+                      size="small"
+                      onClick={() =>
+                        onPatchAgents?.(
+                          ticket.ticketId,
+                          agentsCsv.split(",").map((s) => s.trim()).filter(Boolean),
+                          "replace"
+                        )
+                      }
+                    >
+                      Set
+                    </Button>
+                  </Stack>
+                </TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>Tags</TableCell>
+                <TableCell colSpan={2}>
+                  <Stack direction="row" spacing={1} flexWrap="wrap">
+                    {(ticket.tags || []).map((tg) => (
+                      <Chip
+                        key={tg.tag_id || tg.name}
+                        label={tg.name}
+                        size="small"
+                        variant="outlined"
+                      />
+                    ))}
+                  </Stack>
+                </TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>Collaborators</TableCell>
+                <TableCell>
+                  <Stack direction="row" spacing={0.5} flexWrap="wrap">
+                    {collabs.length
+                      ? collabs.map((c) => (
+                          <Chip
+                            key={c.user_id}
+                            label={`${c.user_id}${c.role ? ` • ${c.role}` : ""}`}
+                            onDelete={async () => {
+                              await CollaboratorModel.remove(ticket.ticketId, c.user_id);
+                              const list = await CollaboratorModel.list(ticket.ticketId);
+                              setCollabs(Array.isArray(list) ? list : []);
+                            }}
+                            size="small"
+                          />
+                        ))
+                      : "—"}
+                  </Stack>
+                </TableCell>
+                <TableCell>
+                  <Button size="small" startIcon={<AddIcon />} onClick={() => setAddOpen(true)}>
+                    Add
+                  </Button>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </TableContainer>
 
-        {/* Actions */}
+        {/* Worklogs Table */}
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Worklogs</TableCell>
+                <TableCell align="right">
+                  <Button size="small" startIcon={<AddIcon />} onClick={() => setLogOpen(true)}>
+                    Log work
+                  </Button>
+                </TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>Entry</TableCell>
+                <TableCell align="right">Created</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {logs?.length ? (
+                logs.map((wl) => (
+                  <TableRow key={wl.worklog_id}>
+                    <TableCell>
+                      <Typography variant="body2">
+                        <b>{wl.kind}</b> • {wl.minutes}m{wl.note ? ` — ${wl.note}` : ""}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="caption" color="text.secondary">
+                        {new Date(wl.created_at).toLocaleString()}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={2}>
+                    <Typography variant="body2" color="text.secondary">
+                      No work logged yet.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        {/* Footer Actions */}
         {edit && (
           <Stack direction="row" spacing={1} justifyContent="flex-end">
             <Button onClick={() => { setDraft(ticket); setEdit(false); }}>Cancel</Button>
@@ -282,9 +543,11 @@ export default function TicketDetail({ ticket, participants, onAssignGroup, onPa
       <AddCollaboratorsDialog
         open={addOpen}
         onClose={() => setAddOpen(false)}
-        orgId={orgId}
+        orgId={effectiveOrgId}
         onAdd={async (userIds) => {
-          await Promise.all(userIds.map((uid) => CollaboratorModel.add(ticket.ticketId, { userId: uid, role: "contributor" })));
+          await Promise.all(
+            userIds.map((uid) => CollaboratorModel.add(ticket.ticketId, { userId: uid, role: "contributor" }))
+          );
           const list = await CollaboratorModel.list(ticket.ticketId);
           setCollabs(Array.isArray(list) ? list : []);
           setAddOpen(false);
@@ -293,6 +556,54 @@ export default function TicketDetail({ ticket, participants, onAssignGroup, onPa
     </Paper>
   );
 }
+
+/* ---------- Small helpers for table rows ---------- */
+
+function RowSelect({ label, value, onChange, disabled, options, hint }) {
+  return (
+    <TableRow>
+      <TableCell>{label}</TableCell>
+      <TableCell>
+        <TextField
+          select
+          size="small"
+          value={value}
+          onChange={(e) => onChange?.(e.target.value)}
+          disabled={disabled}
+          sx={{ minWidth: 220 }}
+        >
+          {options.map((o) => (
+            <MenuItem key={o.value} value={o.value}>
+              {o.label}
+            </MenuItem>
+          ))}
+        </TextField>
+      </TableCell>
+      <TableCell>{hint || null}</TableCell>
+    </TableRow>
+  );
+}
+
+function RowText({ label, value, onChange, disabled, placeholder, hint }) {
+  return (
+    <TableRow>
+      <TableCell>{label}</TableCell>
+      <TableCell>
+        <TextField
+          size="small"
+          value={value}
+          onChange={(e) => onChange?.(e.target.value)}
+          disabled={disabled}
+          placeholder={placeholder}
+          fullWidth
+        />
+      </TableCell>
+      <TableCell>{hint || null}</TableCell>
+    </TableRow>
+  );
+}
+
+/* ---------- Dialogs ---------- */
 
 function WorklogDialog({ open, onClose, ticketId, currentUserId }) {
   const [minutes, setMinutes] = useState(15);
@@ -303,9 +614,18 @@ function WorklogDialog({ open, onClose, ticketId, currentUserId }) {
   const save = async () => {
     setSaving(true);
     try {
-      await WorklogModel.create(ticketId, { userId: currentUserId, minutes: Number(minutes) || 0, kind, note: note?.trim() || undefined });
+      await WorklogModel.create(ticketId, {
+        userId: currentUserId,
+        minutes: Number(minutes) || 0,
+        kind,
+        note: note?.trim() || undefined,
+      });
       onClose?.(true);
-    } catch { onClose?.(false); } finally { setSaving(false); }
+    } catch {
+      onClose?.(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -322,7 +642,9 @@ function WorklogDialog({ open, onClose, ticketId, currentUserId }) {
       </DialogContent>
       <DialogActions>
         <Button onClick={() => onClose?.(false)} disabled={saving}>Cancel</Button>
-        <Button onClick={save} variant="contained" disabled={saving || !minutes || Number(minutes) <= 0}>{saving ? "Saving…" : "Save"}</Button>
+        <Button onClick={save} variant="contained" disabled={saving || !minutes || Number(minutes) <= 0}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
       </DialogActions>
     </Dialog>
   );

@@ -41,6 +41,8 @@
     "react-fast-marquee": "^1.6.5",
     "react-icons": "^5.5.0",
     "react-loading-skeleton": "^3.5.0",
+    "react-quill": "^2.0.0",
+    "react-quill-new": "^3.6.0",
     "reactflow": "^11.11.4",
     "recharts": "^2.15.3",
     "simple-encryptor": "^4.0.0",

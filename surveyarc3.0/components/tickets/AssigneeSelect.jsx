@@ -18,39 +18,47 @@ export default function AssigneeSelect({
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState([]);
   const [options, setOptions] = useState([]);
-
-  // normalize incoming value to string ("" for unassigned)
   const normalizedValue = value ? String(value) : "";
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      // If a group is selected, restrict to its members; else list org users
-      if (groupId) {
-        const members = await SupportGroupModel.listMembers(groupId);
-        // members array has user_id; fetch user details in parallel (or show raw)
-        const users = await Promise.all(
-          (members || []).map(async (m) => {
-            try { return await UserModel.get(m.user_id); } catch { return { uid: m.user_id, display_name: m.user_id }; }
-          })
-        );
-        if (mounted) setOptions(users.map(u => ({
-          uid: u.uid,
-          displayName: u.display_name || u.displayName || u.email || u.uid,
-        })));
-      } else if (orgId) {
-        const users = await UserModel.listActiveByOrg({ orgId });
-        if (mounted) setOptions(users.map(u => ({
-          uid: u.uid,
-          displayName: u.display_name || u.displayName || u.email || u.uid,
-        })));
-      } else {
-        if (mounted) setOptions([]);
-      }
-    })();
-    return () => { mounted = false; };
-  }, [orgId, groupId]);
 
+useEffect(() => {
+  let mounted = true;
+  (async () => {
+    if (groupId) {
+      const members = await SupportGroupModel.listMembers(groupId);
+           const teamLeads = members.filter(u => 
+        u.role === 'lead' || 
+        u.permissions?.includes('lead') ||
+        u.is_team_lead === true
+      );
+      const users = await Promise.all(
+        (teamLeads || []).map(async (m) => {
+          try { return await UserModel.get(m.user_id); } catch { return { uid: m.user_id, display_name: m.user_id }; }
+        })
+      );
+ 
+      if (mounted) setOptions(users.map(u => ({
+        uid: u.uid,
+        displayName: u.display_name || u.displayName || u.email || u.uid,
+      })));
+      console.log(teamLeads)
+    } else if (orgId) {
+      const users = await UserModel.listActiveByOrg({ orgId });
+      const teamLeads = users.filter(u => 
+        u.role === 'lead' || 
+        u.permissions?.includes('lead') ||
+        u.is_team_lead === true
+      );
+      if (mounted) setOptions(teamLeads.map(u => ({
+        uid: u.uid,
+        displayName: u.display_name || u.displayName || u.email || u.uid,
+      })));
+    } else {
+      if (mounted) setOptions([]);
+    }
+  })();
+  return () => { mounted = false; };
+}, [orgId, groupId]);
   const v = useMemo(() => value || "", [value]);
 
   return (

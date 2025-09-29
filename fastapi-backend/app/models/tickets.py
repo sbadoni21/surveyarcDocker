@@ -66,8 +66,6 @@ class TicketLinkType(str, enum.Enum):
     child_of = "child_of"
 
 
-# ---------------------- Association (M2M) tables ----------------------
-
 ticket_tags = Table(
     "ticket_tags",
     Base.metadata,
@@ -76,13 +74,6 @@ ticket_tags = Table(
     Index("ix_ticket_tags_ticket_id", "ticket_id"),
     Index("ix_ticket_tags_tag_id", "tag_id"),
 )
-
-
-
-
-
-
-
 
 
 class Ticket(Base):
@@ -125,6 +116,7 @@ class Ticket(Base):
     sla_status = relationship("TicketSLAStatus", uselist=False, back_populates="ticket", cascade="all, delete-orphan")
     team_ids:  Mapped[list[str]] = mapped_column(ARRAY(String), default=list, nullable=False, index=False)
     agent_ids: Mapped[list[str]] = mapped_column(ARRAY(String), default=list, nullable=False, index=False)
+    
 
     __table_args__ = (
         Index("ix_ticket_org_status", "org_id", "status"),

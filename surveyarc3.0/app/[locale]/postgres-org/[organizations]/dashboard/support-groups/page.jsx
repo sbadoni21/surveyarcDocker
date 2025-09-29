@@ -4,7 +4,8 @@ import {
   Users, Plus, Edit, Trash2, Settings, ChevronDown, ChevronRight,
   UserPlus, Shield, Target, Search, Filter, MoreHorizontal, 
   AlertCircle, CheckCircle, X, Save, Building2, Group, Router,
-  Calendar as CalendarIcon, Clock, Timer, Activity, Award, TrendingUp
+  Calendar, Clock, Timer, Activity, Award, TrendingUp,
+  Calendar1Icon
 } from "lucide-react";
 import SupportGroupModel from "@/models/postGresModels/supportGroupModel";
 import SupportTeamModel from "@/models/postGresModels/supportTeamModel";
@@ -32,6 +33,24 @@ const ROUTING_TARGETS = {
   team: "Team"
 };
 
+// Validation helper functions
+const validateGroupConstraints = (members) => {
+  return {
+    hasMembers: members && members.length > 0,
+    memberCount: members ? members.length : 0
+  };
+};
+
+const validateTeamConstraints = (members) => {
+  const teamLeads = members ? members.filter(m => m.role === 'lead') : [];
+  return {
+    hasMembers: members && members.length > 0,
+    hasTeamLead: teamLeads.length > 0,
+    teamLeadCount: teamLeads.length,
+    memberCount: members ? members.length : 0
+  };
+};
+
 // Notification Component
 const Notification = ({ message, type, onClose }) => {
   useEffect(() => {
@@ -44,6 +63,7 @@ const Notification = ({ message, type, onClose }) => {
       <div className={`px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 ${
         type === 'error' ? 'bg-red-500 text-white' : 
         type === 'success' ? 'bg-green-500 text-white' : 
+        type === 'warning' ? 'bg-yellow-500 text-white' :
         'bg-blue-500 text-white'
       }`}>
         {type === 'error' ? <AlertCircle className="w-4 h-4" /> : 
@@ -63,7 +83,7 @@ const CalendarStatusChip = ({ calendar, onClick }) => {
   if (!calendar) {
     return (
       <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full flex items-center gap-1">
-        <CalendarIcon className="w-3 h-3" />
+        <Calendar className="w-3 h-3" />
         No Calendar
       </span>
     );
@@ -79,7 +99,7 @@ const CalendarStatusChip = ({ calendar, onClick }) => {
         className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center gap-1 hover:bg-blue-200 transition-colors"
         title={`View ${calendar.name} calendar details`}
       >
-        <CalendarIcon className="w-3 h-3" />
+        <Calendar className="w-3 h-3" />
         {calendar.name}
       </button>
       {hoursCount > 0 && (
@@ -99,26 +119,50 @@ const CalendarStatusChip = ({ calendar, onClick }) => {
 };
 
 // Team Stats Card Component
-const TeamStatsCard = ({ team, members, onViewCalendar }) => {
-  const totalCapacity = members?.reduce((total, member) => {
+const TeamStatsCard = ({ team, members, onViewCalendar, onEditTeam, onDeleteTeam, onAddMember, getUserDisplayInfo, onEditMember, onRemoveMember }) => {
+   const totalCapacity = members?.reduce((total, member) => {
     return total + (member.weekly_capacity_minutes || 0);
   }, 0) || 0;
 
   const activeMembers = members?.filter(m => m.active).length || 0;
   const totalHours = Math.round(totalCapacity / 60);
+  const teamConstraints = validateTeamConstraints(members);
 
   return (
     <div className="bg-gray-50 rounded-lg p-3 space-y-2">
       <div className="flex items-center justify-between">
         <h6 className="font-medium text-sm">{team.name}</h6>
         <div className="flex items-center gap-1">
-          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-            Weight: {team.routingWeight}
-          </span>
-          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
-            {PROFICIENCY_LEVELS[team.targetProficiency]}
-          </span>
+          <button
+            onClick={onEditTeam}
+            className="p-1 hover:bg-white rounded transition-colors"
+            title="Edit team"
+          >
+            <Edit className="w-3 h-3 text-gray-600" />
+          </button>
+          <button
+            onClick={onDeleteTeam}
+            className="p-1 hover:bg-white rounded transition-colors text-red-600"
+            title="Delete team"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
         </div>
+      </div>
+      
+      <div className="flex items-center gap-1 flex-wrap">
+        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+          Weight: {team.routingWeight}
+        </span>
+        <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
+          {PROFICIENCY_LEVELS[team.targetProficiency]}
+        </span>
+        {!teamConstraints.hasTeamLead && (
+          <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+            <AlertCircle className="w-2.5 h-2.5" />
+            No Team Lead
+          </span>
+        )}
       </div>
       
       <CalendarStatusChip 
@@ -140,8 +184,61 @@ const TeamStatsCard = ({ team, members, onViewCalendar }) => {
           <div className="text-gray-500">Holidays</div>
         </div>
       </div>
+<div className="mt-2">
+   {Array.isArray(members) && members.length > 0 ? (
+     <ul  className="divide-y rounded border bg-white">
+       {members.slice(0, 5).map((m) => {
+         const u = getUserDisplayInfo ? getUserDisplayInfo(m.user_id) : { displayName: m.user_id, email: "" };
+         const roleBadge =
+           m.role === "lead"
+             ? "bg-purple-100 text-purple-700"
+             : m.role === "agent"
+             ? "bg-blue-100 text-blue-700"
+             : "bg-gray-100 text-gray-700";
+         return (
+           <li key={m.user_id} className="px-2 py-1.5 text-xs flex items-center gap-2">
+             <div className="min-w-0 flex-1">
+               <div className="truncate font-medium">{u.displayName}</div>
+               {u.email && <div className="truncate text-gray-500">{u.email}</div>}
+             </div>
+             <span className={`shrink-0 px-2 py-0.5 rounded-full ${roleBadge}`}>
+               {MEMBER_ROLES[m.role] || m.role}
+             </span>
+             <button
+               className="shrink-0 p-1 hover:bg-gray-100 rounded"
+               title="Edit member"
+               onClick={() => onEditMember && onEditMember(m)}
+             >
+               <Edit className="w-3 h-3 text-gray-600" />
+             </button>
+             <button
+               className="shrink-0 p-1 hover:bg-gray-100 rounded text-red-600"
+               title="Remove member"
+               onClick={() => onRemoveMember && onRemoveMember(m.user_id)}
+             >
+               <X className="w-3 h-3" />
+             </button>
+           </li>
+         );
+       })}
+     </ul>
+   ) : (
+     <div className="text-xs text-gray-500 italic">No members yet</div>
+   )}
+   {Array.isArray(members) && members.length > 5 && (
+     <div className="text-[11px] text-gray-500 mt-1">+{members.length - 5} more…</div>
+   )}
+ </div>
+      <button
+        onClick={onAddMember}
+        className="w-full text-xs text-blue-600 hover:text-blue-700 flex items-center justify-center gap-1 py-1 hover:bg-white rounded transition-colors"
+      >
+        <UserPlus className="w-3 h-3" />
+        Add Member
+      </button>
     </div>
   );
+
 };
 
 // Enhanced Group Form Modal with UserProvider Integration
@@ -212,7 +309,7 @@ const GroupFormModal = ({ isOpen, onClose, onSave, group, orgId }) => {
             {group ? "Edit Support Group" : "Create Support Group"}
           </h3>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <div className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium mb-2">Group Name</label>
             <input
@@ -295,12 +392,16 @@ const GroupFormModal = ({ isOpen, onClose, onSave, group, orgId }) => {
             </button>
             <button
               type="submit"
+              onClick={(e) => {
+                e.preventDefault();
+                handleSubmit(e);
+              }}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               {group ? "Update" : "Create"}
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
@@ -411,7 +512,7 @@ const TeamFormModal = ({ isOpen, onClose, onSave, team, groupId, orgId }) => {
             {team ? "Edit Team" : "Create Team"}
           </h3>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <div className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium mb-2">Team Name</label>
             <input
@@ -451,7 +552,7 @@ const TeamFormModal = ({ isOpen, onClose, onSave, team, groupId, orgId }) => {
           <div>
             <label className="block text-sm font-medium mb-2">
               <span className="flex items-center gap-2">
-                <CalendarIcon className="w-4 h-4" />
+                <Calendar className="w-4 h-4" />
                 Business Calendar (Optional)
               </span>
             </label>
@@ -579,20 +680,24 @@ const TeamFormModal = ({ isOpen, onClose, onSave, team, groupId, orgId }) => {
               Cancel
             </button>
             <button
-              type="submit"
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                handleSubmit(e);
+              }}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               {team ? "Update" : "Create"}
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
 };
 
-// Enhanced MemberFormModal with UserProvider Integration
-const MemberFormModal = ({ isOpen, onClose, onSave, member, type, orgId }) => {
+// Enhanced MemberFormModal with UserProvider Integration and Validation
+const MemberFormModal = ({ isOpen, onClose, onSave, member, type, orgId, currentMembers }) => {
   const { getActiveUsersByOrg } = useUser();
   const [availableUsers, setAvailableUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -602,6 +707,8 @@ const MemberFormModal = ({ isOpen, onClose, onSave, member, type, orgId }) => {
     proficiency: "l1",
     weekly_capacity_minutes: ""
   });
+
+  const teamConstraints = type === "team" ? validateTeamConstraints(currentMembers) : null;
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -631,18 +738,28 @@ const MemberFormModal = ({ isOpen, onClose, onSave, member, type, orgId }) => {
         weekly_capacity_minutes: member.weekly_capacity_minutes || ""
       });
     } else {
+      // Default to team lead role if team has no team lead
+      const defaultRole = (type === "team" && teamConstraints && !teamConstraints.hasTeamLead) ? "lead" : "agent";
       setFormData({
         user_id: "",
-        role: "agent", 
+        role: defaultRole, 
         proficiency: "l1",
         weekly_capacity_minutes: ""
       });
     }
-  }, [member, isOpen]);
+  }, [member, isOpen, type, teamConstraints]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      // Validation for team constraints
+      if (type === "team") {
+        if (member && member.role === "lead" && formData.role !== "lead" && teamConstraints.teamLeadCount === 1) {
+          alert("Cannot change role: this team must have at least one team lead.");
+          return;
+        }
+      }
+
       const payload = { ...formData };
       if (type === "team" && formData.weekly_capacity_minutes) {
         payload.weekly_capacity_minutes = parseInt(formData.weekly_capacity_minutes);
@@ -658,6 +775,10 @@ const MemberFormModal = ({ isOpen, onClose, onSave, member, type, orgId }) => {
 
   const selectedUser = availableUsers.find(user => user.uid === formData.user_id);
 
+  // Check if changing role would violate constraints
+  const isRoleChangeRestricted = member && type === "team" && member.role === "lead" && 
+                                teamConstraints && teamConstraints.teamLeadCount === 1;
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
@@ -665,8 +786,16 @@ const MemberFormModal = ({ isOpen, onClose, onSave, member, type, orgId }) => {
           <h3 className="text-lg font-semibold">
             {member ? `Edit ${type} Member` : `Add ${type} Member`}
           </h3>
+          {type === "team" && teamConstraints && !teamConstraints.hasTeamLead && !member && (
+            <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded text-sm text-orange-800">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                This team needs at least one Team Lead
+              </div>
+            </div>
+          )}
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <div className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium mb-2">
               Select User
@@ -691,12 +820,14 @@ const MemberFormModal = ({ isOpen, onClose, onSave, member, type, orgId }) => {
                 disabled={!!member}
               >
                 <option value="">Select a user...</option>
-                {availableUsers.map((user) => (
-                  <option key={user.uid} value={user.uid}>
-                    {user.display_name || user.email} 
-                    {user.display_name && user.email && ` (${user.email})`}
-                  </option>
-                ))}
+                {availableUsers
+                  .filter(user => !currentMembers?.some(m => m.user_id === user.uid) || (member && member.user_id === user.uid))
+                  .map((user) => (
+                    <option key={user.uid} value={user.uid}>
+                      {user.display_name || user.email} 
+                      {user.display_name && user.email && ` (${user.email})`}
+                    </option>
+                  ))}
               </select>
             )}
             
@@ -719,11 +850,17 @@ const MemberFormModal = ({ isOpen, onClose, onSave, member, type, orgId }) => {
               value={formData.role}
               onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              disabled={isRoleChangeRestricted}
             >
               {Object.entries(MEMBER_ROLES).map(([key, label]) => (
                 <option key={key} value={key}>{label}</option>
               ))}
             </select>
+            {isRoleChangeRestricted && (
+              <p className="text-xs text-red-600 mt-1">
+                Cannot change role: this team must have at least one team lead
+              </p>
+            )}
           </div>
 
           <div>
@@ -770,14 +907,18 @@ const MemberFormModal = ({ isOpen, onClose, onSave, member, type, orgId }) => {
               Cancel
             </button>
             <button
-              type="submit"
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                handleSubmit(e);
+              }}
               disabled={!formData.user_id || usersLoading}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {member ? "Update" : "Add"}
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
@@ -819,7 +960,7 @@ const CalendarDetailsModal = ({ isOpen, onClose, team, calendarData }) => {
           {/* Calendar Info */}
           <div>
             <h4 className="font-medium mb-3 flex items-center gap-2">
-              <CalendarIcon className="w-4 h-4" />
+              <Calendar1Icon />
               {calendarData.name}
             </h4>
             <div className="grid grid-cols-2 gap-4 text-sm">
@@ -1010,6 +1151,7 @@ export default function SupportGroupsPage() {
       newExpanded.delete(groupId);
     } else {
       newExpanded.add(groupId);
+      await loadOrgUsers();
       await Promise.all([
         loadTeams(groupId),
         loadGroupMembers(groupId)
@@ -1037,7 +1179,7 @@ export default function SupportGroupsPage() {
     }
   };
 
-  // Group operations
+  // Group operations with validation
   const handleSaveGroup = async (groupData) => {
     try {
       if (groupModal.group) {
@@ -1054,6 +1196,19 @@ export default function SupportGroupsPage() {
   };
 
   const handleDeleteGroup = async (groupId) => {
+    const groupConstraints = validateGroupConstraints(groupMembers[groupId]);
+    const groupTeams = teams[groupId] || [];
+    
+    if (groupConstraints.hasMembers) {
+      showNotification("Cannot delete group: remove all members first", "error");
+      return;
+    }
+    
+    if (groupTeams.length > 0) {
+      showNotification("Cannot delete group: remove all teams first", "error");
+      return;
+    }
+    
     if (!confirm("Are you sure you want to delete this group?")) return;
     
     try {
@@ -1066,7 +1221,7 @@ export default function SupportGroupsPage() {
     }
   };
 
-  // Team operations
+  // Team operations with validation
   const handleSaveTeam = async (teamData) => {
     try {
       const convertedData = {
@@ -1096,6 +1251,13 @@ export default function SupportGroupsPage() {
   };
 
   const handleDeleteTeam = async (teamId, groupId) => {
+    const teamConstraints = validateTeamConstraints(teamMembers[teamId]);
+    
+    if (teamConstraints.hasMembers) {
+      showNotification("Cannot delete team: remove all members first", "error");
+      return;
+    }
+    
     if (!confirm("Are you sure you want to delete this team?")) return;
     
     try {
@@ -1108,7 +1270,7 @@ export default function SupportGroupsPage() {
     }
   };
 
-  // Member operations
+  // Member operations with validation
   const handleSaveMember = async (memberData) => {
     try {
       if (!memberData.user_id) {
@@ -1147,14 +1309,41 @@ export default function SupportGroupsPage() {
         }
         await loadTeamMembers(memberModal.parentId);
       }
+      await loadOrgUsers()
       showNotification(`${memberModal.type} member ${memberModal.member ? 'updated' : 'added'} successfully`, "success");
     } catch (error) {
       console.error("Error saving member:", error);
       showNotification(`Error saving member: ${error.message}`, "error");
     }
   };
-
+  const loadTeamMembers = async (teamId) => {
+    try {
+      const members = await SupportTeamModel.listMembers(teamId);
+      setTeamMembers(prev => ({ ...prev, [teamId]: members || [] }));
+    } catch (error) {
+      console.error("Error loading team members:", error);
+      showNotification("Error loading team members", "error");
+    }
+  };
   const handleRemoveMember = async (userId, parentId, type) => {
+    const currentMembers = type === "group" ? groupMembers[parentId] : teamMembers[parentId];
+    const memberToRemove = currentMembers?.find(m => m.user_id === userId);
+    
+    // Validation before removal
+    if (type === "group") {
+      const groupConstraints = validateGroupConstraints(currentMembers);
+      if (groupConstraints.memberCount <= 1) {
+        showNotification("Cannot remove member: group must have at least one member", "error");
+        return;
+      }
+    } else {
+      const teamConstraints = validateTeamConstraints(currentMembers);
+      if (memberToRemove?.role === "lead" && teamConstraints.teamLeadCount <= 1) {
+        showNotification("Cannot remove member: team must have at least one team lead", "error");
+        return;
+      }
+    }
+    
     if (!confirm("Are you sure you want to remove this member?")) return;
     
     try {
@@ -1170,6 +1359,7 @@ export default function SupportGroupsPage() {
       console.error("Error removing member:", error);
       showNotification("Error removing member", "error");
     }
+    await loadOrgUsers();
   };
 
   const filteredGroups = useMemo(() => {
@@ -1235,152 +1425,210 @@ export default function SupportGroupsPage() {
 
         {/* Groups List */}
         <div className="space-y-4">
-          {filteredGroups.map((group) => (
-            <div key={group.groupId} className="bg-white rounded-lg shadow">
-              {/* Group Header */}
-              <div className="p-4 border-b">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => toggleGroupExpanded(group.groupId)}
-                      className="p-1 hover:bg-gray-100 rounded transition-colors"
-                    >
-                      {expandedGroups.has(group.groupId) ? 
-                        <ChevronDown className="w-4 h-4" /> : 
-                        <ChevronRight className="w-4 h-4" />
-                      }
-                    </button>
-                    <Building2 className="w-5 h-5 text-blue-600" />
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{group.name}</h3>
-                      {group.description && (
-                        <p className="text-sm text-gray-600">{group.description}</p>
-                      )}
-                      {group.email && (
-                        <p className="text-xs text-gray-500">{group.email}</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500">
-                      {teams[group.groupId]?.length || 0} teams
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {groupMembers[group.groupId]?.length || 0} members
-                    </span>
-                    <button
-                      onClick={() => setGroupModal({ isOpen: true, group })}
-                      className="p-2 hover:bg-gray-100 rounded transition-colors"
-                      title="Edit group"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteGroup(group.groupId)}
-                      className="p-2 hover:bg-gray-100 rounded text-red-600 transition-colors"
-                      title="Delete group"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Expanded Content */}
-              {expandedGroups.has(group.groupId) && (
-                <div className="p-4 space-y-6">
-                  {/* Group Members Section */}
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="font-medium text-gray-900 flex items-center gap-2">
-                        <Users className="w-4 h-4" />
-                        Group Members ({groupMembers[group.groupId]?.length || 0})
-                      </h4>
+          {filteredGroups.map((group) => {
+            const groupConstraints = validateGroupConstraints(groupMembers[group.groupId]);
+            const groupTeamsCount = teams[group.groupId]?.length || 0;
+            
+            return (
+              <div key={group.groupId} className="bg-white rounded-lg shadow">
+                {/* Group Header */}
+                <div className="p-4 border-b">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
                       <button
-                        onClick={() => setMemberModal({ 
-                          isOpen: true, 
-                          member: null, 
-                          type: "group", 
-                          parentId: group.groupId 
-                        })}
-                        className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
+                        onClick={() => toggleGroupExpanded(group.groupId)}
+                        className="p-1 hover:bg-gray-100 rounded transition-colors"
                       >
-                        <UserPlus className="w-3 h-3" />
-                        Add Member
+                        {expandedGroups.has(group.groupId) ? 
+                          <ChevronDown className="w-4 h-4" /> : 
+                          <ChevronRight className="w-4 h-4" />
+                        }
+                      </button>
+                      <Building2 className="w-5 h-5 text-blue-600" />
+                      <div>
+                        <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                          {group.name}
+                          {!groupConstraints.hasMembers && (
+                            <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+                              <AlertCircle className="w-2.5 h-2.5" />
+                              No Members
+                            </span>
+                          )}
+                        </h3>
+                        {group.description && (
+                          <p className="text-sm text-gray-600">{group.description}</p>
+                        )}
+                        {group.email && (
+                          <p className="text-xs text-gray-500">{group.email}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">
+                        {groupTeamsCount} teams
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {groupConstraints.memberCount} members
+                      </span>
+                      <button
+                        onClick={() => setGroupModal({ isOpen: true, group })}
+                        className="p-2 hover:bg-gray-100 rounded transition-colors"
+                        title="Edit group"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteGroup(group.groupId)}
+                        className="p-2 hover:bg-gray-100 rounded text-red-600 transition-colors"
+                        title="Delete group"
+                        disabled={groupConstraints.hasMembers || groupTeamsCount > 0}
+                      >
+                        <Trash2 className={`w-4 h-4 ${(groupConstraints.hasMembers || groupTeamsCount > 0) ? 'opacity-50' : ''}`} />
                       </button>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {groupMembers[group.groupId]?.map((member) => {
-                        const userInfo = getUserDisplayInfo(member.user_id);
-                        return (
-                          <div key={member.user_id} className="p-3 border rounded-lg">
-                            <div className="flex items-center justify-between">
-                              <div className="flex-1">
-                                <p className="font-medium text-sm">{userInfo.displayName}</p>
-                                {userInfo.email && userInfo.displayName !== userInfo.email && (
-                                  <p className="text-xs text-gray-500">{userInfo.email}</p>
-                                )}
-                                <div className="flex items-center gap-2 mt-1">
-                                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                                    member.role === 'lead' ? 'bg-purple-100 text-purple-700' :
-                                    member.role === 'agent' ? 'bg-blue-100 text-blue-700' :
-                                    'bg-gray-100 text-gray-700'
-                                  }`}>
-                                    {MEMBER_ROLES[member.role]}
-                                  </span>
-                                  <span className="text-xs text-gray-500">
-                                    {PROFICIENCY_LEVELS[member.proficiency]}
-                                  </span>
+                  </div>
+                </div>
+
+                {/* Expanded Content */}
+                {expandedGroups.has(group.groupId) && (
+                  <div className="p-4 space-y-6">
+                    {/* Group Members Section */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                          <Users className="w-4 h-4" />
+                          Group Members ({groupConstraints.memberCount})
+                          {!groupConstraints.hasMembers && (
+                            <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                              Required: At least 1 member
+                            </span>
+                          )}
+                        </h4>
+                        <button
+                          onClick={() => setMemberModal({ 
+                            isOpen: true, 
+                            member: null, 
+                            type: "group", 
+                            parentId: group.groupId 
+                          })}
+                          className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
+                        >
+                          <UserPlus className="w-3 h-3" />
+                          Add Member
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {groupMembers[group.groupId]?.map((member) => {
+                          const userInfo = getUserDisplayInfo(member.user_id);
+                          const canRemove = groupConstraints.memberCount > 1;
+                          
+                          return (
+                            <div key={member.user_id} className="p-3 border rounded-lg">
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <p className="font-medium text-sm">{userInfo.displayName}</p>
+                                  {userInfo.email && userInfo.displayName !== userInfo.email && (
+                                    <p className="text-xs text-gray-500">{userInfo.email}</p>
+                                  )}
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                      member.role === 'lead' ? 'bg-purple-100 text-purple-700' :
+                                      member.role === 'agent' ? 'bg-blue-100 text-blue-700' :
+                                      'bg-gray-100 text-gray-700'
+                                    }`}>
+                                      {MEMBER_ROLES[member.role]}
+                                    </span>
+                                    <span className="text-xs text-gray-500">
+                                      {PROFICIENCY_LEVELS[member.proficiency]}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => setMemberModal({
+                                      isOpen: true,
+                                      member,
+                                      type: "group",
+                                      parentId: group.groupId
+                                    })}
+                                    className="text-blue-600 hover:text-blue-700 p-1 transition-colors"
+                                    title="Edit member"
+                                  >
+                                    <Edit className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleRemoveMember(member.user_id, group.groupId, "group")}
+                                    className={`p-1 transition-colors ${canRemove ? 'text-red-600 hover:text-red-700' : 'text-gray-400 cursor-not-allowed'}`}
+                                    title={canRemove ? "Remove member" : "Cannot remove: group must have at least one member"}
+                                    disabled={!canRemove}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
                                 </div>
                               </div>
-                              <button
-                                onClick={() => handleRemoveMember(member.user_id, group.groupId, "group")}
-                                className="text-red-600 hover:text-red-700 p-1 transition-colors"
-                                title="Remove member"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Teams Section */}
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="font-medium text-gray-900 flex items-center gap-2">
-                        <Group className="w-4 h-4" />
-                        Teams ({teams[group.groupId]?.length || 0})
-                      </h4>
-                      <button
-                        onClick={() => setTeamModal({ 
-                          isOpen: true, 
-                          team: null, 
-                          groupId: group.groupId 
+                          );
                         })}
-                        className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
-                      >
-                        <Plus className="w-3 h-3" />
-                        Add Team
-                      </button>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                      {teams[group.groupId]?.map((team) => (
-                        <TeamStatsCard
-                          key={team.teamId}
-                          team={team}
-                          members={teamMembers[team.teamId]}
-                          onViewCalendar={handleViewCalendar}
-                        />
-                      ))}
+
+                    {/* Teams Section */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                          <Group className="w-4 h-4" />
+                          Teams ({groupTeamsCount})
+                        </h4>
+                        <button
+                          onClick={() => setTeamModal({ 
+                            isOpen: true, 
+                            team: null, 
+                            groupId: group.groupId 
+                          })}
+                          className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
+                        >
+                          <Plus className="w-3 h-3" />
+                          Add Team
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                        {teams[group.groupId]?.map((team) => (
+                          <TeamStatsCard
+                            key={team.teamId}
+                            team={team}
+                            members={teamMembers[team.teamId]}
+                            onViewCalendar={handleViewCalendar}
+                            onEditTeam={() => setTeamModal({ 
+                              isOpen: true, 
+                              team, 
+                              groupId: group.groupId 
+                            })}
+                            getUserDisplayInfo={getUserDisplayInfo}
+                            onDeleteTeam={() => handleDeleteTeam(team.teamId, group.groupId)}
+                            onAddMember={() => setMemberModal({ 
+                              isOpen: true, 
+                              member: null, 
+                              type: "team", 
+                              parentId: team.teamId 
+                            })}
+                             onEditMember={(m) =>
+   setMemberModal({
+     isOpen: true,
+     member: m,            // prefill the modal
+     type: "team",
+     parentId: team.teamId
+   })
+ }
+ onRemoveMember={(userId) => handleRemoveMember(userId, team.teamId, "team")}
+                          />
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-          ))}
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {/* Empty State */}
@@ -1432,6 +1680,7 @@ export default function SupportGroupsPage() {
         member={memberModal.member}
         type={memberModal.type}
         orgId={orgId}
+        currentMembers={memberModal.type === "group" ? groupMembers[memberModal.parentId] : teamMembers[memberModal.parentId]}
       />
 
       <CalendarDetailsModal

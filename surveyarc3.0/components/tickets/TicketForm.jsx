@@ -1,19 +1,27 @@
-// components/tickets/TicketForm.jsx
 "use client";
-import { useEffect, useState, useMemo } from "react";
-import { 
-  Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, 
-  FormControlLabel, MenuItem, Stack, TextField, Typography, Alert, Chip,
-  RadioGroup, Radio, FormControl, FormLabel, Divider, Autocomplete, Avatar
-} from "@mui/material";
-import { AccessTime, CalendarToday, Schedule } from "@mui/icons-material";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Plus, Clock, CheckCircle, AlertCircle, Edit, Clipboard, Tag, Flag,
+  Upload, Trash2, Info, ChevronLeft, ChevronRight, RefreshCw, Save, Target, X
+} from "lucide-react";
+import dynamic from "next/dynamic";
+import "react-quill-new/dist/quill.snow.css";
+
 import AssigneeSelect from "./AssigneeSelect";
 import GroupSelect from "./GroupSelect";
-import CollaboratorsSelect from "./CollaboratorsSelect";
 import TeamMultiSelect from "./TeamMultiSelect";
 import AgentMultiSelect from "./AgentMultiSelect";
+import CollaboratorsSelect from "./CollaboratorsSelect";
+import TagMultiSelect from "./TagMultiSelect";
+import { CategorySelector } from "./CategorySelector";
+
 import { useSLA } from "@/providers/slaProvider";
-import { useBusinessCalendars } from "@/providers/BusinessCalendarsProvider";
+import { useTags } from "@/providers/postGresPorviders/TagProvider";
+import AttachmentModel from "@/models/postGresModels/attachmentModel";
+import { TicketFileUpload } from "../common/FileUpload";
+import { useTicketCategories } from "@/providers/postGresPorviders/TicketCategoryProvider";
+
+const ReactQuill = dynamic(() => import("react-quill-new"), { ssr: false });
 
 const formatMinutes = (minutes) => {
   if (!minutes) return "";
@@ -22,291 +30,144 @@ const formatMinutes = (minutes) => {
   return `${Math.floor(minutes / 1440)}d ${Math.floor((minutes % 1440) / 60)}h`;
 };
 
-const calculateDueDateWithBusinessHours = (minutes, businessCalendar = null) => {
-  if (!minutes) return null;
-  
-  const now = new Date();
-  
-  // If no calendar or no working hours defined, use simple calculation
-  if (!businessCalendar?.working_hours) {
-    return new Date(now.getTime() + (minutes * 60 * 1000)).toISOString();
-  }
-  
-  let remainingMinutes = minutes;
-  let currentDate = new Date(now);
-  
-  const workingHours = businessCalendar.working_hours;
-  const workingDays = businessCalendar.working_days || [1, 2, 3, 4, 5]; // Mon-Fri
-  const holidays = businessCalendar.holidays || [];
-  
-  while (remainingMinutes > 0) {
-    const dayOfWeek = currentDate.getDay();
-    const currentDateStr = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD
-    
-    // Skip holidays
-    if (holidays.some(holiday => holiday.date === currentDateStr)) {
-      currentDate.setDate(currentDate.getDate() + 1);
-      currentDate.setHours(workingHours.start_hour || 9, workingHours.start_minute || 0, 0, 0);
-      continue;
-    }
-    
-    // Skip non-working days
-    if (!workingDays.includes(dayOfWeek)) {
-      currentDate.setDate(currentDate.getDate() + 1);
-      currentDate.setHours(workingHours.start_hour || 9, workingHours.start_minute || 0, 0, 0);
-      continue;
-    }
-    
-    const timeOfDay = currentDate.getHours() * 60 + currentDate.getMinutes();
-    const workStart = (workingHours.start_hour || 9) * 60 + (workingHours.start_minute || 0);
-    const workEnd = (workingHours.end_hour || 17) * 60 + (workingHours.end_minute || 0);
-    
-    // If before work hours, jump to start of work day
-    if (timeOfDay < workStart) {
-      currentDate.setHours(workingHours.start_hour || 9, workingHours.start_minute || 0, 0, 0);
-      continue;
-    }
-    
-    // If after work hours, jump to next work day
-    if (timeOfDay >= workEnd) {
-      currentDate.setDate(currentDate.getDate() + 1);
-      currentDate.setHours(workingHours.start_hour || 9, workingHours.start_minute || 0, 0, 0);
-      continue;
-    }
-    
-    // Calculate minutes available in current work day
-    const minutesLeftInWorkDay = workEnd - timeOfDay;
-    const minutesToAdd = Math.min(remainingMinutes, minutesLeftInWorkDay);
-    
-    currentDate.setMinutes(currentDate.getMinutes() + minutesToAdd);
-    remainingMinutes -= minutesToAdd;
-    
-    // If we still have minutes left, move to next work day
-    if (remainingMinutes > 0) {
-      currentDate.setDate(currentDate.getDate() + 1);
-      currentDate.setHours(workingHours.start_hour || 9, workingHours.start_minute || 0, 0, 0);
-    }
-  }
-  
-  return currentDate.toISOString();
-};
-
-export default function TicketForm({ 
-  open, onClose, onSubmit, initial, orgId, requestorId, 
-  title = "New Ticket", currentUserId, availableTags = []
+export default function TicketForm({
+  open,
+  onClose,
+  onSubmit,
+  initial,
+  orgId,
+  requestorId,
+  currentUserId,
+  title = "New Ticket",
 }) {
-  const { listSLAs, slasByOrg } = useSLA();
-  const { get: getCalendar } = useBusinessCalendars();
-  const allSLAOptions = slasByOrg[orgId] || [];
+  const [activeStep, setActiveStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [stagedUploads, setStagedUploads] = useState([]);
 
+  // Providers
+  const { slasByOrg, listSLAs } = useSLA();
+  const { getCachedTags, list: listTags } = useTags();
+  const { listCategories, listProducts } = useTicketCategories();
+
+  // Load data on mount
+  useEffect(() => {
+    if (!orgId) return;
+    Promise.all([
+      listSLAs(orgId),
+      listTags({ orgId }),
+      listCategories(orgId),
+      listProducts(orgId),
+    ]).catch(console.error);
+  }, [orgId, listSLAs, listTags, listCategories, listProducts]);
+  // Helper to calculate SLA due dates
+  const calculateDueDate = (minutes) => {
+    if (!minutes) return null;
+    const now = new Date();
+    const due = new Date(now.getTime() + minutes * 60000);
+    return due.toISOString();
+  };
   const [form, setForm] = useState(() => ({
     subject: initial?.subject || "",
     description: initial?.description || "",
     queueOwned: Boolean(!initial?.assigneeId && initial?.groupId),
     groupId: initial?.groupId || "",
-    selectedTeams: initial?.selectedTeams || [], // Array of team objects with calendar_id
+    teamIds: initial?.teamIds || [],
     agentIds: initial?.agentIds || [],
     assigneeId: initial?.assigneeId || "",
-    
-    // classification
-    category: initial?.category || "",
-    subcategory: initial?.subcategory || "",
+    categoryId: initial?.categoryId || "",
+    subcategoryId: initial?.subcategoryId || "",
     productId: initial?.productId || "",
-
-    // SLA configuration
     slaId: initial?.slaId || "",
-    slaMode: "priority", // "priority" or "severity"
+    slaMode: "priority",
     priority: "normal",
     severity: "sev4",
-    
-    // calculated fields
     dueAt: initial?.dueAt || "",
     firstResponseDueAt: initial?.firstResponseDueAt || "",
     resolutionDueAt: initial?.resolutionDueAt || "",
-
-    // tags
-    selectedTags: Array.isArray(initial?.tags)
-      ? initial.tags.map((t) =>
-          typeof t === "string"
-            ? { tag_id: t, tagId: t, name: t } // fallback if only id provided
-            : ({ ...t, tagId: t.tag_id ?? t.tagId })
-        )
-      : [],    
-    // collaborators
-    collaborators: [],
+    tagIds: Array.isArray(initial?.tags)
+      ? initial.tags
+          .map((t) => (typeof t === "string" ? t : t.tag_id ?? t.tagId))
+          .filter(Boolean)
+      : [],
+    collaboratorIds: initial?.collaboratorIds || [],
   }));
-  useEffect(() => {
-    if (!open) return;
-    setForm((f) => {
-      const byId = new Map(availableTags.map(t => [t.tagId ?? t.tag_id, t]));
-      const hydrated = (f.selectedTags || []).map(t => byId.get(t.tagId ?? t.tag_id) || t);
-      return { ...f, selectedTags: hydrated };
-    });
-  }, [open, availableTags]);
-  const [saving, setSaving] = useState(false);
-  const [teamCalendar, setTeamCalendar] = useState(null);
-  const [calendarLoading, setCalendarLoading] = useState(false);
-  
+
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const isQueueOwned = form.queueOwned === true;
 
-  // Get available SLAs
-  const availableSLAOptions = useMemo(() => {
-    return allSLAOptions.filter(sla => {
-      if (!sla.active) return false;
-      
-      // Check group filter if SLA has group restrictions
-      if (sla.rules?.applies_to?.group_id_in) {
-        if (!form.groupId || !sla.rules.applies_to.group_id_in.includes(form.groupId)) {
-          return false;
-        }
-      }
-      
-      return true;
-    });
-  }, [allSLAOptions, form.groupId]);
-
-  // Get current SLA details
-  const selectedSLA = availableSLAOptions.find(sla => sla.sla_id === form.slaId);
-  
-  // Check if SLA has priority or severity maps
-  const hasPriorityMap = selectedSLA?.rules?.priority_map && Object.keys(selectedSLA.rules.priority_map).length > 0;
-  const hasSeverityMap = selectedSLA?.rules?.severity_map && Object.keys(selectedSLA.rules.severity_map).length > 0;
-  
-  // Memoize available options to prevent re-render loops
-  const availableOptions = useMemo(() => {
-    if (!selectedSLA?.rules) return [];
-    
-    if (form.slaMode === "priority" && hasPriorityMap) {
-      return Object.keys(selectedSLA.rules.priority_map);
-    } else if (form.slaMode === "severity" && hasSeverityMap) {
-      return Object.keys(selectedSLA.rules.severity_map);
-    }
-    return [];
-  }, [selectedSLA?.rules, form.slaMode, hasPriorityMap, hasSeverityMap]);
-  
-  // Memoize current resolution time calculation
-  const currentResolutionTime = useMemo(() => {
-    if (!selectedSLA) return null;
-    
-    if (form.slaMode === "priority" && hasPriorityMap) {
-      return selectedSLA.rules.priority_map[form.priority] || selectedSLA.resolution_minutes;
-    } else if (form.slaMode === "severity" && hasSeverityMap) {
-      return selectedSLA.rules.severity_map[form.severity] || selectedSLA.resolution_minutes;
-    }
-    
-    return selectedSLA.resolution_minutes;
-  }, [selectedSLA, form.slaMode, form.priority, form.severity, hasPriorityMap, hasSeverityMap]);
-  
-  // Debug logging - only when selectedSLA changes
+  // Reset teams & agents on group change
   useEffect(() => {
-    if (selectedSLA) {
-      console.log('Selected SLA:', selectedSLA);
-      console.log('SLA Rules:', selectedSLA?.rules);
-      console.log('Has Priority Map:', hasPriorityMap);
-      console.log('Has Severity Map:', hasSeverityMap);
-      console.log('Priority Map:', selectedSLA?.rules?.priority_map);
-      console.log('Severity Map:', selectedSLA?.rules?.severity_map);
-    }
-  }, [selectedSLA, hasPriorityMap, hasSeverityMap]);
-  const firstResponseTime = selectedSLA?.first_response_minutes;
-
-  // Reset SLA mode when SLA changes
-  useEffect(() => {
-    if (selectedSLA) {
-      // Default to priority mode if available, otherwise severity
-      const defaultMode = hasPriorityMap ? "priority" : hasSeverityMap ? "severity" : "priority";
-      setForm(f => ({ ...f, slaMode: defaultMode }));
-    }
-  }, [selectedSLA, hasPriorityMap, hasSeverityMap]);
-
-  // Reset selection when SLA mode changes or available options change
-  useEffect(() => {
-    if (selectedSLA && availableOptions.length > 0) {
-      if (form.slaMode === "priority" && !availableOptions.includes(form.priority)) {
-        setForm(f => ({ ...f, priority: availableOptions[0] }));
-      } else if (form.slaMode === "severity" && !availableOptions.includes(form.severity)) {
-        setForm(f => ({ ...f, severity: availableOptions[0] }));
-      }
-    }
-  }, [form.slaMode, selectedSLA?.sla_id, availableOptions.join(','), form.priority, form.severity]);
-
-  // Fetch team calendar when teams change
-  useEffect(() => {
-    if (form.selectedTeams.length > 0) {
-      const getTeamCalendar = async () => {
-        setCalendarLoading(true);
-        try {
-          // Get the first team's calendar (you could implement merging logic for multiple calendars)
-          const firstTeam = form.selectedTeams[0];
-          
-          if (firstTeam?.calendar_id) {
-            const calendar = await getCalendar(firstTeam.calendar_id);
-            setTeamCalendar(calendar);
-          } else {
-            setTeamCalendar(null);
-          }
-        } catch (error) {
-          console.error('Failed to fetch team calendar:', error);
-          setTeamCalendar(null);
-        } finally {
-          setCalendarLoading(false);
-        }
-      };
-      
-      getTeamCalendar();
-    } else {
-      setTeamCalendar(null);
-    }
-  }, [form.selectedTeams, getCalendar]);
-
-  // Calculate due dates when SLA parameters or calendar change
-  useEffect(() => {
-    if (selectedSLA && (currentResolutionTime || firstResponseTime)) {
-      const firstResponseDue = firstResponseTime 
-        ? calculateDueDateWithBusinessHours(firstResponseTime, teamCalendar)
-        : null;
-      const resolutionDue = currentResolutionTime
-        ? calculateDueDateWithBusinessHours(currentResolutionTime, teamCalendar)
-        : null;
-      
-      setForm(f => ({
-        ...f,
-        firstResponseDueAt: firstResponseDue || "",
-        resolutionDueAt: resolutionDue || ""
-      }));
-    } else {
-      setForm(f => ({
-        ...f,
-        firstResponseDueAt: "",
-        resolutionDueAt: ""
-      }));
-    }
-  }, [selectedSLA, currentResolutionTime, firstResponseTime, teamCalendar]);
-
-  // Reset teams & agentIds when group changes
-  useEffect(() => {
-    setForm((f) => ({ ...f, selectedTeams: [], agentIds: [] }));
+    setForm((f) => ({ ...f, teamIds: [], agentIds: [] }));
   }, [form.groupId]);
 
+  // Clear assignee if switching to queue-owned
   useEffect(() => {
-    if (isQueueOwned && form.assigneeId) setForm((f) => ({ ...f, assigneeId: "" }));
-  }, [isQueueOwned]);
+    if (isQueueOwned && form.assigneeId) {
+      setForm((f) => ({ ...f, assigneeId: "" }));
+    }
+  }, [isQueueOwned, form.assigneeId]);
 
-  const subjectOK = form.subject.trim().length > 0;
-  const groupOK = !isQueueOwned || (isQueueOwned && form.groupId.trim().length > 0);
-  const slaConfigOK = !selectedSLA || (selectedSLA && availableOptions.length > 0);
-  const canSave = subjectOK && groupOK && slaConfigOK;
+  // SLA options filtered by group
+  const availableSLAOptions = (slasByOrg?.[orgId] || []).filter((sla) => {
+    if (!sla.active) return false;
+    if (sla.rules?.applies_to?.group_id_in) {
+      if (!form.groupId || !sla.rules.applies_to.group_id_in.includes(form.groupId)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const availableTagOptions = getCachedTags(orgId) || [];
+
+  const selectedSLA = availableSLAOptions.find((s) => s.sla_id === form.slaId);
+  const hasPriorityMap =
+    selectedSLA?.rules?.priority_map && Object.keys(selectedSLA.rules.priority_map).length > 0;
+  const hasSeverityMap =
+    selectedSLA?.rules?.severity_map && Object.keys(selectedSLA.rules.severity_map).length > 0;
+
+  const currentResolutionTime = useMemo(() => {
+    if (!selectedSLA) return null;
+    if (form.slaMode === "priority" && hasPriorityMap) {
+      return selectedSLA.rules.priority_map[form.priority] || selectedSLA.resolution_minutes;
+    }
+    if (form.slaMode === "severity" && hasSeverityMap) {
+      return selectedSLA.rules.severity_map[form.severity] || selectedSLA.resolution_minutes;
+    }
+    return selectedSLA.resolution_minutes;
+  }, [selectedSLA, form.slaMode, form.priority, form.severity, hasPriorityMap, hasSeverityMap]);
+
+  const firstResponseTime = selectedSLA?.first_response_minutes;
+
+  // Validation
+  const validations = {
+    basic: form.subject.trim().length > 0,
+    assignment: !isQueueOwned || (isQueueOwned && form.groupId.trim().length > 0),
+    sla: !selectedSLA || (selectedSLA && (hasPriorityMap || hasSeverityMap || true)),
+  };
+  const stepValidation = [validations.basic, validations.assignment, true, true, true, true];
+  const canProceed = (step) => stepValidation[step];
+  const canSubmit = Object.values(validations).every(Boolean);
 
   const handleSubmit = async () => {
     setSaving(true);
     try {
-     const tagIds = (form.selectedTags || [])
-        .map(t => t.tagId ?? t.tag_id)
-        .filter(Boolean);      
-      // Convert team objects back to IDs for API
-      const teamIds = form.selectedTeams.map(team => team.team_id || team);
+      const knownSlaIds = new Set((availableSLAOptions || []).map((s) => s?.sla_id));
+      const safeSlaId = form.slaId && knownSlaIds.has(form.slaId) ? form.slaId : null;
+
+      // Calculate SLA due dates if SLA is selected
+      let calculatedFirstResponseDue = null;
+      let calculatedResolutionDue = null;
       
+      if (safeSlaId && selectedSLA) {
+        if (firstResponseTime) {
+          calculatedFirstResponseDue = calculateDueDate(firstResponseTime);
+        }
+        if (currentResolutionTime) {
+          calculatedResolutionDue = calculateDueDate(currentResolutionTime);
+        }
+      }
+
       const payload = {
         orgId,
         requesterId: requestorId,
@@ -314,545 +175,630 @@ export default function TicketForm({
         description: form.description || "",
         priority: form.priority,
         severity: form.severity,
-
         groupId: form.groupId || null,
-        teamIds: teamIds,
+        teamIds: form.teamIds || [],
         agentIds: form.agentIds || [],
-        assigneeId: isQueueOwned ? null : (form.assigneeId || null),
-
-        category: form.category || null,
-        subcategory: form.subcategory || null,
+        assigneeId: isQueueOwned ? null : form.assigneeId || null,
+        categoryId: form.categoryId || null,
+        subcategoryId: form.subcategoryId || null,
         productId: form.productId || null,
-        
-        // SLA data
-        slaId: form.slaId || null,
+       slaId: safeSlaId,
+        sla_processing: safeSlaId ? {
+        sla_mode: form.slaMode,
+        calendar_id: selectedSLA?.calendar_id || null,
+        first_response_due_at: calculatedFirstResponseDue,
+        resolution_due_at: calculatedResolutionDue,
+      } : null,
         dueAt: form.dueAt || null,
         firstResponseDueAt: form.firstResponseDueAt || null,
         resolutionDueAt: form.resolutionDueAt || null,
-        
-        // Additional SLA context for backend processing
         slaMode: form.slaMode,
-        calendarId: teamCalendar?.calendar_id || null,
-        
-        tags: tagIds.length ? tagIds : undefined,
+        tags: form.tagIds?.length ? form.tagIds : undefined,
+        collaboratorIds: form.collaboratorIds || [],
       };
-      
+
       const created = await onSubmit(payload);
+      const ticketId = created?.ticketId ?? created?.ticket_id;
+
+      // Adopt staged uploads
+      if (ticketId && stagedUploads.length) {
+        await Promise.all(
+          stagedUploads.map(async (u) => {
+            if (u?.attachmentRecord) return;
+            await AttachmentModel.create(ticketId, {
+              ticketId,
+              filename: u.filename,
+              contentType: u.contentType,
+              sizeBytes: u.sizeBytes,
+              storageKey: u.storageKey,
+              url: u.downloadURL,
+              uploadedBy: currentUserId,
+            });
+          })
+        );
+      }
+
       onClose?.();
+        setForm({
+      subject: "",
+      description: "",
+      queueOwned: false,
+      groupId: "",
+      teamIds: [],
+      agentIds: [],
+      assigneeId: "",
+      categoryId: "",
+      subcategoryId: "",
+      productId: "",
+      slaId: "",
+      slaMode: "priority",
+      priority: "normal",
+      severity: "sev4",
+      dueAt: "",
+      firstResponseDueAt: "",
+      resolutionDueAt: "",
+      tagIds: [],
+      collaboratorIds: [],
+    });
+    
       return created;
     } finally {
       setSaving(false);
     }
   };
 
-  useEffect(() => {
-    if (open && orgId) {
-      listSLAs(orgId).catch(() => {});
+  const steps = [
+    { label: "Basic Information", icon: Edit, description: "Subject and description" },
+    { label: "Assignment", icon: Clipboard, description: "Who will handle this ticket" },
+    { label: "Classification", icon: Tag, description: "Categorize the issue" },
+    { label: "SLA & Priority", icon: Flag, description: "Set response targets" },
+    { label: "Attachments", icon: Upload, description: "Add supporting files" },
+    { label: "Additional Options", icon: Plus, description: "Tags and collaborators" },
+  ];
+
+  const handleNext = () => {
+    if (activeStep < steps.length - 1) {
+      setActiveStep((s) => s + 1);
     }
-  }, [open, orgId, listSLAs]);
+    console.log(form)
+  };
 
-  return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>{title}</DialogTitle>
-      <DialogContent dividers>
-        <Stack spacing={2} sx={{ mt: 1 }}>
-          {/* Basic Information */}
-          <Typography variant="h6" gutterBottom>Basic Information</Typography>
-          
-          <TextField 
-            label="Subject" 
-            value={form.subject} 
-            onChange={(e) => update("subject", e.target.value)} 
-            fullWidth 
-            required 
-            error={!subjectOK}
-            helperText={!subjectOK ? "Subject is required" : ""}
-          />
-          
-          <TextField 
-            label="Description" 
-            value={form.description} 
-            onChange={(e) => update("description", e.target.value)} 
-            fullWidth 
-            multiline 
-            minRows={3} 
-            placeholder="Describe the issue or request..."
-          />
+  const handleBack = () => {
+    if (activeStep > 0) {
+      setActiveStep((s) => s - 1);
+    }
+  };
 
-          <Divider />
-          
-          {/* Assignment */}
-          <Typography variant="h6" gutterBottom>Assignment</Typography>
+  const renderStepContent = (step) => {
+    switch (step) {
+      case 0:
+        return (
+          <div className="bg-white border border-gray-200 rounded-lg p-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Subject <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={form.subject}
+                  onChange={(e) => update("subject", e.target.value)}
+                  placeholder="Brief description of the issue"
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                    !validations.basic ? "border-red-300" : "border-gray-300"
+                  }`}
+                />
+                {!validations.basic && (
+                  <p className="text-sm text-red-600">Subject is required</p>
+                )}
+              </div>
 
-          <FormControlLabel
-            control={<Checkbox checked={isQueueOwned} onChange={(e) => update("queueOwned", e.target.checked)} />}
-            label="Create in a Group Queue (no direct assignee)"
-          />
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">Description</label>
+                <div className="border border-gray-300 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent">
+                  <ReactQuill
+                    theme="snow"
+                    value={form.description}
+                    onChange={(html) => update("description", html)}
+                    placeholder="Details, steps to reproduce, expected vs actual…"
+                    modules={{
+                      toolbar: [
+                        [{ header: [1, 2, 3, false] }],
+                        ["bold", "italic", "underline", "strike"],
+                        [{ list: "ordered" }, { list: "bullet" }],
+                        [{ color: [] }, { background: [] }],
+                        [{ align: [] }],
+                        ["link", "code-block"],
+                        ["clean"],
+                      ],
+                    }}
+                    formats={[
+                      "header",
+                      "bold", "italic", "underline", "strike",
+                      "list", "bullet",
+                      "color", "background",
+                      "align",
+                      "link", "code-block",
+                    ]}
+                    style={{ minHeight: 200 }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        );
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-            <Box sx={{ flex: 1, minWidth: 220 }}>
+      case 1:
+        return (
+          <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
+            <label className="flex items-start space-x-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <input
+                type="checkbox"
+                checked={isQueueOwned}
+                onChange={(e) => update("queueOwned", e.target.checked)}
+                className="mt-1"
+              />
+              <div>
+                <span className="text-sm font-medium text-gray-900">Queue Assignment</span>
+                <p className="text-sm text-gray-600">
+                  Assign to a group queue instead of a specific person
+                </p>
+              </div>
+            </label>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <GroupSelect orgId={orgId} value={form.groupId} onChange={(v) => update("groupId", v)} />
-            </Box>
-            <Box sx={{ flex: 1, minWidth: 240 }}>
               <AssigneeSelect
                 orgId={orgId}
                 groupId={form.groupId || undefined}
                 value={form.assigneeId}
                 onChange={(v) => update("assigneeId", v)}
                 label="Assignee"
-                placeholder={isQueueOwned ? "Disabled (queue-owned)" : "Select assignee"}
+                placeholder={isQueueOwned ? "Will be auto-assigned from queue" : "Select assignee"}
                 disabled={isQueueOwned}
               />
-            </Box>
-          </Stack>
-          
-          {!groupOK && (
-            <Alert severity="error">
-              Group is required when creating a queue-owned ticket.
-            </Alert>
-          )}
+            </div>
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-            <Box sx={{ flex: 1, minWidth: 220 }}>
-              <TeamMultiSelect
-                groupId={form.groupId || undefined}
-                value={form.selectedTeams}
-                onChange={(teams) => update("selectedTeams", teams)}
-                label="Teams (within group)"
-                disabled={!form.groupId}
-                returnFullObjects={true} // Ensure component returns team objects with calendar_id
-              />
-            </Box>
-            <Box sx={{ flex: 1, minWidth: 240 }}>
-              <AgentMultiSelect
+            {!validations.assignment && (
+              <div className="flex items-center space-x-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <AlertCircle className="h-5 w-5 text-red-600" />
+                <span className="text-sm text-red-800">
+                  Group selection is required for queue-owned tickets.
+                </span>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <h4 className="text-sm font-medium text-gray-900">Team Involvement (Optional)</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <TeamMultiSelect
+                  groupId={form.groupId || undefined}
+                  value={form.teamIds}
+                  onChange={(teamIds) => update("teamIds", teamIds)}
+                  label="Teams"
+                  disabled={!form.groupId}
+                />
+                <AgentMultiSelect
+                  orgId={orgId}
+                  groupId={form.groupId || undefined}
+                  value={form.agentIds}
+                  onChange={(agentIds) => update("agentIds", agentIds)}
+                  label="Additional Agents"
+                  disabled={!form.groupId}
+                />
+              </div>
+            </div>
+          </div>
+        );
+
+      case 2:
+        return (
+          <div className="bg-white border border-gray-200 rounded-lg p-6">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-medium text-gray-700">
+                  Categorize the Issue
+                </h3>
+                <span className="text-xs text-gray-500">
+                  Select category, subcategory, and affected product
+                </span>
+              </div>
+              
+              <CategorySelector
                 orgId={orgId}
-                groupId={form.groupId || undefined}
-                value={form.agentIds}
-                onChange={(arr) => update("agentIds", arr)}
-                label="Agents (within group)"
-                disabled={!form.groupId}
+                value={{
+                  category: form.categoryId,
+                  subcategory: form.subcategoryId,
+                  product: form.productId
+                }}
+                onChange={(categoryId) => {
+                  update("categoryId", categoryId);
+                  // Reset subcategory when category changes
+                  if (categoryId !== form.categoryId) {
+                    update("subcategoryId", "");
+                  }
+                }}
+                onSubcategoryChange={(subcategoryId) => update("subcategoryId", subcategoryId)}
+                onProductChange={(productId) => update("productId", productId)}
               />
-            </Box>
-          </Stack>
-
-          {/* Calendar Status */}
-          {form.selectedTeams.length > 0 && (
-            <Box sx={{ p: 1, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
-              <Stack direction="row" alignItems="center" spacing={1}>
-                <CalendarToday fontSize="small" />
-                <Typography variant="body2">
-                  {calendarLoading ? (
-                    "Loading calendar..."
-                  ) : teamCalendar ? (
-                    `Business Calendar: ${teamCalendar.name} (${teamCalendar.timezone || 'UTC'})`
-                  ) : (
-                    "No business calendar configured for selected teams"
-                  )}
-                </Typography>
-                {teamCalendar && (
-                  <Chip 
-                    size="small" 
-                    label="Business Hours Applied" 
-                    color="success" 
-                    variant="outlined"
-                  />
-                )}
-              </Stack>
-            </Box>
-          )}
-
-          <Divider />
-
-          {/* Classification */}
-          <Typography variant="h6" gutterBottom>Classification</Typography>
-          
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-            <TextField 
-              label="Category" 
-              value={form.category} 
-              onChange={(e) => update("category", e.target.value)} 
-              fullWidth 
-              placeholder="e.g., Bug, Feature Request"
-            />
-            <TextField 
-              label="Subcategory" 
-              value={form.subcategory} 
-              onChange={(e) => update("subcategory", e.target.value)} 
-              fullWidth 
-              placeholder="e.g., UI Bug, API Issue"
-            />
-            <TextField 
-              label="Product ID" 
-              value={form.productId} 
-              onChange={(e) => update("productId", e.target.value)} 
-              fullWidth 
-              placeholder="e.g., web-app, mobile-ios"
-            />
-          </Stack>
-
-          <Divider />
-
-          {/* SLA Configuration */}
-          <Typography variant="h6" gutterBottom>SLA Configuration</Typography>
-
-          {/* SLA Selection */}
-          <TextField
-            select
-            label="SLA Policy"
-            fullWidth
-            value={form.slaId}
-            onChange={(e) => update("slaId", e.target.value)}
-            helperText="Choose an SLA policy to set response and resolution targets"
-          >
-            <MenuItem key="" value="">
-              <Typography component="span" color="text.secondary">
-                None - No SLA requirements
-              </Typography>
-            </MenuItem>
-            {availableSLAOptions.map((sla) => (
-              <MenuItem key={sla.sla_id} value={sla.sla_id}>
-                <Box sx={{ width: '100%' }}>
-                  <Typography component="span" sx={{ fontWeight: 'medium' }}>
-                    {sla.name}
-                  </Typography>
-                  {sla.description && (
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                      {sla.description}
-                    </Typography>
-                  )}
-                  
-                  <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
-                    {sla.first_response_minutes && (
-                      <Chip 
-                        size="small" 
-                        icon={<AccessTime />}
-                        label={`First Response: ${formatMinutes(sla.first_response_minutes)}`}
-                        variant="outlined"
-                        color="primary"
-                      />
-                    )}
-                    {sla.resolution_minutes && (
-                      <Chip 
-                        size="small" 
-                        icon={<Schedule />}
-                        label={`Base Resolution: ${formatMinutes(sla.resolution_minutes)}`}
-                        variant="outlined"
-                        color="secondary"
-                      />
-                    )}
-                  </Box>
-                </Box>
-              </MenuItem>
-            ))}
-          </TextField>
-
-          {/* Temporary Debug Section - Remove this later */}
-          {selectedSLA && (
-            <Alert severity="info" sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" gutterBottom>Debug Info:</Typography>
-              <Typography variant="body2">
-                <strong>SLA Name:</strong> {selectedSLA.name}<br/>
-                <strong>Has Priority Map:</strong> {hasPriorityMap ? 'Yes' : 'No'}<br/>
-                <strong>Has Severity Map:</strong> {hasSeverityMap ? 'Yes' : 'No'}<br/>
-                <strong>Rules Object:</strong> {JSON.stringify(selectedSLA.rules, null, 2)}
-              </Typography>
-            </Alert>
-          )}
-
-          {/* Priority/Severity Toggle - Always visible when SLA is selected */}
-          {selectedSLA && (
-            <FormControl component="fieldset" fullWidth>
-              <FormLabel component="legend">SLA Resolution Mode</FormLabel>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Choose how resolution time will be determined for this ticket
-              </Typography>
-              <RadioGroup
-                row
-                value={form.slaMode}
-                onChange={(e) => update("slaMode", e.target.value)}
-                sx={{ mb: 2 }}
-              >
-                <FormControlLabel 
-                  value="priority" 
-                  control={<Radio />} 
-                  label={`Priority-based ${hasPriorityMap ? '' : '(not available)'}`}
-                  disabled={!hasPriorityMap}
-                />
-                <FormControlLabel 
-                  value="severity" 
-                  control={<Radio />} 
-                  label={`Severity-based ${hasSeverityMap ? '' : '(not available)'}`}
-                  disabled={!hasSeverityMap}
-                />
-              </RadioGroup>
-            </FormControl>
-          )}
-
-          {/* Priority Selection Field */}
-          {selectedSLA && form.slaMode === "priority" && (
-            <TextField 
-              label="Priority Level" 
-              select 
-              fullWidth 
-              value={form.priority} 
-              onChange={(e) => update("priority", e.target.value)}
-              disabled={!hasPriorityMap}
-              error={!hasPriorityMap}
-              helperText={
-                hasPriorityMap 
-                  ? "Choose priority level - resolution time will be calculated from priority map"
-                  : "Priority-based SLA not available for this policy"
-              }
-            >
-              {hasPriorityMap && Object.keys(selectedSLA.rules.priority_map || {}).map((p) => {
-                const resolutionTime = selectedSLA.rules.priority_map[p];
-                return (
-                  <MenuItem key={p} value={p}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                      <Typography component="span">
-                        {p.charAt(0).toUpperCase() + p.slice(1)}
-                      </Typography>
-                      <Chip 
-                        size="small" 
-                        label={formatMinutes(resolutionTime)}
-                        color="primary"
-                        variant="outlined"
-                      />
-                    </Box>
-                  </MenuItem>
-                );
-              })}
-            </TextField>
-          )}
-
-          {/* Severity Selection Field */}
-          {selectedSLA && form.slaMode === "severity" && (
-            <TextField 
-              label="Severity Level" 
-              select 
-              fullWidth 
-              value={form.severity} 
-              onChange={(e) => update("severity", e.target.value)}
-              disabled={!hasSeverityMap}
-              error={!hasSeverityMap}
-              helperText={
-                hasSeverityMap 
-                  ? "Choose severity level - resolution time will be calculated from severity map"
-                  : "Severity-based SLA not available for this policy"
-              }
-            >
-              {hasSeverityMap && Object.keys(selectedSLA.rules.severity_map || {}).map((s) => {
-                const resolutionTime = selectedSLA.rules.severity_map[s];
-                return (
-                  <MenuItem key={s} value={s}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                      <Typography component="span">
-                        {s.toUpperCase()}
-                      </Typography>
-                      <Chip 
-                        size="small" 
-                        label={formatMinutes(resolutionTime)}
-                        color="secondary"
-                        variant="outlined"
-                      />
-                    </Box>
-                  </MenuItem>
-                );
-              })}
-            </TextField>
-          )}
-
-          {/* Show basic priority/severity when no SLA is selected */}
-          {!selectedSLA && (
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-              <TextField 
-                label="Priority" 
-                select 
-                fullWidth 
-                value={form.priority} 
-                onChange={(e) => update("priority", e.target.value)}
-                helperText="Basic priority level (no SLA applied)"
-              >
-                {["low", "normal", "high", "urgent", "blocker"].map((p) => (
-                  <MenuItem key={p} value={p}>
-                    {p.charAt(0).toUpperCase() + p.slice(1)}
-                  </MenuItem>
-                ))}
-              </TextField>
               
-              <TextField 
-                label="Severity" 
-                select 
-                fullWidth 
-                value={form.severity} 
-                onChange={(e) => update("severity", e.target.value)}
-                helperText="Basic severity level (no SLA applied)"
-              >
-                {["sev4", "sev3", "sev2", "sev1"].map((s) => (
-                  <MenuItem key={s} value={s}>
-                    {s.toUpperCase()}
-                  </MenuItem>
-                ))}
-              </TextField>
-            </Stack>
-          )}
+              {/* Visual feedback of selections */}
+              {(form.categoryId || form.subcategoryId || form.productId) && (
+                <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
+                  <p className="text-xs font-medium text-gray-700 mb-2">Selected Classification:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {form.categoryId && (
+                      <span className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
+                        {form.categoryId}
+                      </span>
+                    )}
+                    {form.subcategoryId && (
+                      <span className="inline-flex items-center px-3 py-1 bg-green-100 text-green-800 text-sm font-medium rounded-full">
+                        {form.subcategoryId}
+                      </span>
+                    )}
+                    {form.productId && (
+                      <span className="inline-flex items-center px-3 py-1 bg-purple-100 text-purple-800 text-sm font-medium rounded-full">
+                        {form.productId}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
 
-          {/* SLA Status Display */}
-          {selectedSLA && currentResolutionTime && (
-            <Alert severity="success">
-              <Typography variant="subtitle2" gutterBottom>
-                Active SLA: {selectedSLA.name} 
+      case 3:
+        return (
+          <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Service Level Agreement</label>
+              <select
+                value={form.slaId}
+                onChange={(e) => update("slaId", e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">No SLA — Manual priority/severity only</option>
+                {availableSLAOptions.map((sla) => (
+                  <option key={sla.sla_id} value={sla.sla_id}>
+                    {sla.name} — {sla.description}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedSLA && (
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center space-x-2 mb-3">
+                  <CheckCircle className="h-5 w-5 text-blue-600" />
+                  <span className="text-sm font-medium text-blue-900">{selectedSLA.name} Selected</span>
+                </div>
+
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {firstResponseTime && (
+                    <span className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                      <Clock className="h-3 w-3 mr-1" />
+                      Response: {formatMinutes(firstResponseTime)}
+                    </span>
+                  )}
+                  {selectedSLA.resolution_minutes && (
+                    <span className="inline-flex items-center px-2 py-1 bg-orange-100 text-orange-800 text-xs rounded-full">
+                      <Target className="h-3 w-3 mr-1" />
+                      Base Resolution: {formatMinutes(selectedSLA.resolution_minutes)}
+                    </span>
+                  )}
+                </div>
+
                 {(hasPriorityMap || hasSeverityMap) && (
-                  <span> ({form.slaMode === "priority" ? form.priority.toUpperCase() : form.severity.toUpperCase()})</span>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">Resolution Time Calculation</label>
+                    <div className="flex space-x-4">
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          value="priority"
+                          checked={form.slaMode === "priority"}
+                          onChange={(e) => update("slaMode", e.target.value)}
+                          disabled={!hasPriorityMap}
+                          className="mr-2"
+                        />
+                        <span className={`text-sm ${!hasPriorityMap ? "text-gray-400" : "text-gray-700"}`}>
+                          Priority-based {!hasPriorityMap && "(not available)"}
+                        </span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          value="severity"
+                          checked={form.slaMode === "severity"}
+                          onChange={(e) => update("slaMode", e.target.value)}
+                          disabled={!hasSeverityMap}
+                          className="mr-2"
+                        />
+                        <span className={`text-sm ${!hasSeverityMap ? "text-gray-400" : "text-gray-700"}`}>
+                          Severity-based {!hasSeverityMap && "(not available)"}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
                 )}
-                {teamCalendar && (
-                  <Chip size="small" label="Business Hours Applied" color="info" sx={{ ml: 1 }} />
-                )}
-              </Typography>
-              
-              <Stack direction="row" spacing={3} flexWrap="wrap" sx={{ mt: 1 }}>
-                {firstResponseTime && (
-                  <Box>
-                    <Typography variant="body2" color="primary">
-                      <strong>First Response:</strong> {formatMinutes(firstResponseTime)}
-                    </Typography>
-                    {form.firstResponseDueAt && (
-                      <Typography variant="caption" color="text.secondary">
-                        Due: {new Date(form.firstResponseDueAt).toLocaleString()}
-                      </Typography>
-                    )}
-                  </Box>
-                )}
-                
-                {currentResolutionTime && (
-                  <Box>
-                    <Typography variant="body2" color="secondary">
-                      <strong>Resolution:</strong> {formatMinutes(currentResolutionTime)}
-                    </Typography>
-                    {form.resolutionDueAt && (
-                      <Typography variant="caption" color="text.secondary">
-                        Due: {new Date(form.resolutionDueAt).toLocaleString()}
-                      </Typography>
-                    )}
-                  </Box>
-                )}
-              </Stack>
+              </div>
+            )}
 
-              {/* Show calculation details for transparency */}
-              {selectedSLA.rules && form.slaMode === "priority" && hasPriorityMap && (
-                <Box sx={{ mt: 1, p: 1, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 1 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'medium' }}>
-                    Resolution time from Priority Map: {form.priority.toUpperCase()} → {formatMinutes(currentResolutionTime)}
-                  </Typography>
-                </Box>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {selectedSLA && form.slaMode === "priority" && hasPriorityMap ? (
+                <div className="md:col-span-2 space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">Priority</label>
+                  <select
+                    value={form.priority}
+                    onChange={(e) => update("priority", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    {Object.keys(selectedSLA.rules.priority_map || {}).map((p) => (
+                      <option key={p} value={p}>
+                        {p.charAt(0).toUpperCase() + p.slice(1)} — {formatMinutes(selectedSLA.rules.priority_map[p])}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : selectedSLA && form.slaMode === "severity" && hasSeverityMap ? (
+                <div className="md:col-span-2 space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">Severity</label>
+                  <select
+                    value={form.severity}
+                    onChange={(e) => update("severity", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    {Object.keys(selectedSLA.rules.severity_map || {}).map((s) => (
+                      <option key={s} value={s}>
+                        {s.toUpperCase()} — {formatMinutes(selectedSLA.rules.severity_map[s])}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">Priority</label>
+                    <select
+                      value={form.priority}
+                      onChange={(e) => update("priority", e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      {["low", "normal", "high", "urgent", "blocker"].map((p) => (
+                        <option key={p} value={p}>
+                          {p.charAt(0).toUpperCase() + p.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">Severity</label>
+                    <select
+                      value={form.severity}
+                      onChange={(e) => update("severity", e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      {["sev4", "sev3", "sev2", "sev1"].map((s) => (
+                        <option key={s} value={s}>
+                          {s.toUpperCase()}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
               )}
-              
-              {selectedSLA.rules && form.slaMode === "severity" && hasSeverityMap && (
-                <Box sx={{ mt: 1, p: 1, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 1 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'medium' }}>
-                    Resolution time from Severity Map: {form.severity.toUpperCase()} → {formatMinutes(currentResolutionTime)}
-                  </Typography>
-                </Box>
-              )}
-            </Alert>
-          )}
+            </div>
 
-          {selectedSLA && !slaConfigOK && (
-            <Alert severity="warning">
-              <Typography variant="subtitle2" gutterBottom>
-                SLA Configuration Required
-              </Typography>
-              <Typography variant="body2">
-                The selected SLA "{selectedSLA.name}" requires priority or severity configuration, but no valid options are available.
-              </Typography>
-            </Alert>
-          )}
+            {selectedSLA && currentResolutionTime && (
+              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                <h4 className="text-sm font-medium text-green-900 mb-3">Active SLA Targets</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {firstResponseTime && (
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="text-xs text-blue-600 font-medium">First Response</div>
+                      <div className="text-lg font-bold text-blue-700">
+                        {formatMinutes(firstResponseTime)}
+                      </div>
+                    </div>
+                  )}
+                  <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                    <div className="text-xs text-orange-600 font-medium">Resolution Target</div>
+                    <div className="text-lg font-bold text-orange-700">
+                      {formatMinutes(currentResolutionTime)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
-          <TextField 
-            label="Custom Due Date (ISO)" 
-            value={form.dueAt} 
-            onChange={(e) => update("dueAt", e.target.value)} 
-            fullWidth 
-            placeholder="2025-09-25T17:30:00Z" 
-            helperText="Optional custom due date (overrides SLA calculations)"
-          />
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Custom Due Date</label>
+              <input
+                type="datetime-local"
+                value={form.dueAt ? form.dueAt.slice(0, 16) : ""}
+                onChange={(e) => update("dueAt", e.target.value ? `${e.target.value}:00Z` : "")}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+        );
 
-          <Divider />
-
-          {/* Additional Options */}
-          <Typography variant="h6" gutterBottom>Additional Options</Typography>
-          <Box>
-            <Typography variant="h6" gutterBottom>Tags</Typography>
-            <Autocomplete
-              multiple
-              options={availableTags}
-              value={form.selectedTags}
-              onChange={(_, newValue) => update("selectedTags", newValue)}
-              getOptionLabel={(opt) => opt.name || opt.tag_name || opt.tagId || opt.tag_id || ""}
-              isOptionEqualToValue={(o, v) => (o.tagId ?? o.tag_id) === (v.tagId ?? v.tag_id)}
-              renderTags={(value, getTagProps) =>
-                value.map((option, index) => {
-                  const color = option.color || option.tag_colour || "#808080";
-                  return (
-                    <Chip
-                      {...getTagProps({ index })}
-                      key={(option.tagId ?? option.tag_id) || index}
-                      label={option.name || option.tag_name || ""}
-                      variant="outlined"
-                      sx={{
-                        borderColor: color,
-                        backgroundColor: `${color}1A`,
-                        color,
-                      }}
-                    />
-                  );
-                })
-              }
-              renderOption={(props, option) => {
-                const color = option.color || option.tag_colour || "#808080";
-                return (
-                  <li {...props} key={option.tagId ?? option.tag_id}>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Avatar sx={{ width: 18, height: 18, bgcolor: color }} />
-                      <Typography>{option.name}</Typography>
-                      {option.category && (
-                        <Chip size="small" variant="outlined" label={option.category} />
-                      )}
-                    </Stack>
-                  </li>
-                );
+      case 4:
+        return (
+          <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
+            <TicketFileUpload
+              orgId={orgId}
+              ticketId={null}
+              currentUserId={currentUserId}
+              onFilesUploaded={(uploaded) => {
+                setStagedUploads((prev) => [...prev, ...uploaded]);
               }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Select tags"
-                  placeholder="Search tags…"
-                  helperText="Pick from the tags you created"
-                  fullWidth
-                />
-              )}
+              maxFiles={10}
             />
-          </Box>
+            {stagedUploads.length > 0 && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  {stagedUploads.length} file{stagedUploads.length === 1 ? "" : "s"} ready to be attached
+                </p>
+              </div>
+            )}
+          </div>
+        );
 
-          <CollaboratorsSelect 
-            orgId={orgId} 
-            value={form.collaborators} 
-            onChange={(arr) => update("collaborators", arr)} 
-          />
-        </Stack>
-      </DialogContent>
+      case 5:
+        return (
+          <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-6">
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-gray-700">Tags</label>
+              <TagMultiSelect
+                orgId={orgId}
+                value={form.tagIds}
+                onChange={(tagIds) => update("tagIds", tagIds)}
+                label="Select tags"
+                placeholder="Search and select tags..."
+              />
+              <p className="text-sm text-gray-500">
+                {availableTagOptions.length} tags available
+              </p>
+            </div>
 
-      <DialogActions>
-        <Button onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button 
-          onClick={handleSubmit} 
-          variant="contained" 
-          disabled={saving || !canSave}
-          color="primary"
-        >
-          {saving ? "Creating..." : "Create Ticket"}
-        </Button>
-      </DialogActions>
-    </Dialog>
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Collaborators</label>
+              <CollaboratorsSelect
+                orgId={orgId}
+                value={form.collaboratorIds}
+                onChange={(ids) => update("collaboratorIds", ids)}
+              />
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[95vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="border-b border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-gray-900">{title}</h2>
+            <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          {/* Progress */}
+          <div className="mt-4">
+            <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
+              <span>Step {activeStep + 1} of {steps.length}</span>
+              <span>{Math.round(((activeStep + 1) / steps.length) * 100)}% Complete</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${((activeStep + 1) / steps.length) * 100}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Sidebar Navigation */}
+          <div className="w-80 border-r border-gray-200 bg-gray-50 p-4 overflow-y-auto">
+            <h3 className="text-sm font-medium text-gray-700 mb-4">Form Steps</h3>
+            <div className="space-y-2">
+              {steps.map((s, i) => {
+                const Icon = s.icon;
+                const isActive = i === activeStep;
+                const canAccess = i <= activeStep;
+                const ok = stepValidation[i];
+                return (
+                  <button
+                    key={s.label}
+                    onClick={() => canAccess && setActiveStep(i)}
+                    disabled={!canAccess}
+                    className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                      isActive
+                        ? "bg-blue-50 border-blue-200 text-blue-900"
+                        : canAccess
+                        ? "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+                        : "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
+                    }`}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className={`p-1 rounded ${isActive ? "bg-blue-100" : ok ? "bg-green-100" : "bg-gray-100"}`}>
+                        {ok && i < activeStep ? (
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <Icon className={`h-4 w-4 ${isActive ? "text-blue-600" : ok ? "text-green-600" : "text-gray-400"}`} />
+                        )}
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium">{s.label}</div>
+                        <div className="text-xs text-gray-500">{s.description}</div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 p-6 overflow-y-auto">{renderStepContent(activeStep)}</div>
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              {canSubmit ? "Ready to create ticket!" : "Complete required fields to continue"}
+              {stagedUploads.length > 0 && (
+                <span className="ml-2 text-blue-600">
+                  • {stagedUploads.length} staged file{stagedUploads.length === 1 ? "" : "s"} will be attached
+                </span>
+              )}
+            </div>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={handleBack}
+                disabled={activeStep === 0}
+                className="px-4 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                <span>Back</span>
+              </button>
+
+              {activeStep < steps.length - 1 ? (
+                <button
+                  onClick={handleNext}
+                  disabled={!canProceed(activeStep)}
+                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                >
+                  <span>Next</span>
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              ) : (
+                <button
+                  onClick={handleSubmit}
+                  disabled={saving || !canSubmit}
+                  className="px-6 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 min-w-[120px]"
+                >
+                  {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  <span>{saving ? "Creating..." : "Create Ticket"}</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

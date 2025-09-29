@@ -4,6 +4,7 @@ import { routing } from "@/src/i18n/routing";
 import LayoutFile from "@/components/LayoutFile";
 import ThemeToggle from "@/components/ThemeToggle";
 import Script from "next/script"; // ✅ This is required
+import "react-quill-new/dist/quill.snow.css";
 
 export default async function RootLayout(props) {
   const { children } = props;
