@@ -14,7 +14,6 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import Table
 import enum
 from .sla import SLADimension
-
 from ..db import Base
 
 
@@ -116,15 +115,14 @@ class Ticket(Base):
     sla_status = relationship("TicketSLAStatus", uselist=False, back_populates="ticket", cascade="all, delete-orphan")
     team_ids:  Mapped[list[str]] = mapped_column(ARRAY(String), default=list, nullable=False, index=False)
     agent_ids: Mapped[list[str]] = mapped_column(ARRAY(String), default=list, nullable=False, index=False)
+    category_id:    Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    subcategory_id: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
     
 
     __table_args__ = (
         Index("ix_ticket_org_status", "org_id", "status"),
         Index("ix_ticket_org_assignee", "org_id", "assignee_id"),
         UniqueConstraint("org_id", "number", name="uq_ticket_org_number"),
-
-        # Optional but very useful for array queries:
-        # GIN indexes make `overlap/contains` fast
         Index("gin_tickets_team_ids",  team_ids,  postgresql_using="gin"),
         Index("gin_tickets_agent_ids", agent_ids, postgresql_using="gin"),
     )

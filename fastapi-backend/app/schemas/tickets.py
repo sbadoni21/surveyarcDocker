@@ -114,8 +114,8 @@ class TicketBase(BaseModel):
     meta: Dict[str, Any] = Field(default_factory=dict)
     team_ids: List[str] = Field(default_factory=list)
     agent_ids: List[str] = Field(default_factory=list)
-    category_id: List[str] = Field(default_factory=list)
-    subcategory_id: List[str] = Field(default_factory=list)
+    category_id: Optional[str] = None
+    subcategory_id: Optional[str] = None
 
 
 class TicketCreate(TicketBase):
@@ -146,8 +146,8 @@ class TicketUpdate(BaseModel):
     tags: Optional[List[str]] = None  # full replace set if provided
     team_ids: Optional[List[str]] = None
     agent_ids: Optional[List[str]] = None
-    category_id: Optional[List[str]] = None
-    subcategory_id: Optional[List[str]] = None
+    category_id: Optional[str] = None
+    subcategory_id: Optional[str] = None
 
 
 class TicketOut(TicketBase):
@@ -169,8 +169,8 @@ class TicketOut(TicketBase):
     team_ids: Optional[List[str]] = None
     agent_ids: Optional[List[str]] = None
     number: Optional[int] = None
-    category_id: Optional[List[str]] = None
-    subcategory_id: Optional[List[str]] = None
+    category_id: Optional[str] = None
+    subcategory_id: Optional[str] = None
 
     tags: List[TagOut] = Field(default_factory=list)
     sla_status: Optional[TicketSLAStatusOut] = None

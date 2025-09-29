@@ -19,50 +19,71 @@ const omitNullish = (obj) => {
   return out;
 };
 
+// ---- normalize api → ui ----
 const toCamel = (t) => ({
   ticketId: t.ticket_id,
   orgId: t.org_id,
   projectId: t.project_id ?? null,
+
   requesterId: t.requester_id,
   assigneeId: t.assignee_id ?? null,
+
   subject: t.subject,
   description: t.description,
   priority: t.priority,
   severity: t.severity,
   status: t.status,
-  category: t.category,
-  subcategory: t.subcategory,
+
+  // human-readable names (if you use them)
+  category: t.category ?? null,
+  subcategory: t.subcategory ?? null,
+
+  // *** NEW: ids coming from backend ***
+  groupId: t.group_id ?? null,
+  categoryId: t.category_id ?? null,
+  subcategoryId: t.subcategory_id ?? null,
+
   productId: t.product_id ?? null,
   slaId: t.sla_id ?? null,
   dueAt: t.due_at ?? null,
+
   createdAt: t.created_at,
   updatedAt: t.updated_at,
   resolvedAt: t.resolved_at ?? null,
   closedAt: t.closed_at ?? null,
   lastActivityAt: t.last_activity_at ?? null,
   lastPublicCommentAt: t.last_public_comment_at ?? null,
+
   replyCount: t.reply_count ?? 0,
   followerCount: t.follower_count ?? 0,
   number: t.number ?? null,
+
   tags: t.tags || [],
   custom: t.custom_fields || t.meta || {},
 
   // arrays we added server-side
   teamIds: t.team_ids ?? [],
   agentIds: t.agent_ids ?? [],
+
+  // *** NEW: expose SLA status object to UI ***
+  slaStatus: t.sla_status ?? null,
 });
 
-// ---------------- core CRUD (unchanged above) ----------------
-
 const TicketModel = {
-  async list({ orgId, status, assigneeId, q, limit = 50, offset = 0 } = {}) {
+  // ---------------- core CRUD ----------------
+  async list({ orgId, status, assigneeId, q, limit = 50, offset = 0, groupId, categoryId, subcategoryId } = {}) {
     const qs = new URLSearchParams();
     if (orgId) qs.set("org_id", orgId);
     if (status) qs.set("status", status);
     if (assigneeId) qs.set("assignee_id", assigneeId);
+    if (groupId) qs.set("group_id", groupId);
+    // These two are harmless if backend doesn't filter yet
+    if (categoryId) qs.set("category_id", categoryId);
+    if (subcategoryId) qs.set("subcategory_id", subcategoryId);
     if (q) qs.set("q", q);
     if (limit != null) qs.set("limit", String(limit));
     if (offset != null) qs.set("offset", String(offset));
+
     const res = await fetch(`${BASE}?${qs.toString()}`, { cache: "no-store" });
     const arr = await json(res);
     return (arr || []).map(toCamel);
@@ -74,53 +95,65 @@ const TicketModel = {
     return toCamel(t);
   },
 
-async create(data) {
-  const payloadRaw = {
-    // Core Ticket model fields only
-    org_id: data.orgId,
-    project_id: data.projectId ?? null,
-    requester_id: data.requesterId,
-    assignee_id: data.assigneeId ?? null,
-    subject: data.subject,
-    description: data.description ?? "",
-    priority: normalizePriority(data.priority ?? "normal"),
-    severity: data.severity ? data.severity : undefined,
-    status: data.status ?? "new",
-    category: data.category ?? null,
-    subcategory: data.subcategory ?? null,
-    product_id: data.productId ?? null,
-    sla_id: data.slaId ?? null,
-    due_at: data.dueAt ?? null,
-    tags: Array.isArray(data.tags) ? data.tags : undefined,
-    custom_fields: data.custom ?? {},
-    team_ids: Array.isArray(data.teamIds) ? data.teamIds : undefined,
-    agent_ids: Array.isArray(data.agentIds) ? data.agentIds : undefined,
-    
-    // SLA processing metadata (for backend logic, not stored in Ticket model)
-    sla_processing: {
-      first_response_due_at: data.firstResponseDueAt ?? null,
-      resolution_due_at: data.resolutionDueAt ?? null,
-      sla_mode: data.slaMode ?? null,
-      calendar_id: data.calendarId ?? null,
-    }
-  };
-  
-  console.log('Ticket payload:', payloadRaw);
-  const payload = omitNullish(payloadRaw);
-  
-  const res = await fetch(`${BASE}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-  });
-  const t = await json(res);
-  return toCamel(t);
-},
+  async create(data) {
+    const payloadRaw = {
+      // Core Ticket fields
+      org_id: data.orgId,
+      project_id: data.projectId ?? null,
+
+      requester_id: data.requesterId,
+      assignee_id: data.assigneeId ?? null,
+      subject: data.subject,
+      description: data.description ?? "",
+      priority: normalizePriority(data.priority ?? "normal"),
+      severity: data.severity ? data.severity : undefined,
+      status: data.status ?? "new",
+
+      // human-readable (optional)
+      category: data.category ?? null,
+      subcategory: data.subcategory ?? null,
+
+      // *** NEW: ids you want persisted ***
+      group_id: data.groupId ?? null,
+      category_id: data.categoryId ?? null,
+      subcategory_id: data.subcategoryId ?? null,
+
+      product_id: data.productId ?? null,
+      sla_id: data.slaId ?? null,
+      due_at: data.dueAt ?? null,
+
+      tags: Array.isArray(data.tags) ? data.tags : undefined,
+      custom_fields: data.custom ?? {},
+      team_ids: Array.isArray(data.teamIds) ? data.teamIds : undefined,
+      agent_ids: Array.isArray(data.agentIds) ? data.agentIds : undefined,
+
+      // Optional: assignment meta, if you use it on server
+      assignment: data.assignment ?? undefined,
+
+      // SLA processing metadata
+      sla_processing: {
+        first_response_due_at: data.firstResponseDueAt ?? null,
+        resolution_due_at: data.resolutionDueAt ?? null,
+        sla_mode: data.slaMode ?? null,
+        calendar_id: data.calendarId ?? null,
+      },
+    };
+
+    const payload = omitNullish(payloadRaw);
+    const res = await fetch(`${BASE}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+    const t = await json(res);
+    return toCamel(t);
+  },
 
   async update(ticketId, patch) {
     const map = (p) => {
       const out = { ...p };
+
       if ("priority" in out) out.priority = normalizePriority(out.priority);
       if ("orgId" in out) { out.org_id = out.orgId; delete out.orgId; }
       if ("requesterId" in out) { out.requester_id = out.requesterId; delete out.requesterId; }
@@ -128,9 +161,19 @@ async create(data) {
       if ("slaId" in out) { out.sla_id = out.slaId; delete out.slaId; }
       if ("projectId" in out) { out.project_id = out.projectId; delete out.projectId; }
       if ("dueAt" in out) { out.due_at = out.dueAt; delete out.dueAt; }
-      // NEW: map arrays if provided in patch (full replace semantics)
+
+      // *** NEW: ids mapping for patch ***
+      if ("groupId" in out) { out.group_id = out.groupId; delete out.groupId; }
+      if ("categoryId" in out) { out.category_id = out.categoryId; delete out.categoryId; }
+      if ("subcategoryId" in out) { out.subcategory_id = out.subcategoryId; delete out.subcategoryId; }
+
+      // arrays (full replace semantics if provided)
       if ("teamIds" in out) { out.team_ids = out.teamIds; delete out.teamIds; }
       if ("agentIds" in out) { out.agent_ids = out.agentIds; delete out.agentIds; }
+
+      // Optional: forward assignment meta on patch too
+      // if ("assignment" in out && !out.assignment) delete out.assignment;
+
       return omitNullish(out);
     };
 
@@ -159,18 +202,21 @@ async create(data) {
     if (orgId) qs.set("org_id", orgId);
     if (status) qs.set("status", status);
     const res = await fetch(`${COUNT_BASE}?${qs.toString()}`, { cache: "no-store" });
-    return json(res); // { count: number }
+    return json(res); // { count }
   },
 
-  // ---------------- queues / views you already had ----------------
-  async listGroupQueue({ orgId, groupId, status, q, limit = 50, offset = 0 }) {
+  // ---------------- queues / views ----------------
+  async listGroupQueue({ orgId, groupId, status, q, limit = 50, offset = 0, categoryId, subcategoryId }) {
     const qs = new URLSearchParams();
     if (orgId) qs.set("org_id", orgId);
     if (groupId) qs.set("group_id", groupId);
     if (status) qs.set("status", status);
     if (q) qs.set("q", q);
+    if (categoryId) qs.set("category_id", categoryId);        // harmless until backend supports
+    if (subcategoryId) qs.set("subcategory_id", subcategoryId);
     qs.set("limit", String(limit));
     qs.set("offset", String(offset));
+
     const res = await fetch(`${BASE}?${qs.toString()}`, { cache: "no-store" });
     const arr = await json(res);
     return (arr || []).map(toCamel);
@@ -186,9 +232,7 @@ async create(data) {
     return (arr || []).map(toCamel);
   },
 
-  // ---------------- NEW: assignment helpers ----------------
-
-  // Group: assign or clear (pass null to clear)
+  // ---------------- assignment helpers ----------------
   async assignGroup(ticketId, groupId) {
     const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}/group`, {
       method: "POST",
@@ -200,7 +244,6 @@ async create(data) {
     return toCamel(t);
   },
 
-  // Teams: mode can be "add" | "replace" | "remove"
   async patchTeams(ticketId, teamIds, mode = "add") {
     const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}/teams`, {
       method: "POST",
@@ -212,7 +255,6 @@ async create(data) {
     return toCamel(t);
   },
 
-  // Agents: mode can be "add" | "replace" | "remove"
   async patchAgents(ticketId, agentIds, mode = "add") {
     const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}/agents`, {
       method: "POST",
@@ -224,7 +266,6 @@ async create(data) {
     return toCamel(t);
   },
 
-  // Quick snapshot
   async getParticipants(ticketId) {
     const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}/participants`, { cache: "no-store" });
     const payload = await json(res);
@@ -239,7 +280,7 @@ async create(data) {
     };
   },
 
-  // Convenience sugar
+  // sugar
   async addTeams(ticketId, teamIds) {
     return this.patchTeams(ticketId, teamIds, "add");
   },

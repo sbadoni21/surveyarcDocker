@@ -6,7 +6,7 @@ from sqlalchemy import String, Boolean, DateTime, Text, Integer, ForeignKey, Ind
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
-
+ 
 from ..db import Base
 
 class TicketCategory(Base):

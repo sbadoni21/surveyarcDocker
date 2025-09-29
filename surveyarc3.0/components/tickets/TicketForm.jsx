@@ -348,7 +348,7 @@ export default function TicketForm({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <GroupSelect orgId={orgId} value={form.groupId} onChange={(v) => update("groupId", v)} />
-              <AssigneeSelect
+          { !isQueueOwned ?   <AssigneeSelect
                 orgId={orgId}
                 groupId={form.groupId || undefined}
                 value={form.assigneeId}
@@ -356,7 +356,7 @@ export default function TicketForm({
                 label="Assignee"
                 placeholder={isQueueOwned ? "Will be auto-assigned from queue" : "Select assignee"}
                 disabled={isQueueOwned}
-              />
+              />:<></>}
             </div>
 
             {!validations.assignment && (
@@ -367,7 +367,7 @@ export default function TicketForm({
                 </span>
               </div>
             )}
-
+{!isQueueOwned ?
             <div className="space-y-4">
               <h4 className="text-sm font-medium text-gray-900">Team Involvement (Optional)</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -387,9 +387,8 @@ export default function TicketForm({
                   disabled={!form.groupId}
                 />
               </div>
-            </div>
-          </div>
-        );
+            </div>:<></>}
+          </div>        );
 
       case 2:
         return (

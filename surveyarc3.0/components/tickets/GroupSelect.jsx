@@ -6,7 +6,7 @@ export default function GroupSelect({
   orgId,
   value,
   onChange,
-  label = "Group (queue owner)",
+  label = "Group",
   helperText = "Choose the team queue",
   disabled = false,
 }) {
