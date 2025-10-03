@@ -50,7 +50,7 @@ export const TicketProvider = ({ children }) => {
     return TicketModel.count(params); // { count }
   }, []);
 
-  // ---------- NEW: assignment actions ----------
+  // ---------- Assignment actions (single team/agent) ----------
 
   const assignGroup = useCallback(async (ticketId, groupId) => {
     const updated = await TicketModel.assignGroup(ticketId, groupId);
@@ -59,15 +59,15 @@ export const TicketProvider = ({ children }) => {
     return updated;
   }, []);
 
-  const patchTeams = useCallback(async (ticketId, teamIds, mode = "add") => {
-    const updated = await TicketModel.patchTeams(ticketId, teamIds, mode);
+  const assignTeam = useCallback(async (ticketId, teamId) => {
+    const updated = await TicketModel.assignTeam(ticketId, teamId);
     setTickets((prev) => prev.map((t) => (t.ticketId === ticketId ? updated : t)));
     setSelectedTicket((prev) => (prev && prev.ticketId === ticketId ? updated : prev));
     return updated;
   }, []);
 
-  const patchAgents = useCallback(async (ticketId, agentIds, mode = "add") => {
-    const updated = await TicketModel.patchAgents(ticketId, agentIds, mode);
+  const assignAgent = useCallback(async (ticketId, agentId) => {
+    const updated = await TicketModel.assignAgent(ticketId, agentId);
     setTickets((prev) => prev.map((t) => (t.ticketId === ticketId ? updated : t)));
     setSelectedTicket((prev) => (prev && prev.ticketId === ticketId ? updated : prev));
     return updated;
@@ -76,15 +76,6 @@ export const TicketProvider = ({ children }) => {
   const getParticipants = useCallback(async (ticketId) => {
     return TicketModel.getParticipants(ticketId);
   }, []);
-
-  // Sugar helpers
-  const addTeams = useCallback((ticketId, ids) => patchTeams(ticketId, ids, "add"), [patchTeams]);
-  const removeTeams = useCallback((ticketId, ids) => patchTeams(ticketId, ids, "remove"), [patchTeams]);
-  const setTeams = useCallback((ticketId, ids) => patchTeams(ticketId, ids, "replace"), [patchTeams]);
-
-  const addAgents = useCallback((ticketId, ids) => patchAgents(ticketId, ids, "add"), [patchAgents]);
-  const removeAgents = useCallback((ticketId, ids) => patchAgents(ticketId, ids, "remove"), [patchAgents]);
-  const setAgents = useCallback((ticketId, ids) => patchAgents(ticketId, ids, "replace"), [patchAgents]);
 
   const value = useMemo(
     () => ({
@@ -98,20 +89,28 @@ export const TicketProvider = ({ children }) => {
       remove,
       count,
 
-      // NEW
+      // Assignment methods
       assignGroup,
-      patchTeams, addTeams, removeTeams, setTeams,
-      patchAgents, addAgents, removeAgents, setAgents,
+      assignTeam,
+      assignAgent,
       getParticipants,
 
       setSelectedTicket,
       setTickets,
     }),
     [
-      tickets, selectedTicket, loading,
-      list, get, create, update, remove, count,
-      assignGroup, patchTeams, addTeams, removeTeams, setTeams,
-      patchAgents, addAgents, removeAgents, setAgents,
+      tickets,
+      selectedTicket,
+      loading,
+      list,
+      get,
+      create,
+      update,
+      remove,
+      count,
+      assignGroup,
+      assignTeam,
+      assignAgent,
       getParticipants,
     ]
   );

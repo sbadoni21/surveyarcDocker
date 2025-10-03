@@ -1,6 +1,4 @@
-// ============================================================
-// FILE: app/(dashboard)/[orgSlug]/[orgId]/tickets/agent/page.jsx
-// ============================================================
+// app/(dashboard)/[orgSlug]/[orgId]/tickets/agent/page.jsx
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { usePathname } from "next/navigation";
@@ -27,17 +25,18 @@ export default function AgentTicketsPage() {
 
   const loadTickets = useCallback(async () => {
     if (!orgId || !uid) return;
-    
+
     setLoading(true);
     try {
       const list = await TicketModel.list({
         orgId,
-        assigneeId: uid,
+        // IMPORTANT: filter by agentId (string), not assigneeId
+        agentId: String(uid),
         q: filters.q || undefined,
         status: filters.status || undefined,
         limit: 200,
       }).catch(() => []);
-      
+
       const normalized = (list || []).map((t) => ({
         ...t,
         ticketId: t.ticketId || t.ticket_id,
@@ -48,14 +47,15 @@ export default function AgentTicketsPage() {
         severity: t.severity,
         requesterId: t.requesterId || t.requester_id,
         groupId: t.groupId || t.group_id,
+        teamId: t.teamId ?? t.team_id ?? null,
+        agentId: t.agentId ?? t.agent_id ?? null,
         updatedAt: t.updatedAt || t.updated_at,
         createdAt: t.createdAt || t.created_at,
         slaStatus: t.sla_status || t.slaStatus || null,
       }));
-      
+
       setTickets(sortTickets(normalized, filters.sortBy));
-      
-      // Only preserve selection if one was already selected
+
       if (selected) {
         const stillExists = normalized.find((x) => x.ticketId === selected.ticketId);
         setSelected(stillExists || null);
@@ -77,22 +77,17 @@ export default function AgentTicketsPage() {
     setTickets((prev) =>
       prev.map((t) => (t.ticketId === updatedTicket.ticketId ? { ...t, ...updatedTicket } : t))
     );
-    setSelected((cur) => 
-      cur?.ticketId === updatedTicket.ticketId ? { ...cur, ...updatedTicket } : cur
-    );
+    setSelected((cur) => (cur?.ticketId === updatedTicket.ticketId ? { ...cur, ...updatedTicket } : cur));
   };
 
   const handleTicketSelect = async (ticket) => {
     setSelected(ticket);
-    
-    // Auto-mark as "open" if status is "new"
     if (ticket.status === "new") {
       try {
         const updated = await TicketModel.update(ticket.ticketId, { status: "open" });
         handleTicketChanged(updated);
       } catch (err) {
         console.error("Failed to update ticket status:", err);
-        // Still select the ticket even if update fails
       }
     }
   };
@@ -100,7 +95,6 @@ export default function AgentTicketsPage() {
   return (
     <main className="h-[calc(100vh-64px)] p-4 md:p-6">
       <div className="h-full grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Left: Ticket List */}
         <TicketListPanel
           tickets={tickets}
           loading={loading}
@@ -110,8 +104,6 @@ export default function AgentTicketsPage() {
           onFiltersChange={handleFiltersChange}
           onRefresh={loadTickets}
         />
-
-        {/* Right: Ticket Detail */}
         <section className="lg:col-span-7 xl:col-span-8 border rounded-lg bg-white min-h-0 flex flex-col">
           {!selected ? (
             <div className="flex-1 flex items-center justify-center text-gray-500">

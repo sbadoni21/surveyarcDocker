@@ -2,15 +2,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Plus, Clock, CheckCircle, AlertCircle, Edit, Clipboard, Tag, Flag,
-  Upload, Trash2, Info, ChevronLeft, ChevronRight, RefreshCw, Save, Target, X
+  Upload, ChevronLeft, ChevronRight, RefreshCw, Save, Target, X
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import "react-quill-new/dist/quill.snow.css";
 
 import AssigneeSelect from "./AssigneeSelect";
 import GroupSelect from "./GroupSelect";
-import TeamMultiSelect from "./TeamMultiSelect";
-import AgentMultiSelect from "./AgentMultiSelect";
 import CollaboratorsSelect from "./CollaboratorsSelect";
 import TagMultiSelect from "./TagMultiSelect";
 import { CategorySelector } from "./CategorySelector";
@@ -20,6 +18,10 @@ import { useTags } from "@/providers/postGresPorviders/TagProvider";
 import AttachmentModel from "@/models/postGresModels/attachmentModel";
 import { TicketFileUpload } from "../common/FileUpload";
 import { useTicketCategories } from "@/providers/postGresPorviders/TicketCategoryProvider";
+import SupportTeamModel from "@/models/postGresModels/supportTeamModel";
+import TeamSelect from "./TeamMultiSelect";
+import AgentSelect from "./AgentMultiSelect";
+import { useUser } from "@/providers/postGresPorviders/UserProvider";
 
 const ReactQuill = dynamic(() => import("react-quill-new"), { ssr: false });
 
@@ -43,11 +45,14 @@ export default function TicketForm({
   const [activeStep, setActiveStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [stagedUploads, setStagedUploads] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [loadingTeamMembers, setLoadingTeamMembers] = useState(false);
 
   // Providers
   const { slasByOrg, listSLAs } = useSLA();
   const { getCachedTags, list: listTags } = useTags();
   const { listCategories, listProducts } = useTicketCategories();
+  const { getUsersByIds } = useUser();
 
   // Load data on mount
   useEffect(() => {
@@ -59,20 +64,14 @@ export default function TicketForm({
       listProducts(orgId),
     ]).catch(console.error);
   }, [orgId, listSLAs, listTags, listCategories, listProducts]);
-  // Helper to calculate SLA due dates
-  const calculateDueDate = (minutes) => {
-    if (!minutes) return null;
-    const now = new Date();
-    const due = new Date(now.getTime() + minutes * 60000);
-    return due.toISOString();
-  };
+
   const [form, setForm] = useState(() => ({
     subject: initial?.subject || "",
     description: initial?.description || "",
     queueOwned: Boolean(!initial?.assigneeId && initial?.groupId),
     groupId: initial?.groupId || "",
-    teamIds: initial?.teamIds || [],
-    agentIds: initial?.agentIds || [],
+    teamId: initial?.teamId || "",
+    agentId: initial?.agentId || "",
     assigneeId: initial?.assigneeId || "",
     categoryId: initial?.categoryId || "",
     subcategoryId: initial?.subcategoryId || "",
@@ -95,8 +94,9 @@ export default function TicketForm({
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const isQueueOwned = form.queueOwned === true;
 
+  // Clear team and agent when group changes
   useEffect(() => {
-    setForm((f) => ({ ...f, teamIds: [], agentIds: [] }));
+    setForm((f) => ({ ...f, teamId: "", agentId: "" }));
   }, [form.groupId]);
 
   // Clear assignee if switching to queue-owned
@@ -105,6 +105,62 @@ export default function TicketForm({
       setForm((f) => ({ ...f, assigneeId: "" }));
     }
   }, [isQueueOwned, form.assigneeId]);
+
+  // Fetch team members when teamId changes
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!form.teamId) {
+        if (mounted) {
+          setTeamMembers([]);
+          setLoadingTeamMembers(false);
+        }
+        return;
+      }
+
+      if (mounted) setLoadingTeamMembers(true);
+
+      try {
+        // Get team membership rows
+        const members = await SupportTeamModel.listMembers(form.teamId);
+        const ids = (members || [])
+          .map((m) => m.user_id ?? m.userId ?? m.uid)
+          .filter(Boolean);
+
+        if (ids.length === 0) {
+          if (mounted) {
+            setTeamMembers([]);
+            setLoadingTeamMembers(false);
+          }
+          return;
+        }
+
+        // Hydrate with user profiles
+        const profiles = await getUsersByIds(ids);
+
+        // Normalize for AgentSelect
+        const normalized = profiles.map((u) => ({
+          userId: u.user_id ?? u.userId ?? u.uid,
+          displayName: u.display_name ?? u.displayName ?? u.full_name ?? u.name ?? u.email ?? (u.user_id ?? u.userId ?? u.uid),
+          email: u.email,
+        }));
+
+        if (mounted) {
+          setTeamMembers(normalized);
+          setLoadingTeamMembers(false);
+        }
+      } catch (err) {
+        console.error("Failed to fetch team members:", err);
+        if (mounted) {
+          setTeamMembers([]);
+          setLoadingTeamMembers(false);
+        }
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [form.teamId, getUsersByIds]);
 
   // SLA options filtered by group
   const availableSLAOptions = (slasByOrg?.[orgId] || []).filter((sla) => {
@@ -133,11 +189,47 @@ export default function TicketForm({
     if (form.slaMode === "severity" && hasSeverityMap) {
       return selectedSLA.rules.severity_map[form.severity] || selectedSLA.resolution_minutes;
     }
-    console.log(selectedSLA.resolution_minutes)
     return selectedSLA.resolution_minutes;
   }, [selectedSLA, form.slaMode, form.priority, form.severity, hasPriorityMap, hasSeverityMap]);
 
   const firstResponseTime = selectedSLA?.first_response_minutes;
+
+  // Helper to calculate SLA due dates
+  const calculateDueDate = (minutes) => {
+    if (!minutes) return null;
+    const now = new Date();
+    const due = new Date(now.getTime() + minutes * 60000);
+    return due.toISOString();
+  };
+
+  // Calculate display dates for SLA targets
+  const calculatedFirstResponseDue = useMemo(() => {
+    if (!selectedSLA?.sla_id || !firstResponseTime) return null;
+    const dueDate = calculateDueDate(firstResponseTime);
+    console.log('First Response Due:', dueDate);
+    return dueDate;
+  }, [selectedSLA?.sla_id, firstResponseTime]);
+
+  const calculatedResolutionDue = useMemo(() => {
+    if (!selectedSLA?.sla_id || !currentResolutionTime) return null;
+    const dueDate = calculateDueDate(currentResolutionTime);
+    console.log('Resolution Due:', dueDate);
+    return dueDate;
+  }, [selectedSLA?.sla_id, currentResolutionTime]);
+
+  // Auto-fill form fields with calculated dates
+  useEffect(() => {
+    if (calculatedFirstResponseDue) {
+      setForm((f) => ({ ...f, firstResponseDueAt: calculatedFirstResponseDue }));
+    }
+    if (calculatedResolutionDue) {
+      setForm((f) => ({ 
+        ...f, 
+        resolutionDueAt: calculatedResolutionDue,
+        dueAt: calculatedResolutionDue // Also set main dueAt
+      }));
+    }
+  }, [calculatedFirstResponseDue, calculatedResolutionDue]);
 
   // Validation
   const validations = {
@@ -155,19 +247,6 @@ export default function TicketForm({
       const knownSlaIds = new Set((availableSLAOptions || []).map((s) => s?.sla_id));
       const safeSlaId = form.slaId && knownSlaIds.has(form.slaId) ? form.slaId : null;
 
-      // Calculate SLA due dates if SLA is selected
-      let calculatedFirstResponseDue = null;
-      let calculatedResolutionDue = null;
-      
-      if (safeSlaId && selectedSLA) {
-        if (firstResponseTime) {
-          calculatedFirstResponseDue = calculateDueDate(firstResponseTime);
-        }
-        if (currentResolutionTime) {
-          calculatedResolutionDue = calculateDueDate(currentResolutionTime);
-        }
-      }
-
       const payload = {
         orgId,
         requesterId: requestorId,
@@ -176,26 +255,47 @@ export default function TicketForm({
         priority: form.priority,
         severity: form.severity,
         groupId: form.groupId || null,
-        teamIds: form.teamIds || [],
-        agentIds: form.agentIds || [],
+        teamId: form.teamId || null,
+        agentId: form.agentId || null,
         assigneeId: isQueueOwned ? null : form.assigneeId || null,
         categoryId: form.categoryId || null,
         subcategoryId: form.subcategoryId || null,
         productId: form.productId || null,
-       slaId: safeSlaId,
+        slaId: safeSlaId,
         sla_processing: safeSlaId ? {
-        sla_mode: form.slaMode,
-        calendar_id: selectedSLA?.calendar_id || null,
-        first_response_due_at: calculatedFirstResponseDue,
-        resolution_due_at: calculatedResolutionDue,
-      } : null,
-  dueAt:  calculatedResolutionDue || form.dueAt || null,
+          sla_mode: form.slaMode,
+          calendar_id: selectedSLA?.calendar_id || null,
+          first_response_due_at: calculatedFirstResponseDue,
+          resolution_due_at: calculatedResolutionDue,
+        } : null,
+        dueAt: calculatedResolutionDue || (form.dueAt && form.dueAt.trim()) || null,
         firstResponseDueAt: calculatedFirstResponseDue || null,
-        resolutionDueAt: form.resolutionDueAt || null,
+        resolutionDueAt: calculatedResolutionDue || null,
         slaMode: form.slaMode,
         tags: form.tagIds?.length ? form.tagIds : undefined,
         collaboratorIds: form.collaboratorIds || [],
       };
+
+      console.log('=== SUBMITTING TICKET ===');
+      console.log('SLA ID:', safeSlaId);
+      console.log('Selected SLA Object:', selectedSLA);
+      console.log('SLA Mode:', form.slaMode);
+      console.log('Priority:', form.priority);
+      console.log('Severity:', form.severity);
+      console.log('First Response Time (minutes):', firstResponseTime);
+      console.log('Current Resolution Time (minutes):', currentResolutionTime);
+      console.log('Calculated First Response Due:', calculatedFirstResponseDue);
+      console.log('Calculated Resolution Due:', calculatedResolutionDue);
+      console.log('Has Priority Map:', hasPriorityMap);
+      console.log('Has Severity Map:', hasSeverityMap);
+      if (selectedSLA?.rules?.severity_map) {
+        console.log('Severity Map:', selectedSLA.rules.severity_map);
+      }
+      if (selectedSLA?.rules?.priority_map) {
+        console.log('Priority Map:', selectedSLA.rules.priority_map);
+      }
+      console.log('Full Payload:', JSON.stringify(payload, null, 2));
+      console.log('========================');
 
       const created = await onSubmit(payload);
       const ticketId = created?.ticketId ?? created?.ticket_id;
@@ -219,28 +319,30 @@ export default function TicketForm({
       }
 
       onClose?.();
-        setForm({
-      subject: "",
-      description: "",
-      queueOwned: false,
-      groupId: "",
-      teamIds: [],
-      agentIds: [],
-      assigneeId: "",
-      categoryId: "",
-      subcategoryId: "",
-      productId: "",
-      slaId: "",
-      slaMode: "priority",
-      priority: "normal",
-      severity: "sev4",
-      dueAt: "",
-      firstResponseDueAt: "",
-      resolutionDueAt: "",
-      tagIds: [],
-      collaboratorIds: [],
-    });
-    
+      setForm({
+        subject: "",
+        description: "",
+        queueOwned: false,
+        groupId: "",
+        teamId: "",
+        agentId: "",
+        assigneeId: "",
+        categoryId: "",
+        subcategoryId: "",
+        productId: "",
+        slaId: "",
+        slaMode: "priority",
+        priority: "normal",
+        severity: "sev4",
+        dueAt: "",
+        firstResponseDueAt: "",
+        resolutionDueAt: "",
+        tagIds: [],
+        collaboratorIds: [],
+      });
+      setStagedUploads([]);
+      setActiveStep(0);
+
       return created;
     } finally {
       setSaving(false);
@@ -257,10 +359,10 @@ export default function TicketForm({
   ];
 
   const handleNext = () => {
+    console.log(form)
     if (activeStep < steps.length - 1) {
       setActiveStep((s) => s + 1);
     }
-    console.log(form)
   };
 
   const handleBack = () => {
@@ -348,15 +450,17 @@ export default function TicketForm({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <GroupSelect orgId={orgId} value={form.groupId} onChange={(v) => update("groupId", v)} />
-          { !isQueueOwned ?   <AssigneeSelect
-                orgId={orgId}
-                groupId={form.groupId || undefined}
-                value={form.assigneeId}
-                onChange={(v) => update("assigneeId", v)}
-                label="Assignee"
-                placeholder={isQueueOwned ? "Will be auto-assigned from queue" : "Select assignee"}
-                disabled={isQueueOwned}
-              />:<></>}
+              {!isQueueOwned ? (
+                <AssigneeSelect
+                  orgId={orgId}
+                  groupId={form.groupId || undefined}
+                  value={form.assigneeId}
+                  onChange={(v) => update("assigneeId", v)}
+                  label="Assignee"
+                  placeholder={isQueueOwned ? "Will be auto-assigned from queue" : "Select assignee"}
+                  disabled={isQueueOwned}
+                />
+              ) : null}
             </div>
 
             {!validations.assignment && (
@@ -367,28 +471,41 @@ export default function TicketForm({
                 </span>
               </div>
             )}
-{!isQueueOwned ?
-            <div className="space-y-4">
-              <h4 className="text-sm font-medium text-gray-900">Team Involvement (Optional)</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <TeamMultiSelect
-                  groupId={form.groupId || undefined}
-                  value={form.teamIds}
-                  onChange={(teamIds) => update("teamIds", teamIds)}
-                  label="Teams"
-                  disabled={!form.groupId}
-                />
-                <AgentMultiSelect
-                  orgId={orgId}
-                  groupId={form.groupId || undefined}
-                  value={form.agentIds}
-                  onChange={(agentIds) => update("agentIds", agentIds)}
-                  label="Additional Agents"
-                  disabled={!form.groupId}
-                />
+
+            {!isQueueOwned ? (
+              <div className="space-y-4">
+                <h4 className="text-sm font-medium text-gray-900">Team Involvement (Optional)</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <TeamSelect
+                    groupId={form.groupId || undefined}
+                    value={form.teamId}
+                    onChange={(teamId) => update("teamId", teamId)}
+                    label="Team"
+                    disabled={!form.groupId}
+                  />
+                  <AgentSelect
+                    options={teamMembers}
+                    value={form.agentId}
+                    onChange={(agentId) => update("agentId", agentId)}
+                    label="Additional Agent"
+                    disabled={!form.teamId || loadingTeamMembers}
+                    loading={loadingTeamMembers}
+                    placeholder={form.teamId ? "Select an agent" : "Select a team first"}
+                    helperText={
+                      loadingTeamMembers 
+                        ? "Loading team members..." 
+                        : form.teamId && teamMembers.length === 0
+                        ? "No members found in this team"
+                        : form.teamId 
+                        ? undefined 
+                        : "Select a team first to see available members"
+                    }
+                  />
+                </div>
               </div>
-            </div>:<></>}
-          </div>        );
+            ) : null}
+          </div>
+        );
 
       case 2:
         return (
@@ -402,7 +519,7 @@ export default function TicketForm({
                   Select category, subcategory, and affected product
                 </span>
               </div>
-              
+
               <CategorySelector
                 orgId={orgId}
                 value={{
@@ -412,7 +529,6 @@ export default function TicketForm({
                 }}
                 onChange={(categoryId) => {
                   update("categoryId", categoryId);
-                  // Reset subcategory when category changes
                   if (categoryId !== form.categoryId) {
                     update("subcategoryId", "");
                   }
@@ -420,8 +536,7 @@ export default function TicketForm({
                 onSubcategoryChange={(subcategoryId) => update("subcategoryId", subcategoryId)}
                 onProductChange={(productId) => update("productId", productId)}
               />
-              
-              {/* Visual feedback of selections */}
+
               {(form.categoryId || form.subcategoryId || form.productId) && (
                 <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
                   <p className="text-xs font-medium text-gray-700 mb-2">Selected Classification:</p>
@@ -609,17 +724,59 @@ export default function TicketForm({
                     </div>
                   </div>
                 </div>
+
+                {(calculatedFirstResponseDue || calculatedResolutionDue) && (
+                  <div className="mt-3 pt-3 border-t border-green-300">
+                    <h5 className="text-xs font-medium text-green-800 mb-2">Calculated Due Dates:</h5>
+                    <div className="space-y-2 text-sm">
+                      {calculatedFirstResponseDue && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-700">First Response Due:</span>
+                          <span className="font-medium text-blue-700">
+                            {new Date(calculatedFirstResponseDue).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      {calculatedResolutionDue && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-700">Resolution Due:</span>
+                          <span className="font-medium text-orange-700">
+                            {new Date(calculatedResolutionDue).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {selectedSLA && !currentResolutionTime && (
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <AlertCircle className="h-5 w-5 text-yellow-600" />
+                  <div>
+                    <p className="text-sm font-medium text-yellow-900">SLA Configuration Issue</p>
+                    <p className="text-xs text-yellow-700 mt-1">
+                      The selected SLA doesn't have time targets configured for the current {form.slaMode} mode.
+                      Due dates won't be automatically calculated.
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Custom Due Date</label>
+              <label className="block text-sm font-medium text-gray-700">Custom Due Date (Optional)</label>
               <input
                 type="datetime-local"
                 value={form.dueAt ? form.dueAt.slice(0, 16) : ""}
                 onChange={(e) => update("dueAt", e.target.value ? `${e.target.value}:00Z` : "")}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
+              <p className="text-xs text-gray-500">
+                Leave empty to use SLA-calculated dates, or set a custom due date to override
+              </p>
             </div>
           </div>
         );
@@ -684,7 +841,6 @@ export default function TicketForm({
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg max-w-6xl w-full max-h-[95vh] overflow-hidden flex flex-col">
-        {/* Header */}
         <div className="border-b border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-gray-900">{title}</h2>
@@ -692,7 +848,6 @@ export default function TicketForm({
               <X className="h-5 w-5" />
             </button>
           </div>
-          {/* Progress */}
           <div className="mt-4">
             <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
               <span>Step {activeStep + 1} of {steps.length}</span>
@@ -707,9 +862,7 @@ export default function TicketForm({
           </div>
         </div>
 
-        {/* Body */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Sidebar Navigation */}
           <div className="w-80 border-r border-gray-200 bg-gray-50 p-4 overflow-y-auto">
             <h3 className="text-sm font-medium text-gray-700 mb-4">Form Steps</h3>
             <div className="space-y-2">
@@ -750,11 +903,9 @@ export default function TicketForm({
             </div>
           </div>
 
-          {/* Content */}
           <div className="flex-1 p-6 overflow-y-auto">{renderStepContent(activeStep)}</div>
         </div>
 
-        {/* Footer */}
         <div className="border-t border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div className="text-sm text-gray-600">

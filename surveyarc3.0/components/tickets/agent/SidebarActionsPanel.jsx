@@ -8,7 +8,6 @@ import QuickActionsPanel from "./QuickActionsPanel";
 
 export default function SidebarActionsPanel({ 
   ticket, 
-  timers, 
   onTicketUpdated,
   busy,
   setBusy 
@@ -23,8 +22,7 @@ export default function SidebarActionsPanel({
       />
       <SLAPanel
         ticket={ticket}
-        timers={timers}
-        onTimersUpdated={() => {}}
+        onTicketUpdated={onTicketUpdated}
         busy={busy}
         setBusy={setBusy}
       />

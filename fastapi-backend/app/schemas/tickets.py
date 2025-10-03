@@ -56,12 +56,6 @@ class AssignmentMeta(BaseModel):
     agent_id: Optional[str] = None
     initiated_by: Optional[str] = None
 
-    @model_validator(mode="after")
-    def _agent_requires_team(self):
-        if self.agent_id and not self.team_id:
-            raise ValueError("agent_id provided but team_id is missing")
-        return self
-
 
 # ------------------------------- SLA --------------------------------
 
@@ -124,11 +118,14 @@ class TicketBase(BaseModel):
 
     requester_id: str
 
-    # Single agent per ticket (use existing assignee_id)
+    # Primary assignee (main person responsible)
     assignee_id: Optional[str] = None
 
-    # Single team per ticket (NEW)
+    # Single team per ticket
     team_id: Optional[str] = None
+
+    # Single additional agent per ticket (besides assignee)
+    agent_id: Optional[str] = None
 
     # Group is optional, unchanged
     group_id: Optional[str] = None
@@ -143,7 +140,7 @@ class TicketBase(BaseModel):
 
     # ---- DEPRECATED FIELDS (kept to accept old payloads; ignored) ----
     team_ids: List[str] = Field(default_factory=list, description="DEPRECATED: use team_id")
-    agent_ids: List[str] = Field(default_factory=list, description="DEPRECATED: use assignee_id")
+    agent_ids: List[str] = Field(default_factory=list, description="DEPRECATED: use agent_id")
 
     category_id: Optional[str] = None
     subcategory_id: Optional[str] = None
@@ -151,13 +148,14 @@ class TicketBase(BaseModel):
     # Backward-compat coercion from lists (first item wins)
     @model_validator(mode="after")
     def _coerce_deprecated_lists(self):
+        # Coerce team_ids to team_id
         if (not self.team_id) and self.team_ids:
             self.team_id = self.team_ids[0]
-        if (not self.assignee_id) and self.agent_ids:
-            self.assignee_id = self.agent_ids[0]
-        # If agent provided, ensure team present
-        if self.assignee_id and not self.team_id:
-            raise ValueError("assignee_id provided but team_id is missing")
+        
+        # Coerce agent_ids to agent_id
+        if (not self.agent_id) and self.agent_ids:
+            self.agent_id = self.agent_ids[0]
+        
         return self
 
 
@@ -173,10 +171,8 @@ class TicketCreate(TicketBase):
             # Prefer explicit top-level fields; fall back to assignment if missing
             if not self.team_id and self.assignment.team_id:
                 self.team_id = self.assignment.team_id
-            if not self.assignee_id and self.assignment.agent_id:
-                self.assignee_id = self.assignment.agent_id
-            if self.assignee_id and not self.team_id:
-                raise ValueError("assignment.agent_id provided but team_id missing")
+            if not self.agent_id and self.assignment.agent_id:
+                self.agent_id = self.assignment.agent_id
         return self
 
 
@@ -190,6 +186,7 @@ class TicketUpdate(BaseModel):
     # Single agent/team updates
     assignee_id: Optional[str] = None
     team_id: Optional[str] = None
+    agent_id: Optional[str] = None
 
     group_id: Optional[str] = None
     category: Optional[str] = None
@@ -203,7 +200,7 @@ class TicketUpdate(BaseModel):
 
     # DEPRECATED: incoming old clients might still send these
     team_ids: Optional[List[str]] = Field(default=None, description="DEPRECATED: use team_id")
-    agent_ids: Optional[List[str]] = Field(default=None, description="DEPRECATED: use assignee_id")
+    agent_ids: Optional[List[str]] = Field(default=None, description="DEPRECATED: use agent_id")
 
     category_id: Optional[str] = None
     subcategory_id: Optional[str] = None
@@ -214,20 +211,17 @@ class TicketUpdate(BaseModel):
     def _normalize_and_validate(self):
         # Coerce deprecated lists
         if (not self.team_id) and self.team_ids:
-            self.team_id = self.team_ids[0]
-        if (not self.assignee_id) and self.agent_ids:
-            self.assignee_id = self.agent_ids[0]
+            self.team_id = self.team_ids[0] if self.team_ids else None
+        if (not self.agent_id) and self.agent_ids:
+            self.agent_id = self.agent_ids[0] if self.agent_ids else None
 
         # Pull from assignment if provided
         if self.assignment:
             if not self.team_id and self.assignment.team_id:
                 self.team_id = self.assignment.team_id
-            if not self.assignee_id and self.assignment.agent_id:
-                self.assignee_id = self.assignment.agent_id
+            if not self.agent_id and self.assignment.agent_id:
+                self.agent_id = self.assignment.agent_id
 
-        # Validate dependency: agent needs team
-        if self.assignee_id and not self.team_id:
-            raise ValueError("assignee_id provided but team_id is missing")
         return self
 
 
@@ -246,9 +240,9 @@ class TicketOut(TicketBase):
     attachment_count: int = 0
     comment_count: int = 0
 
-    # counts related to teams/agents removed (single only now)
-    team_ids: Optional[List[str]] = None  # will always be [] in output; kept for compatibility
-    agent_ids: Optional[List[str]] = None
+    # Deprecated fields kept for backward compatibility (always empty arrays)
+    team_ids: List[str] = Field(default_factory=list, description="DEPRECATED: use team_id")
+    agent_ids: List[str] = Field(default_factory=list, description="DEPRECATED: use agent_id")
 
     category_id: Optional[str] = None
     subcategory_id: Optional[str] = None

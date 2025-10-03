@@ -38,7 +38,7 @@ const toCamel = (t) => ({
   category: t.category ?? null,
   subcategory: t.subcategory ?? null,
 
-  // *** NEW: ids coming from backend ***
+  // ids coming from backend
   groupId: t.group_id ?? null,
   categoryId: t.category_id ?? null,
   subcategoryId: t.subcategory_id ?? null,
@@ -60,24 +60,23 @@ const toCamel = (t) => ({
 
   tags: t.tags || [],
   custom: t.custom_fields || t.meta || {},
+  teamId: t.team_id ?? null,
+  agentId: t.agent_id ?? null,
 
-  // arrays we added server-side
-  teamIds: t.team_ids ?? [],
-  agentIds: t.agent_ids ?? [],
-
-  // *** NEW: expose SLA status object to UI ***
+  // SLA status object
   slaStatus: t.sla_status ?? null,
 });
 
 const TicketModel = {
   // ---------------- core CRUD ----------------
-  async list({ orgId, status, assigneeId, q, limit = 50, offset = 0, groupId, categoryId, subcategoryId } = {}) {
+  async list({ orgId, status, assigneeId, teamId, agentId, q, limit = 50, offset = 0, groupId, categoryId, subcategoryId } = {}) {
     const qs = new URLSearchParams();
     if (orgId) qs.set("org_id", orgId);
     if (status) qs.set("status", status);
     if (assigneeId) qs.set("assignee_id", assigneeId);
+    if (teamId) qs.set("team_id", teamId);
+    if (agentId) qs.set("agent_id", agentId);
     if (groupId) qs.set("group_id", groupId);
-    // These two are harmless if backend doesn't filter yet
     if (categoryId) qs.set("category_id", categoryId);
     if (subcategoryId) qs.set("subcategory_id", subcategoryId);
     if (q) qs.set("q", q);
@@ -113,7 +112,7 @@ const TicketModel = {
       category: data.category ?? null,
       subcategory: data.subcategory ?? null,
 
-      // *** NEW: ids you want persisted ***
+      // ids you want persisted
       group_id: data.groupId ?? null,
       category_id: data.categoryId ?? null,
       subcategory_id: data.subcategoryId ?? null,
@@ -124,8 +123,10 @@ const TicketModel = {
 
       tags: Array.isArray(data.tags) ? data.tags : undefined,
       custom_fields: data.custom ?? {},
-      team_ids: Array.isArray(data.teamIds) ? data.teamIds : undefined,
-      agent_ids: Array.isArray(data.agentIds) ? data.agentIds : undefined,
+      
+      // NEW: single team and agent
+      team_id: data.teamId ?? null,
+      agent_id: data.agentId ?? null,
 
       // Optional: assignment meta, if you use it on server
       assignment: data.assignment ?? undefined,
@@ -162,17 +163,14 @@ const TicketModel = {
       if ("projectId" in out) { out.project_id = out.projectId; delete out.projectId; }
       if ("dueAt" in out) { out.due_at = out.dueAt; delete out.dueAt; }
 
-      // *** NEW: ids mapping for patch ***
+      // ids mapping for patch
       if ("groupId" in out) { out.group_id = out.groupId; delete out.groupId; }
       if ("categoryId" in out) { out.category_id = out.categoryId; delete out.categoryId; }
       if ("subcategoryId" in out) { out.subcategory_id = out.subcategoryId; delete out.subcategoryId; }
 
-      // arrays (full replace semantics if provided)
-      if ("teamIds" in out) { out.team_ids = out.teamIds; delete out.teamIds; }
-      if ("agentIds" in out) { out.agent_ids = out.agentIds; delete out.agentIds; }
-
-      // Optional: forward assignment meta on patch too
-      // if ("assignment" in out && !out.assignment) delete out.assignment;
+      // NEW: single team and agent
+      if ("teamId" in out) { out.team_id = out.teamId; delete out.teamId; }
+      if ("agentId" in out) { out.agent_id = out.agentId; delete out.agentId; }
 
       return omitNullish(out);
     };
@@ -212,7 +210,7 @@ const TicketModel = {
     if (groupId) qs.set("group_id", groupId);
     if (status) qs.set("status", status);
     if (q) qs.set("q", q);
-    if (categoryId) qs.set("category_id", categoryId);        // harmless until backend supports
+    if (categoryId) qs.set("category_id", categoryId);
     if (subcategoryId) qs.set("subcategory_id", subcategoryId);
     qs.set("limit", String(limit));
     qs.set("offset", String(offset));
@@ -244,22 +242,22 @@ const TicketModel = {
     return toCamel(t);
   },
 
-  async patchTeams(ticketId, teamIds, mode = "add") {
-    const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}/teams`, {
+  async assignTeam(ticketId, teamId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}/team`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ team_ids: teamIds || [], mode }),
+      body: JSON.stringify({ team_id: teamId ?? null }),
       cache: "no-store",
     });
     const t = await json(res);
     return toCamel(t);
   },
 
-  async patchAgents(ticketId, agentIds, mode = "add") {
-    const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}/agents`, {
+  async assignAgent(ticketId, agentId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}/agent`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ agent_ids: agentIds || [], mode }),
+      body: JSON.stringify({ agent_id: agentId ?? null }),
       cache: "no-store",
     });
     const t = await json(res);
@@ -273,32 +271,11 @@ const TicketModel = {
       ticketId: payload.ticket_id,
       orgId: payload.org_id,
       groupId: payload.group_id ?? null,
-      teamIds: payload.team_ids ?? [],
-      agentIds: payload.agent_ids ?? [],
+      teamId: payload.team_id ?? null,
+      agentId: payload.agent_id ?? null,
       assigneeId: payload.assignee_id ?? null,
       updatedAt: payload.updated_at ?? null,
     };
-  },
-
-  // sugar
-  async addTeams(ticketId, teamIds) {
-    return this.patchTeams(ticketId, teamIds, "add");
-  },
-  async removeTeams(ticketId, teamIds) {
-    return this.patchTeams(ticketId, teamIds, "remove");
-  },
-  async setTeams(ticketId, teamIds) {
-    return this.patchTeams(ticketId, teamIds, "replace");
-  },
-
-  async addAgents(ticketId, agentIds) {
-    return this.patchAgents(ticketId, agentIds, "add");
-  },
-  async removeAgents(ticketId, agentIds) {
-    return this.patchAgents(ticketId, agentIds, "remove");
-  },
-  async setAgents(ticketId, agentIds) {
-    return this.patchAgents(ticketId, agentIds, "replace");
   },
 };
 

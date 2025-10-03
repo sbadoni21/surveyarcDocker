@@ -155,6 +155,7 @@ const SupportTeamModel = {
     console.log("Fetching members for team:", teamId);
     const r = await fetch(`${BASE}/${encodeURIComponent(teamId)}/members`, { cache: "no-store" });
     const members = await json(r);
+    console.log(members)
     return Array.isArray(members) ? members.map(memberToCamel) : [];
   },
 

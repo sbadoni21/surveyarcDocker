@@ -1,4 +1,3 @@
-
 // ============================================================
 // FILE: components/tickets/agent/TicketDetailPanel.jsx
 // ============================================================
@@ -12,7 +11,6 @@ import TicketMetadata from "./TicketMetadata";
 import ConversationSection from "./ConversationSection";
 import WorklogsSection from "./WorklogsSection";
 import SidebarActionsPanel from "./SidebarActionsPanel";
-import { readTimersSafe } from "../utils/slaHelpers";
 
 export default function TicketDetailPanel({ ticket, onTicketChanged, currentUserId }) {
   const [busy, setBusy] = useState(false);
@@ -20,7 +18,6 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
   const [comments, setComments] = useState([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [worklogs, setWorklogs] = useState([]);
-  const [timers, setTimers] = useState(null);
 
   const loadComments = useCallback(async () => {
     if (!ticket.ticketId) return;
@@ -37,14 +34,13 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
 
   const hydrate = useCallback(async () => {
     try {
+      // Get full ticket with SLA data included
       const t = await TicketModel.get(ticket.ticketId);
       setFull(t);
       await loadComments();
       
       const wls = await WorklogModel.list(ticket.ticketId).catch(() => []);
       setWorklogs(wls || []);
-      
-      setTimers(await readTimersSafe(ticket.ticketId));
     } catch (err) {
       console.error("Hydrate error:", err);
     }
@@ -56,10 +52,10 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
 
   const handleCommentAdded = async (newComment) => {
     setComments((prev) => [...prev, newComment]);
+    // Refresh full ticket to get updated SLA timers
     const fresh = await TicketModel.get(full.ticketId);
     setFull(fresh);
     onTicketChanged?.(fresh);
-    setTimers(await readTimersSafe(full.ticketId));
   };
 
   const handleCommentDeleted = (commentId) => {
@@ -73,7 +69,6 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
   const handleTicketUpdated = async (updated) => {
     setFull(updated);
     onTicketChanged?.(updated);
-    setTimers(await readTimersSafe(updated.ticketId));
   };
 
   return (
@@ -108,7 +103,6 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
         <div className="xl:col-span-4 min-h-0 flex flex-col">
           <SidebarActionsPanel
             ticket={full}
-            timers={timers}
             onTicketUpdated={handleTicketUpdated}
             busy={busy}
             setBusy={setBusy}
@@ -118,4 +112,3 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
     </div>
   );
 }
-

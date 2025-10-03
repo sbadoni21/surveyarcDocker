@@ -37,6 +37,30 @@ export const UserProvider = ({ children }) => {
   const setCurrentUser = (userData) => {
     setUser(userData);
   };
+  const getUsersByIds = async (ids = []) => {
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+    try {
+      // If your UserModel has a batch method, prefer it:
+      if (typeof UserModel.listByIds === "function") {
+        return await UserModel.listByIds(ids);
+      }
+      // Fallback: fetch one-by-one
+      const results = await Promise.all(
+        ids.map(async (id) => {
+          try {
+            return await UserModel.get(id);
+          } catch (e) {
+            console.error("UserModel.get failed for", id, e);
+            return null;
+          }
+        })
+      );
+      return results.filter(Boolean);
+    } catch (e) {
+      console.error("getUsersByIds failed:", e);
+      return [];
+    }
+  };
 
   const getUsersByOrg = async (orgId) => {
     try {
@@ -141,6 +165,7 @@ export const UserProvider = ({ children }) => {
       value={{
         user,
         uid,
+        getUsersByIds,
         loading,
         isRegistering,
         setCurrentUser,

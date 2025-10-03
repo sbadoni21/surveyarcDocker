@@ -1,30 +1,49 @@
-// ============================================================
-// FILE: components/tickets/agent/SLAPanel.jsx
-// ============================================================
 "use client";
 import { Shield, PauseCircle, PlayCircle, Clock } from "lucide-react";
 import SLAModel from "@/models/slaModel";
 
-function TimerRow({ timer = {} }) {
-  const due = timer?.due_at ? new Date(timer.due_at).toLocaleString() : "—";
-  const elapsed = typeof timer?.elapsed_minutes === "number" ? `${timer.elapsed_minutes}m elapsed` : "—";
-  const paused = timer?.paused ? "Paused" : "Running";
+function TimerRow({ timer = {}, ticket, dimension }) {
+  // Try to get data from ticket object first, fallback to timer prop
+  let due, elapsed, paused;
+  
+  if (dimension === "first_response") {
+    due = ticket?.first_response_due_at || timer?.due_at;
+    elapsed = ticket?.first_response_elapsed_minutes ?? timer?.elapsed_minutes;
+    paused = ticket?.first_response_paused ?? timer?.paused;
+  } else if (dimension === "resolution") {
+    due = ticket?.resolution_due_at || timer?.due_at;
+    elapsed = ticket?.resolution_elapsed_minutes ?? timer?.elapsed_minutes;
+    paused = ticket?.resolution_paused ?? timer?.paused;
+  } else {
+    // Fallback to timer prop only
+    due = timer?.due_at;
+    elapsed = timer?.elapsed_minutes;
+    paused = timer?.paused;
+  }
+
+  const dueDisplay = due ? new Date(due).toLocaleString() : "—";
+  const elapsedDisplay = typeof elapsed === "number" ? `${elapsed}m elapsed` : "—";
+  const pausedDisplay = paused ? "Paused" : "Running";
   
   return (
     <div className="ml-6 text-xs text-gray-600">
-      <div>Due: <span className="font-medium text-gray-800">{due}</span></div>
-      <div>State: <span className="font-medium text-gray-800">{paused}</span></div>
-      <div>{elapsed}</div>
+      <div>Due: <span className="font-medium text-gray-800">{dueDisplay}</span></div>
+      <div>State: <span className="font-medium text-gray-800">{pausedDisplay}</span></div>
+      <div>{elapsedDisplay}</div>
     </div>
   );
 }
 
-export default function SLAPanel({ ticket, timers, busy, setBusy }) {
+export default function SLAPanel({ ticket, timers, busy, setBusy, onTicketUpdated }) {
   const handlePause = async () => {
     setBusy(true);
     try {
       await SLAModel.pause(ticket.ticketId, { dimension: "resolution", reason: "agent_paused" });
-      // Parent should refresh timers
+      // Refresh ticket data after pause
+      if (onTicketUpdated) {
+        const updated = await TicketModel.get(ticket.ticketId);
+        onTicketUpdated(updated);
+      }
     } finally {
       setBusy(false);
     }
@@ -34,7 +53,11 @@ export default function SLAPanel({ ticket, timers, busy, setBusy }) {
     setBusy(true);
     try {
       await SLAModel.resume(ticket.ticketId, { dimension: "resolution" });
-      // Parent should refresh timers
+      // Refresh ticket data after resume
+      if (onTicketUpdated) {
+        const updated = await TicketModel.get(ticket.ticketId);
+        onTicketUpdated(updated);
+      }
     } finally {
       setBusy(false);
     }
@@ -66,13 +89,13 @@ export default function SLAPanel({ ticket, timers, busy, setBusy }) {
           <Clock className="h-4 w-4 text-blue-600" />
           <div className="font-medium text-gray-800">First Response</div>
         </div>
-        <TimerRow timer={first_response} />
+        <TimerRow timer={first_response} ticket={ticket} dimension="first_response" />
 
         <div className="flex items-center gap-2 mt-2">
           <Clock className="h-4 w-4 text-amber-600" />
           <div className="font-medium text-gray-800">Resolution</div>
         </div>
-        <TimerRow timer={resolution} />
+        <TimerRow timer={resolution} ticket={ticket} dimension="resolution" />
       </div>
 
       <div className="grid grid-cols-2 gap-2 pt-2">

@@ -1,10 +1,16 @@
-// components/tickets/TeamMultiSelect.jsx
+// components/tickets/TeamSelect.jsx
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import { TextField, MenuItem, Chip, Box } from "@mui/material";
+import { useEffect, useState } from "react";
 import { useSupportTeams } from "@/providers/postGresPorviders/SupportTeamProvider";
 
-export default function TeamMultiSelect({ groupId, value = [], onChange, label = "Teams", disabled }) {
+export default function TeamSelect({ 
+  groupId, 
+  value = "", 
+  onChange, 
+  label = "Team", 
+  disabled,
+  placeholder = "Select a team"
+}) {
   const { listByGroup } = useSupportTeams();
   const [options, setOptions] = useState([]);
 
@@ -17,29 +23,29 @@ export default function TeamMultiSelect({ groupId, value = [], onChange, label =
     return () => { mounted = false; };
   }, [groupId, listByGroup]);
 
-  const ids = useMemo(() => new Set(value || []), [value]);
-
   return (
-    <TextField
-      select
-      fullWidth
-      label={label}
-      SelectProps={{ multiple: true, renderValue: (selected) => (
-        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-          {(selected || []).map((id) => {
-            const t = options.find(o => o.teamId === id);
-            return <Chip key={id} label={t?.name || id} />;
-          })}
-        </Box>
-      )}}
-      value={value}
-      onChange={(e) => onChange?.(Array.isArray(e.target.value) ? e.target.value : [])}
-      disabled={disabled || !groupId}
-      helperText={!groupId ? "Select a group first" : undefined}
-    >
-      {options.map((t) => (
-        <MenuItem key={t.teamId} value={t.teamId}>{t.name}</MenuItem>
-      ))}
-    </TextField>
+    <div className="space-y-2">
+      {label && (
+        <label className="block text-sm font-medium text-gray-700">
+          {label}
+        </label>
+      )}
+      <select
+        value={value || ""}
+        onChange={(e) => onChange?.(e.target.value)}
+        disabled={disabled || !groupId}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+      >
+        <option value="">{placeholder}</option>
+        {options.map((t) => (
+          <option key={t.teamId} value={t.teamId}>
+            {t.name}
+          </option>
+        ))}
+      </select>
+      {!groupId && (
+        <p className="text-sm text-gray-500">Select a group first</p>
+      )}
+    </div>
   );
 }

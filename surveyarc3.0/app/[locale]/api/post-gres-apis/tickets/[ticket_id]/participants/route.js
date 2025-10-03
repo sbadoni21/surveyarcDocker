@@ -1,3 +1,4 @@
+
 // app/api/post-gres-apis/tickets/[ticket_id]/participants/route.js
 import { NextResponse } from "next/server";
 import { decryptGetResponse } from "@/utils/crypto_client";
@@ -8,14 +9,24 @@ async function forceDecryptResponse(res) {
   const text = await res.text();
   try {
     const json = JSON.parse(text);
-    try { return NextResponse.json(await decryptGetResponse(json), { status: res.status }); }
-    catch { return NextResponse.json(json, { status: res.status }); }
+    try { 
+      return NextResponse.json(await decryptGetResponse(json), { status: res.status }); 
+    } catch { 
+      return NextResponse.json(json, { status: res.status }); 
+    }
   } catch {
     return NextResponse.json({ status: "error", raw: text }, { status: res.status });
   }
 }
 
-// GET quick view of group_id, team_ids, agent_ids, assignee_id
+/**
+ * GET quick view of ticket participants
+ * Returns: { 
+ *   ticket_id, org_id, group_id, 
+ *   team_id, agent_id, assignee_id,  // single values, not arrays
+ *   updated_at 
+ * }
+ */
 export async function GET(_req, { params }) {
   const { ticket_id } = await params;
   try {
@@ -25,6 +36,9 @@ export async function GET(_req, { params }) {
     });
     return forceDecryptResponse(res);
   } catch (e) {
-    return NextResponse.json({ detail: "Upstream error", message: String(e?.message || e) }, { status: 500 });
+    return NextResponse.json({ 
+      detail: "Upstream error", 
+      message: String(e?.message || e) 
+    }, { status: 500 });
   }
 }
