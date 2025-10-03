@@ -95,7 +95,6 @@ export default function TicketForm({
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const isQueueOwned = form.queueOwned === true;
 
-  // Reset teams & agents on group change
   useEffect(() => {
     setForm((f) => ({ ...f, teamIds: [], agentIds: [] }));
   }, [form.groupId]);
@@ -134,6 +133,7 @@ export default function TicketForm({
     if (form.slaMode === "severity" && hasSeverityMap) {
       return selectedSLA.rules.severity_map[form.severity] || selectedSLA.resolution_minutes;
     }
+    console.log(selectedSLA.resolution_minutes)
     return selectedSLA.resolution_minutes;
   }, [selectedSLA, form.slaMode, form.priority, form.severity, hasPriorityMap, hasSeverityMap]);
 
@@ -189,8 +189,8 @@ export default function TicketForm({
         first_response_due_at: calculatedFirstResponseDue,
         resolution_due_at: calculatedResolutionDue,
       } : null,
-        dueAt: form.dueAt || null,
-        firstResponseDueAt: form.firstResponseDueAt || null,
+  dueAt:  calculatedResolutionDue || form.dueAt || null,
+        firstResponseDueAt: calculatedFirstResponseDue || null,
         resolutionDueAt: form.resolutionDueAt || null,
         slaMode: form.slaMode,
         tags: form.tagIds?.length ? form.tagIds : undefined,
@@ -305,7 +305,7 @@ export default function TicketForm({
                       toolbar: [
                         [{ header: [1, 2, 3, false] }],
                         ["bold", "italic", "underline", "strike"],
-                        [{ list: "ordered" }, { list: "bullet" }],
+                        [{ list: "ordered" }],
                         [{ color: [] }, { background: [] }],
                         [{ align: [] }],
                         ["link", "code-block"],

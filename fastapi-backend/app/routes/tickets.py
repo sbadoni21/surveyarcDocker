@@ -11,9 +11,10 @@ from datetime import datetime
 from ..db import get_db
 from ..services.redis_ticket_service import RedisTicketService
 from ..services.redis_sla_service import get_ticket_sla_status  # optional use
-from ..models.tickets import Ticket, TicketWorklog
+from ..models.tickets import Ticket, TicketWorklog,TicketWatcher,TicketAssignment,TicketPriority,TicketSeverity
 from ..schemas.tickets import WorklogCreate, WorklogOut
 from ..policies.tickets import can_view_ticket, can_edit_ticket
+from ..models.ticket_categories import TicketCategory, TicketSubcategory
 
 from ..models.tickets import (
     Ticket,
@@ -50,8 +51,46 @@ from ..models.sla import SLADimension,SLA
 from ..services import sla_service
 
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
+_WORD_TO_PRIORITY = {
+    "low": "low",
+    "normal": "normal",
+    "medium": "normal",   # <- tolerate 'medium'
+    "high": "high",
+    "urgent": "urgent",
+    "blocker": "blocker",
+}
 
+_WORD_TO_SEVERITY = {
+    # tolerate words and map to your enum scale (sev1=critical ... sev4=low)
+    "critical": "sev1",
+    "sev1": "sev1",
+    "high": "sev2",
+    "sev2": "sev2",
+    "medium": "sev3",
+    "sev3": "sev3",
+    "low": "sev4",
+    "sev4": "sev4",
+}
 
+def coerce_priority(v: str | None) -> TicketPriority | None:
+    if not v:
+        return None
+    s = str(v).strip().lower()
+    s = _WORD_TO_PRIORITY.get(s, s)  # pass through if already valid
+    try:
+        return TicketPriority(s)  # validates against enum
+    except Exception:
+        return None
+
+def coerce_severity(v: str | None) -> TicketSeverity | None:
+    if not v:
+        return None
+    s = str(v).strip().lower()
+    s = _WORD_TO_SEVERITY.get(s, s)
+    try:
+        return TicketSeverity(s)
+    except Exception:
+        return None
 def _ensure_sla_status_if_needed(db: Session, t: Ticket) -> None:
     if not t.sla_id:
         return
@@ -66,6 +105,36 @@ def _ensure_sla_status_if_needed(db: Session, t: Ticket) -> None:
         sla_service._recompute_due(db, st, sla_obj)
 
 
+def _apply_category_defaults_on_create(db: Session, t: Ticket):
+    """
+    If category/subcategory carries defaults, apply them without overwriting
+    explicit client choices; always coerce to valid enums.
+    """
+    from ..models.ticket_categories import TicketSubcategory
+
+    if not t.subcategory_id:
+        return
+
+    sub = db.get(TicketSubcategory, t.subcategory_id)
+    if not sub or not sub.active:
+        return
+
+    # Priority
+    if sub.default_priority and not t.priority:
+        cp = coerce_priority(sub.default_priority)
+        if cp:
+            t.priority = cp
+
+    # Severity
+    if sub.default_severity and not t.severity:
+        cs = coerce_severity(sub.default_severity)
+        if cs:
+            t.severity = cs
+
+    # SLA
+    if sub.default_sla_id and not t.sla_id:
+        t.sla_id = sub.default_sla_id
+      
 def _invalidate_all(db: Session, t: Ticket):
     RedisTicketService.invalidate_ticket(t.ticket_id)
     RedisTicketService.invalidate_org_lists_and_counts(t.org_id)
@@ -95,14 +164,17 @@ def _import_user_model():
 
 # ------------------------------- CRUD --------------------------------
 
+# app/routers/tickets.py
+
 def _create_sla_status_with_processing(
-    db: Session, 
-    ticket: Ticket, 
+    db: Session,
+    ticket: Ticket,
     sla_processing: Optional[SLAProcessingData]
 ):
-    """Create TicketSLAStatus with SLA processing data from frontend"""
-    
-    # Create base SLA status
+    if not ticket.sla_id:
+        return
+
+    # Base payload
     sla_status_data = {
         "ticket_id": ticket.ticket_id,
         "sla_id": ticket.sla_id,
@@ -115,38 +187,55 @@ def _create_sla_status_with_processing(
         "breached_resolution": False,
         "elapsed_first_response_minutes": 0,
         "elapsed_resolution_minutes": 0,
+        # NEW: persist meta so we know how the timers were derived
+        "meta": {
+            "sla_mode": None,              # "priority" | "severity"
+            "basis_priority": None,        # e.g. "high"
+            "basis_severity": None,        # e.g. "sev2"
+            "source": "frontend_or_server" # we’ll set below
+        }
     }
-    
-    # Add SLA processing data if provided (calculated due dates from frontend)
+
+    # Apply client-provided precomputed due dates (if any)
     if sla_processing:
+        sla_status_data["meta"]["sla_mode"] = sla_processing.sla_mode
         if sla_processing.first_response_due_at:
-            try:
-                # Handle ISO string from frontend
-                due_date_str = sla_processing.first_response_due_at
-                if due_date_str.endswith('Z'):
-                    due_date_str = due_date_str[:-1] + '+00:00'
-                sla_status_data["first_response_due_at"] = datetime.fromisoformat(due_date_str)
-            except (ValueError, AttributeError):
-                pass  # Skip invalid dates
-        
+            s = sla_processing.first_response_due_at
+            if s.endswith("Z"): s = s[:-1] + "+00:00"
+            try: sla_status_data["first_response_due_at"] = datetime.fromisoformat(s)
+            except Exception: pass
         if sla_processing.resolution_due_at:
-            try:
-                due_date_str = sla_processing.resolution_due_at
-                if due_date_str.endswith('Z'):
-                    due_date_str = due_date_str[:-1] + '+00:00'
-                sla_status_data["resolution_due_at"] = datetime.fromisoformat(due_date_str)
-            except (ValueError, AttributeError):
-                pass
-        
+            s = sla_processing.resolution_due_at
+            if s.endswith("Z"): s = s[:-1] + "+00:00"
+            try: sla_status_data["resolution_due_at"] = datetime.fromisoformat(s)
+            except Exception: pass
         if sla_processing.calendar_id:
             sla_status_data["calendar_id"] = sla_processing.calendar_id
-    
-    # Create and add the SLA status record
+
+    # Persist the SLA row
     sla_status = TicketSLAStatus(**sla_status_data)
     db.add(sla_status)
-    
-    # Link to ticket
     ticket.sla_status = sla_status
+    db.flush()
+
+    # If any due is missing, compute using current service signature
+    if not sla_status.first_response_due_at or not sla_status.resolution_due_at:
+        # stash hints in meta for downstream logic (no kwargs)
+        mode = sla_status.meta.get("sla_mode") or ("priority" if ticket.priority else "severity")
+        sla_status.meta["sla_mode"] = mode
+        sla_status.meta["basis_priority"] = ticket.priority.value if ticket.priority else None
+        sla_status.meta["basis_severity"] = ticket.severity.value if ticket.severity else None
+        sla_status.meta["source"] = "server"
+
+        sla_service.ensure_started(sla_status)
+        sla_obj = db.get(SLA, ticket.sla_id)
+        if sla_obj:
+            # NOTE: no extra kwargs here
+            sla_service._recompute_due(db, sla_status, sla_obj)
+
+    # keep ticket.due_at in sync with resolution due
+    if not ticket.due_at and sla_status.resolution_due_at:
+        ticket.due_at = sla_status.resolution_due_at
 
 
 def _handle_assignment_on_create(
@@ -322,62 +411,72 @@ def list_tickets(
     return [TicketOut.model_validate(r, from_attributes=True) for r in records]
 
 
+# app/routers/tickets.py  (inside create_ticket)
+
 @router.post("/", response_model=TicketOut, status_code=201)
 def create_ticket(payload: TicketCreate, db: Session = Depends(get_db)):
-    """Create a new ticket with SLA processing"""
-    
-    # Generate ticket ID
     ticket_id = getattr(payload, "ticket_id", None) or f"tkt_{uuid.uuid4().hex[:10]}"
-    
-    # Extract only valid Ticket model fields
-    ticket_data = payload.model_dump(exclude={
-        "tags", 
-        "ticket_id", 
-        "assignment", 
-        "sla_processing"
-    })
-    
-    # Create the main ticket
+
+    ticket_data = payload.model_dump(exclude={"tags","ticket_id","assignment","sla_processing"})
     t = Ticket(ticket_id=ticket_id, **ticket_data)
     db.add(t)
-    
+
+    # Tags (existing)
     if payload.tags:
-        existing_tags = db.query(Tag).filter(
-            Tag.tag_id.in_(payload.tags),
-            Tag.org_id == t.org_id  # Security: ensure tags belong to same org
-        ).all()
-        
-        # Only use tags that exist and belong to the org
+        existing_tags = db.query(Tag).filter(Tag.tag_id.in_(payload.tags), Tag.org_id == t.org_id).all()
         if existing_tags:
             t.tags = existing_tags
-            # Increment usage count for used tags
             for tag in existing_tags:
                 tag.usage_count += 1
-    
-    # Flush to get the ticket in DB for relationships
+    if "priority" in ticket_data:
+        ticket_data["priority"] = coerce_priority(ticket_data["priority"]) or TicketPriority.normal
+    if "severity" in ticket_data:
+        ticket_data["severity"] = coerce_severity(ticket_data["severity"]) or TicketSeverity.sev4
+
+
     db.flush()
-    
-    # Create SLA status if SLA is configured
+
+    # NEW: defaults from category/subcategory
+    _apply_category_defaults_on_create(db, t)
+
+    # SLA status (persist mode + compute if missing)
     if t.sla_id:
         _create_sla_status_with_processing(db, t, payload.sla_processing)
     else:
-        # Still ensure SLA status exists for potential future SLA assignment
-        _ensure_sla_status_if_needed(db, t)
-    
-    # Handle assignment if provided
+        _ensure_sla_status_if_needed(db, t)  # keeps your existing behavior
+
+    # NEW (optional): requester auto-watcher (so they receive updates)
+    try:
+        wl = TicketWatcher(
+            watcher_id=f"twa_{uuid.uuid4().hex[:10]}",
+            ticket_id=t.ticket_id,
+            user_id=t.requester_id
+        )
+        db.add(wl)
+    except Exception:
+        pass
+
+    # NEW (optional): assignment audit row if we start with an assignee
+    if t.assignee_id:
+        db.add(TicketAssignment(
+            assignment_id=f"tas_{uuid.uuid4().hex[:10]}",
+            ticket_id=t.ticket_id,
+            actor_id=t.requester_id,
+            from_assignee=None,
+            to_assignee=t.assignee_id
+        ))
+
+    # Existing: handle group/team/agent arrays via assignment meta
     if payload.assignment:
         _handle_assignment_on_create(db, t, payload.assignment)
-    
-    # Create audit event
+
+    # Event + activity
     _create_ticket_creation_event(db, t, payload)
-    
-    # Set activity timestamp
     t.last_activity_at = datetime.utcnow()
-    
+
     db.commit()
     db.refresh(t)
-    
-    # Cache and return
+
     dto = TicketOut.model_validate(t, from_attributes=True)
     RedisTicketService.cache_ticket(dto)
     RedisTicketService.invalidate_org_lists_and_counts(t.org_id)

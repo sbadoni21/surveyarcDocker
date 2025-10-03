@@ -685,10 +685,10 @@ function SubcategoryModal({ orgId, categories, subcategory, onClose, onSave }) {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">None</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="critical">Critical</option>
+                <option value="sev1">Low</option>
+                <option value="sev2">Medium</option>
+                <option value="sev3">High</option>
+                <option value="sev4">Critical</option>
               </select>
             </div>
           </div>

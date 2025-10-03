@@ -18,7 +18,6 @@ export const SupportTeamProvider = ({ children }) => {
     try {
       const arr = await SupportTeamModel.list({ groupId });
       cacheRef.current.set(key, arr);
-      // If it's the first call, reflect in state
       setTeams(arr);
       return arr;
     } finally {

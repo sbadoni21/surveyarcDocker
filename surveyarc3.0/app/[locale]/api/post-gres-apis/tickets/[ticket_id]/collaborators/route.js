@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 const BASE = "http://localhost:8000";
 
 export async function GET(_req, { params }) {
-  const { ticketId } = params;
+  const { ticket_id } = await params;
   try {
-    const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}/collaborators`, {
+    const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticket_id)}/collaborators`, {
       signal: AbortSignal.timeout(30000),
     });
     const text = await res.text();
@@ -18,10 +18,10 @@ export async function GET(_req, { params }) {
 }
 
 export async function POST(req, { params }) {
-  const { ticketId } = params;
+  const { ticket_id } = await params;
   try {
     const body = await req.json();
-    const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}/collaborators`, {
+    const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticket_id)}/collaborators`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

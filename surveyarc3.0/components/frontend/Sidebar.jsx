@@ -7,30 +7,33 @@ import {
   Settings,
   LogOut,
   Menu,
-  Palette,
-  PhoneCall,
+  Ticket,
+  Tag,
+  Calendar,
+  GitBranch,
+  Clock,
+  UserCircle,
+  Layers,
   X,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { deleteCookie, getCookie } from "cookies-next";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/firebase/firebase";
-import { Email } from "@mui/icons-material";
 
 export default function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [activeItem, setActiveItem] = useState("Dashboard");
   const [orgName, setOrgName] = useState("");
-  const [orgHoverTitle, setOrgHoverTitle] = useState(""); // details shown on hover only
+  const [orgHoverTitle, setOrgHoverTitle] = useState("");
 
   const pathname = usePathname();
   const router = useRouter();
 
-  // Derive orgId from route (/.../org/:id/...) or fallback to cookie
+  // Derive orgId from route
   const orgId = useMemo(() => {
     const segs = pathname.split("/").filter(Boolean);
-    // matches your original: at(2) when path like /en/org/:id/dashboard
     const idFromPath = segs.at(2);
     return idFromPath || (getCookie("currentOrgId") ? String(getCookie("currentOrgId")) : "");
   }, [pathname]);
@@ -54,7 +57,6 @@ export default function Sidebar() {
             const name = data?.name || String(orgId);
             setOrgName(name);
 
-            // Build hover-only details (no CSS changes)
             const plan = (data?.subscription?.plan || "free").toUpperCase();
             const trial = !!data?.subscription?.trial?.isActive;
             const endSecs = data?.subscription?.endDate?.seconds;
@@ -90,21 +92,35 @@ export default function Sidebar() {
   }, [orgId]);
 
   const menuItems = [
-    { icon: LayoutDashboard, label: "Dashboard", href: "#" },
-    { icon: FolderOpen, label: "Projects", href: "#" },
-    { icon: Users, label: "Team", href: "#" },
-    { icon: Settings, label: "Settings", href: "#" },
-    { icon: Email, label: "Email", href: "#" },
-    { icon: Palette, label: "Theme", href: "#" },
-    { icon: PhoneCall, label: "Whatsapp", href: "#" },
+    { icon: LayoutDashboard, label: "Dashboard", path: "" },
+    { icon: Ticket, label: "Tickets", path: "tickets" },
+    { icon: UserCircle, label: "My Tickets", path: "my-tickets" },
+    { icon: Users, label: "Support Groups", path: "support-groups" },
+    { icon: Users, label: "Team", path: "team" },
+    { icon: FolderOpen, label: "Projects", path: "projects" },
+    { icon: Clock, label: "SLA", path: "sla" },
+    { icon: Calendar, label: "Business Calendars", path: "business-calendars" },
+    { icon: GitBranch, label: "Routing", path: "routing" },
+    { icon: Layers, label: "Category Management", path: "category-management" },
+    { icon: Tag, label: "Tags", path: "tags" },
+    { icon: Settings, label: "Settings", path: "settings" },
   ];
 
   const getActiveItemFromPath = (currentPath) => {
     const parts = currentPath.split("/").filter(Boolean);
-    const idx = parts.findIndex((p) => p === "dashboard");
-    if (idx === -1 || idx === parts.length - 1) return "Dashboard";
-    const seg = parts[idx + 1];
-    const match = menuItems.find((m) => m.label.toLowerCase() === seg.toLowerCase());
+    
+    // Find dashboard index
+    const dashboardIdx = parts.findIndex((p) => p === "dashboard");
+    if (dashboardIdx === -1) return "Dashboard";
+    
+    // If nothing after dashboard, we're on dashboard
+    if (dashboardIdx === parts.length - 1) return "Dashboard";
+    
+    // Get the segment after dashboard
+    const segment = parts[dashboardIdx + 1];
+    
+    // Match against menu items
+    const match = menuItems.find((m) => m.path === segment);
     return match ? match.label : "Dashboard";
   };
 
@@ -118,15 +134,13 @@ export default function Sidebar() {
   const handleLogout = () => {
     deleteCookie("currentUserId");
     deleteCookie("currentOrgId");
-    router.push("/login"); // keep client-side
+    router.push("/login");
   };
 
-  const handleItemClick = (label) => {
-    const lower = label.toLowerCase();
-    const path =
-      lower === "dashboard"
-        ? `/postgres-org/${orgId}/dashboard`
-        : `/postgres-org/${orgId}/dashboard/${lower}`;
+  const handleItemClick = (item) => {
+    const path = item.path
+      ? `/postgres-org/${orgId}/dashboard/${item.path}`
+      : `/postgres-org/${orgId}/dashboard`;
     router.push(path);
     setIsMobileOpen(false);
   };
@@ -134,7 +148,7 @@ export default function Sidebar() {
   return (
     <>
       <div className="z-10">
-        {/* MOBILE TOGGLER (unchanged styling) */}
+        {/* MOBILE TOGGLER */}
         <button
           onClick={toggleMobile}
           className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-orange-500 text-white rounded-lg shadow-lg hover:bg-orange-600 transition-colors"
@@ -149,7 +163,7 @@ export default function Sidebar() {
           />
         )}
 
-        {/* SIDEBAR SHELL (classes unchanged) */}
+        {/* SIDEBAR */}
         <div
           className={`
           fixed left-0 top-0 h-full bg-white dark:bg-[#1A1A1E] shadow-lg
@@ -158,16 +172,16 @@ export default function Sidebar() {
           ${isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
         `}
         >
-          {/* HEADER (unchanged markup, just inject title attr) */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-100 h-16">
+          {/* HEADER */}
+          <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800 h-16">
             {!isCollapsed && (
               <div className="flex items-center space-x-2">
                 <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
                   <div className="w-4 h-4 bg-white rounded-sm"></div>
                 </div>
                 <span
-                  className="font-semibold text-[#74727E] text-sm leading-4"
-                  title={orgHoverTitle} // <-- extra details on hover only
+                  className="font-semibold text-[#74727E] dark:text-gray-300 text-sm leading-4"
+                  title={orgHoverTitle}
                 >
                   {orgName || "Organisation"}
                 </span>
@@ -176,14 +190,14 @@ export default function Sidebar() {
 
             <button
               onClick={toggleSidebar}
-              className="hidden lg:flex p-1.5 text-gray-400 hover:text-gray-600  rounded-md transition-colors"
+              className="hidden lg:flex p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-md transition-colors"
             >
               <Menu size={16} />
             </button>
           </div>
 
-          {/* NAV (unchanged) */}
-          <nav className="flex-1 px-2 pt-4 pb-2">
+          {/* NAVIGATION */}
+          <nav className="flex-1 px-2 pt-4 pb-2 overflow-y-auto max-h-[calc(100vh-4rem)]">
             <ul className="space-y-1">
               {menuItems.map((item, index) => {
                 const Icon = item.icon;
@@ -195,15 +209,21 @@ export default function Sidebar() {
                     )}
 
                     <button
-                      onClick={() => handleItemClick(item.label)}
+                      onClick={() => handleItemClick(item)}
                       className={`
                         relative z-10 flex w-[90%] mx-auto items-center space-x-3 rounded-lg p-3 pl-5 text-left transition-all duration-200
-                        ${isActive ? "bg-[#FFB5733B] text-orange-600" : "text-[#74727E] hover:bg-[#FFB5733B] hover:text-orange-600"}
-                        ${isCollapsed ? "justify-end" : ""}
+                        ${isActive 
+                          ? "bg-[#FFB5733B] text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" 
+                          : "text-[#74727E] dark:text-gray-400 hover:bg-[#FFB5733B] dark:hover:bg-orange-900/30 hover:text-orange-600 dark:hover:text-orange-400"
+                        }
+                        ${isCollapsed ? "justify-center px-2" : ""}
                       `}
                       title={isCollapsed ? item.label : ""}
                     >
-                      <Icon size={20} className={`flex-shrink-0 ${isActive ? "text-orange-500" : ""}`} />
+                      <Icon 
+                        size={20} 
+                        className={`flex-shrink-0 ${isActive ? "text-orange-500 dark:text-orange-400" : ""}`} 
+                      />
                       {!isCollapsed && (
                         <span className="font-semibold text-sm">{item.label}</span>
                       )}
@@ -211,13 +231,15 @@ export default function Sidebar() {
                   </li>
                 );
               })}
-              <li className="">
+              
+              {/* LOGOUT BUTTON */}
+              <li className="pt-2 border-t border-gray-100 dark:border-gray-800 mt-2">
                 <button
                   onClick={handleLogout}
                   className={`
-                    w-full flex items-center space-x-3 p-3 rounded-lg transition-all duration-200 text-left
-                    text-red-600 hover:bg-red-50
-                    ${isCollapsed ? "justify-center px-2" : ""}
+                    w-[90%] mx-auto flex items-center space-x-3 p-3 rounded-lg transition-all duration-200 text-left
+                    text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20
+                    ${isCollapsed ? "justify-center px-2" : "pl-5"}
                   `}
                   title={isCollapsed ? "Log out" : ""}
                 >
@@ -229,7 +251,7 @@ export default function Sidebar() {
           </nav>
         </div>
 
-        {/* SPACER (unchanged) */}
+        {/* SPACER */}
         <div className={`hidden lg:block transition-all duration-300 ${isCollapsed ? "w-16" : "w-64"}`} />
       </div>
     </>

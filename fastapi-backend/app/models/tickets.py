@@ -23,6 +23,12 @@ from ..db import Base
 class AssignGroupBody(BaseModel):
     group_id: Optional[str] = Field(None, description="Support group to assign; null to clear")
 
+class AssignTeamBody(BaseModel):
+    team_id: Optional[str] = Field(None, description="Team to assign; null to clear")
+
+class AssignAgentBody(BaseModel):
+    assignee_id: Optional[str] = Field(None, description="Agent to assign; null to clear (requires team)")
+    
 class PatchTeamsBody(BaseModel):
     team_ids: List[str] = Field(default_factory=list)
     mode: Literal["add", "replace", "remove"] = "add"
@@ -82,30 +88,47 @@ class Ticket(Base):
     org_id:    Mapped[str] = mapped_column(String, index=True, nullable=False)
     project_id: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
     number:    Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
     subject:     Mapped[str] = mapped_column(String, nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)  # initial body
-    status:   Mapped[TicketStatus]  = mapped_column(Enum(TicketStatus), default=TicketStatus.new, index=True, nullable=False)
-    priority: Mapped[TicketPriority] = mapped_column(Enum(TicketPriority), default=TicketPriority.normal, index=True, nullable=False)
-    severity: Mapped[TicketSeverity] = mapped_column(Enum(TicketSeverity), default=TicketSeverity.sev4, index=True, nullable=False)
-    requester_id: Mapped[str] = mapped_column(String, index=True, nullable=False)  # who opened
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    status:   Mapped["TicketStatus"]  = mapped_column(Enum("TicketStatus", create_constraint=False), default="new", index=True, nullable=False)
+    priority: Mapped["TicketPriority"] = mapped_column(Enum("TicketPriority", create_constraint=False), default="normal", index=True, nullable=False)
+    severity: Mapped["TicketSeverity"] = mapped_column(Enum("TicketSeverity", create_constraint=False), default="sev4", index=True, nullable=False)
+
+    requester_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+
+    # SINGLE agent (assignee) per ticket
     assignee_id:  Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+
+    # NEW: SINGLE team per ticket
+    team_id:      Mapped[str | None] = mapped_column(String, ForeignKey("support_teams.team_id", ondelete="SET NULL"), index=True, nullable=True)
+
+    # existing group remains optional
     group_id:     Mapped[str | None] = mapped_column(String, ForeignKey("support_groups.group_id"), index=True, nullable=True)
+
     category:     Mapped[str | None] = mapped_column(String, nullable=True)
     subcategory:  Mapped[str | None] = mapped_column(String, nullable=True)
     product_id:   Mapped[str | None] = mapped_column(String, nullable=True)
     sla_id:       Mapped[str | None] = mapped_column(String, ForeignKey("slas.sla_id"), nullable=True)
+
     due_at:                 Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     first_response_at:      Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     resolved_at:            Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_at:              Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_activity_at:       Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), index=True, nullable=True)
     last_public_comment_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    reply_count:   Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    follower_count:Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    custom_fields: Mapped[dict] = mapped_column(JSONB, default=dict)   # arbitrary per-org fields
+
+    reply_count:     Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    follower_count:  Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    custom_fields: Mapped[dict] = mapped_column(JSONB, default=dict)
     meta:          Mapped[dict] = mapped_column(JSONB, default=dict)
+
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # relationships
     group = relationship("SupportGroup", back_populates="tickets")
     tags  = relationship("Tag", secondary=ticket_tags, back_populates="tickets")
     comments = relationship("TicketComment", back_populates="ticket", cascade="all, delete-orphan")
@@ -113,20 +136,19 @@ class Ticket(Base):
     watchers = relationship("TicketWatcher", back_populates="ticket", cascade="all, delete-orphan")
     events   = relationship("TicketEvent", back_populates="ticket", cascade="all, delete-orphan")
     sla_status = relationship("TicketSLAStatus", uselist=False, back_populates="ticket", cascade="all, delete-orphan")
-    team_ids:  Mapped[list[str]] = mapped_column(ARRAY(String), default=list, nullable=False, index=False)
-    agent_ids: Mapped[list[str]] = mapped_column(ARRAY(String), default=list, nullable=False, index=False)
+
+    # removed: team_ids (ARRAY), agent_ids (ARRAY)
+
     category_id:    Mapped[str | None] = mapped_column(String, index=True, nullable=True)
     subcategory_id: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
-    
 
     __table_args__ = (
         Index("ix_ticket_org_status", "org_id", "status"),
         Index("ix_ticket_org_assignee", "org_id", "assignee_id"),
+        Index("ix_ticket_org_team", "org_id", "team_id"),                 # NEW
         UniqueConstraint("org_id", "number", name="uq_ticket_org_number"),
-        Index("gin_tickets_team_ids",  team_ids,  postgresql_using="gin"),
-        Index("gin_tickets_agent_ids", agent_ids, postgresql_using="gin"),
+        # removed: GIN indexes on arrays
     )
-
 
 class TicketComment(Base):
     __tablename__ = "ticket_comments"
@@ -252,6 +274,7 @@ class TicketSLAStatus(Base):
 
     elapsed_first_response_minutes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     elapsed_resolution_minutes:     Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    meta:          Mapped[dict] = mapped_column(JSONB, default=dict)
 
     # last_resume_{dimension} is useful to accumulate elapsed segments
     last_resume_first_response: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
