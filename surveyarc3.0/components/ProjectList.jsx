@@ -1,18 +1,20 @@
+// components/projects/ProjectsList.jsx
 "use client";
 
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import UserModel from "@/models/postGresModels/userModel";
-import { timeformater } from "@/utils/timeformater";
 import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
+import { useProject } from "@/providers/postGresPorviders/projectProvider";
+import { useUser } from "@/providers/postGresPorviders/UserProvider";
+import { timeformater } from "@/utils/timeformater";
 
 // MUI
 import {
   Box, Paper, Stack, Toolbar, Typography, TextField, InputAdornment,
-  IconButton, Tooltip, Button, Chip, Table, TableHead, TableRow, TableCell,
+  IconButton, Tooltip, Chip, Table, TableHead, TableRow, TableCell,
   TableBody, TableContainer, TableSortLabel, Pagination, FormControlLabel,
   Checkbox, Select, MenuItem, Dialog, DialogTitle, DialogContent, DialogActions,
-  Alert, Snackbar, Avatar,
+  Alert, Snackbar, Avatar, Button,
 } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
 import SearchIcon from "@mui/icons-material/Search";
@@ -22,23 +24,26 @@ import GroupIcon from "@mui/icons-material/Group";
 import LockIcon from "@mui/icons-material/Lock";
 import PersonRemoveIcon from "@mui/icons-material/PersonRemove";
 import ClearIcon from "@mui/icons-material/Clear";
-import { useProject } from "@/providers/postGresPorviders/projectProvider";
-import { useUser } from "@/providers/postGresPorviders/UserProvider";
 
 const ITEMS_PER_PAGE = 10;
 
-// --- sorting helpers (no hooks) ---
+// ---------- small helpers ----------
+const norm = (v) => (typeof v === "string" ? v.toLowerCase().trim() : v);
+const getId = (obj) => obj?.uid || obj?.user_id || obj?.id || "";
+const getRole = (obj) => norm(obj?.role || obj?.member_role || "");
+
+// sort helpers
 function descendingComparator(a, b, orderBy) {
-  const va =
-    orderBy === "members"
-      ? (Array.isArray(a.members) ? a.members.length : 0)
-      : a?.[orderBy];
-  const vb =
-    orderBy === "members"
-      ? (Array.isArray(b.members) ? b.members.length : 0)
-      : b?.[orderBy];
+  const va = orderBy === "members"
+    ? (Array.isArray(a.members) ? a.members.length : 0)
+    : a?.[orderBy];
+  const vb = orderBy === "members"
+    ? (Array.isArray(b.members) ? b.members.length : 0)
+    : b?.[orderBy];
+
   if (va === undefined || va === null) return 1;
   if (vb === undefined || vb === null) return -1;
+
   if (orderBy === "name") return vb.toString().localeCompare(va.toString());
   return vb > va ? 1 : vb < va ? -1 : 0;
 }
@@ -54,34 +59,36 @@ export default function ProjectsList({
   deleteProject,
   onEditProject,
 }) {
-  // ---- hooks
   const router = useRouter();
   const { user } = useUser();
-  const { addMember, removeMember, getProjectById } = useProject();
   const { organisation } = useOrganisation();
 
+  // we will use updateProject + getProjectById to always send the full members list
+  const { updateProject, getProjectById } = useProject();
+
+  // table state
   const [order, setOrder] = useState("desc");
   const [orderBy, setOrderBy] = useState("last_activity");
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [onlyMine, setOnlyMine] = useState(false);
+
+  // dialog state
   const [memberOpen, setMemberOpen] = useState(false);
   const [activeProject, setActiveProject] = useState(null);
+  const [activeProjectId, setActiveProjectId] = useState(null);
+  const [activeLoading, setActiveLoading] = useState(false);
 
   // assignment form state
+  const [selectedOrgMember, setSelectedOrgMember] = useState(null);
   const [newMemberUid, setNewMemberUid] = useState("");
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const [newMemberRole, setNewMemberRole] = useState("contributor");
-  const [selectedOrgMember, setSelectedOrgMember] = useState(null);
 
+  // ui
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState({ open: false, severity: "info", msg: "" });
-
-  // ---------- ID/role normalization helpers ----------
-  const norm = (v) => (typeof v === "string" ? v.toLowerCase().trim() : v);
-  const getId = (obj) => obj?.uid || obj?.user_id || obj?.id || "";
-  const getRole = (obj) => norm(obj?.role || obj?.member_role || "");
 
   // ---------- permissions ----------
   const isOwner = useMemo(() => {
@@ -120,15 +127,14 @@ export default function ProjectsList({
     [organisation]
   );
 
-  // exclude already-assigned members
+  // exclude already-assigned members from picker
   const unassignedCandidates = useMemo(() => {
-    const team = orgTeamMembers;
-    if (!activeProject) return team;
+    if (!activeProject) return orgTeamMembers;
     const assigned = new Set((activeProject.members || []).map((m) => getId(m)));
-    return team.filter((m) => !assigned.has(getId(m)));
+    return orgTeamMembers.filter((m) => !assigned.has(getId(m)));
   }, [orgTeamMembers, activeProject]);
 
-  // ---- filtering/sorting/paging
+  // ---------- filtering/sorting/paging ----------
   const filteredSorted = useMemo(() => {
     const q = search.trim().toLowerCase();
     let rows = projects.filter((p) => {
@@ -161,7 +167,7 @@ export default function ProjectsList({
     if (page !== pageSafe) setPage(pageSafe);
   }, [page, pageSafe]);
 
-  // ---- utilities / handlers
+  // ---------- utilities ----------
   const openToast = useCallback((msg, severity = "info") => {
     setToast({ open: true, severity, msg });
   }, []);
@@ -186,20 +192,40 @@ export default function ProjectsList({
     [orderBy, order]
   );
 
-  const openMembers = useCallback((project) => {
-    setActiveProject(project);
-    setSelectedOrgMember(null);
-    setNewMemberUid("");
-    setNewMemberEmail("");
-    setNewMemberRole("contributor");
-    setMemberOpen(true);
-  }, []);
+  // ---------- dialog open/close ----------
+  const openMembers = useCallback(
+    async (project) => {
+      setMemberOpen(true);
+      setSelectedOrgMember(null);
+      setNewMemberUid("");
+      setNewMemberEmail("");
+      setNewMemberRole("contributor");
+
+      const pid = project?.project_id || null;
+      setActiveProjectId(pid);
+
+      if (pid) {
+        try {
+          setActiveLoading(true);
+          const fresh = await getProjectById(pid);
+          setActiveProject(fresh || project);
+        } catch {
+          setActiveProject(project || null);
+        } finally {
+          setActiveLoading(false);
+        }
+      } else {
+        setActiveProject(null);
+      }
+    },
+    [getProjectById]
+  );
 
   const closeMembers = useCallback(() => {
     setMemberOpen(false);
   }, []);
 
-  // When user picks from org team list
+  // keep hidden fields in sync with picker
   useEffect(() => {
     if (selectedOrgMember) {
       setNewMemberUid(getId(selectedOrgMember) || "");
@@ -210,9 +236,12 @@ export default function ProjectsList({
     }
   }, [selectedOrgMember]);
 
-  // REFACTORED: Using provider's addMember method
+  // ---------- core: add/update member by sending FULL members array ----------
   const handleAssign = useCallback(async () => {
-    if (!activeProject?.project_id) {
+    
+    const projectId = activeProject?.project_id || activeProjectId;
+    console.log(projectId)
+    if (!projectId) {
       openToast("No active project selected.", "error");
       return;
     }
@@ -220,29 +249,44 @@ export default function ProjectsList({
       openToast("Pick a member from the organisation.", "error");
       return;
     }
-    
+
     setBusy(true);
     try {
       const now = new Date().toISOString();
-      
-      // Check if member already exists
-      const existingMember = (activeProject.members || []).find(
-        (m) => getId(m) === newMemberUid
-      );
-      
-      const memberData = {
-        uid: newMemberUid,
-        role: newMemberRole || "contributor",
-        status: "active",
-        joined_at: existingMember?.joined_at || now,
-        email: newMemberEmail || "",
-      };
 
-      await addMember(activeProject.project_id, memberData);
-      
-      const updated = await getProjectById(activeProject.project_id);
+      // always refresh from server to avoid races, then modify LOCALLY
+      const fresh = await getProjectById(projectId);
+      const current = Array.isArray(fresh?.members) ? [...fresh.members] : [];
+
+      const idx = current.findIndex((m) => (getId(m)) === newMemberUid);
+      if (idx >= 0) {
+        // update existing
+        current[idx] = {
+          ...current[idx],
+          uid: newMemberUid,
+          email: newMemberEmail || current[idx]?.email || "",
+          role: newMemberRole || current[idx]?.role || "contributor",
+          status: "active",
+          joined_at: current[idx]?.joined_at || now,
+        };
+      } else {
+        // add new
+        current.push({
+          uid: newMemberUid,
+          email: newMemberEmail || "",
+          role: newMemberRole || "contributor",
+          status: "active",
+          joined_at: now,
+        });
+      }
+
+      // PATCH with the full list
+      await updateProject(projectId, { members: current, updated_at: now });
+
+      // refresh state for dialog/table
+      const updated = await getProjectById(projectId);
       setActiveProject(updated);
-      
+
       openToast("Member assigned successfully!", "success");
       setSelectedOrgMember(null);
       setNewMemberUid("");
@@ -255,29 +299,28 @@ export default function ProjectsList({
       setBusy(false);
     }
   }, [
-    activeProject, 
-    newMemberUid, 
-    newMemberRole, 
-    newMemberEmail, 
-    orgId, 
-    openToast, 
-    addMember, 
-    getProjectById
+    activeProject, activeProjectId,
+    newMemberUid, newMemberEmail, newMemberRole,
+    getProjectById, updateProject, openToast
   ]);
 
-  // REFACTORED: Using provider's removeMember method
   const handleRemoveMember = useCallback(
     async (memberUid) => {
-      if (!activeProject?.project_id) return;
+      const projectId = activeProject?.project_id || activeProjectId;
+      if (!projectId) {
+        openToast("No active project selected.", "error");
+        return;
+      }
       setBusy(true);
       try {
-        // Use provider method
-        await removeMember(activeProject.project_id, memberUid);
-        
-        // Refresh the active project data
-        const updated = await getProjectById(activeProject.project_id);
+        const fresh = await getProjectById(projectId);
+        const current = Array.isArray(fresh?.members) ? fresh.members : [];
+        const filtered = current.filter((m) => getId(m) !== memberUid);
+
+        await updateProject(projectId, { members: filtered, updated_at: new Date().toISOString() });
+        const updated = await getProjectById(projectId);
         setActiveProject(updated);
-        
+
         openToast("Member removed successfully!", "success");
       } catch (e) {
         console.error("Remove member error:", e);
@@ -286,12 +329,12 @@ export default function ProjectsList({
         setBusy(false);
       }
     },
-    [activeProject, removeMember, getProjectById, openToast]
+    [activeProject, activeProjectId, getProjectById, updateProject, openToast]
   );
-console.log(projects)
+
   return (
     <Box>
-      {/* Toolbar: search / filters */}
+      {/* Toolbar */}
       <Paper sx={{ p: 1.5, mb: 2 }}>
         <Toolbar disableGutters sx={{ gap: 1, flexWrap: "wrap" }}>
           <Typography variant="h6" sx={{ flex: "1 1 auto", pr: 2 }}>
@@ -479,7 +522,7 @@ console.log(projects)
                         <span>
                           <IconButton
                             size="small"
-                            onClick={() => onEditProject(p)}
+                            onClick={() => onEditProject?.(p)}
                             disabled={!canManage}
                           >
                             <EditIcon fontSize="small" />
@@ -498,7 +541,7 @@ console.log(projects)
                           <IconButton
                             size="small"
                             color="error"
-                            onClick={() => deleteProject(p.project_id)}
+                            onClick={() => deleteProject?.(p.project_id)}
                             disabled={!canManage}
                           >
                             <DeleteIcon fontSize="small" />
@@ -540,6 +583,12 @@ console.log(projects)
           Manage Members {activeProject ? `— ${activeProject.name}` : ""}
         </DialogTitle>
         <DialogContent dividers>
+          {activeLoading && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Loading latest project members…
+            </Alert>
+          )}
+
           <Table size="small" sx={{ mb: 2 }}>
             <TableHead>
               <TableRow>
@@ -627,7 +676,11 @@ console.log(projects)
         </DialogContent>
         <DialogActions>
           <Button onClick={closeMembers}>Close</Button>
-          <Button onClick={handleAssign} disabled={busy} variant="contained">
+          <Button
+            onClick={handleAssign}
+            disabled={busy || activeLoading || !activeProjectId || !newMemberUid}
+            variant="contained"
+          >
             {busy ? "Assigning…" : "Assign"}
           </Button>
         </DialogActions>
