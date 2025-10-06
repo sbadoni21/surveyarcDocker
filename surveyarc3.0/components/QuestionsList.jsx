@@ -104,8 +104,9 @@ const SortableItem = ({ q, index, onDelete, onSelect }) => {
 };
 
 const BlockContainer = ({
-   blockId,
+  blockId,
   title,
+  randomizeQuestions,
   isEditing = false,
   editValue = "",
   onEditChange,
@@ -135,7 +136,9 @@ const BlockContainer = ({
               placeholder="Block name"
             />
           ) : (
-            <h3 className="text-xl font-semibold capitalize">{title}</h3>
+            <h3 className="text-xl font-semibold capitalize">
+              {title} {randomizeQuestions == true ? "🔀" : ""}
+            </h3>
           )}
         </div>
 
@@ -180,24 +183,24 @@ const BlockContainer = ({
             </>
           )}
         </div>
-         <div className="flex gap-1">
-            <button
-              onClick={() => moveBlock(blockId, "up")}
-              disabled={blockIndex === 0}
-              className="px-2 py-1 bg-slate-200 rounded"
-              title="Move Up"
-            >
-              ↑
-            </button>
-            <button
-              onClick={() => moveBlock(blockId, "down")}
-              disabled={blockIndex === totalBlocks - 1}
-              className="px-2 py-1 bg-slate-200 rounded"
-              title="Move Down"
-            >
-              ↓
-            </button>
-          </div>
+        <div className="flex gap-1">
+          <button
+            onClick={() => moveBlock(blockId, "up")}
+            disabled={blockIndex === 0}
+            className="px-2 py-1 bg-slate-200 rounded"
+            title="Move Up"
+          >
+            ↑
+          </button>
+          <button
+            onClick={() => moveBlock(blockId, "down")}
+            disabled={blockIndex === totalBlocks - 1}
+            className="px-2 py-1 bg-slate-200 rounded"
+            title="Move Down"
+          >
+            ↓
+          </button>
+        </div>
       </div>
       {children}
     </div>
@@ -216,8 +219,8 @@ const SortableBlock = ({
   onStartEdit,
   onSaveEdit,
   onCancelEdit,
-  moveBlock,       
-  blockIndex,    
+  moveBlock,
+  blockIndex,
   totalBlocks,
   activeId,
 }) => {
@@ -225,6 +228,7 @@ const SortableBlock = ({
     <BlockContainer
       blockId={block.blockId}
       title={block.name}
+      randomizeQuestions={block.randomization.type !== "none" ? true : false}
       isEditing={isEditing}
       editValue={editValue}
       onEditChange={onEditChange}
@@ -232,9 +236,9 @@ const SortableBlock = ({
       onSaveEdit={() => onSaveEdit(block.blockId)}
       onCancelEdit={onCancelEdit}
       onDelete={() => onDeleteBlock(block.blockId)}
-       moveBlock={moveBlock}       
-      blockIndex={blockIndex}     
-      totalBlocks={totalBlocks} 
+      moveBlock={moveBlock}
+      blockIndex={blockIndex}
+      totalBlocks={totalBlocks}
     >
       <SortableContext
         items={questions.map((q) => q.questionId)}
@@ -282,21 +286,42 @@ const DraggableQuestionsList = ({
     return idx;
   }, [questions]);
 
-useEffect(() => {
-  if (!renderBlocks.length && blocks?.length) {
-    setRenderBlocks(blocks);
-  }
-}, [blocks]);
+  useEffect(() => {
+    if (!renderBlocks.length && blocks?.length) {
+      setRenderBlocks(blocks);
+    }
+  }, [blocks]);
 
   useEffect(() => {
     const next = {};
     (renderBlocks || []).forEach((b) => {
-      next[b.blockId] = (b.questionOrder || [])
+      let blockQuestions = (b.questionOrder || [])
         .map((qid) => qIndex.get(qid))
         .filter(Boolean);
+
+      if (b.randomizationType === "randomizeQuestions") {
+        blockQuestions = [...blockQuestions].sort(() => Math.random() - 0.5);
+      }
+
+      next[b.blockId] = blockQuestions;
     });
     setByBlock(next);
   }, [renderBlocks, qIndex]);
+
+  // --- Handle Randomization Changes ---
+  const handleRandomizationChange = async (blockId, randomizationType) => {
+    const newBlocks = renderBlocks.map((b) =>
+      b.blockId === blockId
+        ? {
+            ...b,
+            randomizationType,
+            randomizeQuestions: randomizationType === "randomizeQuestions",
+          }
+        : b
+    );
+    setRenderBlocks(newBlocks);
+    await persistBlocks(newBlocks);
+  };
 
   const persistBlocks = async (newBlocks) => {
     try {
@@ -475,28 +500,30 @@ useEffect(() => {
     await persistBlocks(newBlocks);
   };
 
-const moveBlock = async (blockId, direction) => {
-  const index = renderBlocks.findIndex((b) => b.blockId === blockId);
-  if (index === -1) return;
+  const moveBlock = async (blockId, direction) => {
+    const index = renderBlocks.findIndex((b) => b.blockId === blockId);
+    if (index === -1) return;
 
-  const newIndex = direction === "up" ? index - 1 : index + 1;
-  if (newIndex < 0 || newIndex >= renderBlocks.length) return;
+    const newIndex = direction === "up" ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= renderBlocks.length) return;
 
-  const newBlocks = [...renderBlocks];
-  [newBlocks[index], newBlocks[newIndex]] = [newBlocks[newIndex], newBlocks[index]];
+    const newBlocks = [...renderBlocks];
+    [newBlocks[index], newBlocks[newIndex]] = [
+      newBlocks[newIndex],
+      newBlocks[index],
+    ];
 
-  setRenderBlocks(newBlocks); 
+    setRenderBlocks(newBlocks);
 
-  try {
-    const blockOrder = newBlocks.map((b) => b.blockId);
-    await updateSurvey(orgId, surveyId, { blocks: newBlocks, blockOrder });
-  } catch (e) {
-    console.error("Failed to persist block order", e);
-  }
+    try {
+      const blockOrder = newBlocks.map((b) => b.blockId);
+      await updateSurvey(orgId, surveyId, { blocks: newBlocks, blockOrder });
+    } catch (e) {
+      console.error("Failed to persist block order", e);
+    }
 
-  onBlocksChange?.(newBlocks);
-};
-
+    onBlocksChange?.(newBlocks);
+  };
 
   const startRename = (block) => {
     setRenamingBlockId(block.blockId);
@@ -526,8 +553,6 @@ const moveBlock = async (blockId, direction) => {
     return [sel, ...renderBlocks.slice(0, idx), ...renderBlocks.slice(idx + 1)];
   }, [renderBlocks, selectedBlockId]);
 
-
-
   return (
     <div ref={scrollRef} className="rounded-lg mt-8 dark:bg-[#1A1A1E] pb-0.5">
       <DndContext
@@ -550,10 +575,10 @@ const moveBlock = async (blockId, direction) => {
             onStartEdit={startRename}
             onSaveEdit={saveRename}
             onCancelEdit={cancelRename}
-            moveBlock={moveBlock} 
+            moveBlock={moveBlock}
             blockIndex={renderBlocks.findIndex(
               (b) => b.blockId === block.blockId
-            )} 
+            )}
             totalBlocks={renderBlocks.length}
             activeId={activeId}
           />

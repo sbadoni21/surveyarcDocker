@@ -5,11 +5,13 @@ import { IoCopyOutline } from "react-icons/io5";
 import { MdOutlineFileDownload } from "react-icons/md";
 import { QRCodeCanvas } from "qrcode.react";
 import html2canvas from "html2canvas";
+import { Settings } from "lucide-react"; // settings icon
 
 export default function SurveyToolbar({
   blocks = [],
   selectedBlock,
   onSelectBlock,
+  onSelectBlockRandomization,
   newBlockName,
   setNewBlockName,
   onAddBlock,
@@ -25,6 +27,11 @@ export default function SurveyToolbar({
 }) {
   const qrRef = useRef(null);
   const [showQRModal, setShowQRModal] = useState(false);
+  const [showRandomizationModal, setShowRandomizationModal] = useState(false);
+  const [tempRandomization, setTempRandomization] = useState({
+    type: "none",
+    subsetCount: "",
+  });
 
   const handleDownloadQR = async () => {
     if (!qrRef.current) return;
@@ -39,14 +46,25 @@ export default function SurveyToolbar({
     link.click();
   };
 
+  const selectedBlockData = blocks.find((b) => b.blockId === selectedBlock);
+
+  const handleSaveRandomization = () => {
+    if (!selectedBlock) return;
+    const updatedBlocks = blocks.map((b) =>
+      b.blockId === selectedBlock
+        ? { ...b, randomization: { ...tempRandomization } }
+        : b
+    );
+    onSelectBlockRandomization?.(selectedBlock, updatedBlocks);
+    setShowRandomizationModal(false);
+  };
+
   return (
     <>
-      <div className=" flex flex-wrap items-center gap-2 sm:gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4">
         {showBlocks && (
           <>
-            <label className="sr-only" htmlFor="blockSelect">
-              Select Block
-            </label>
+            {/* Block Selector */}
             <div className="flex items-center gap-2 rounded-lg border bg-white dark:bg-[#1A1A1E] dark:border-slate-700 p-3">
               <span className="text-xs text-slate-500 dark:text-slate-400">
                 Block
@@ -61,26 +79,25 @@ export default function SurveyToolbar({
                   Choose…
                 </option>
                 {blocks?.map((b) => (
-                  <option
-                    key={b.blockId}
-                    value={b.blockId}
-                    className="capitalize"
-                  >
-                    {b.name}
+                  <option key={b.blockId} value={b.blockId}>
+                    {b.name}{" "}
+                    {b.randomization?.type !== "none" ? "🔀" : ""}
                   </option>
                 ))}
               </select>
             </div>
 
+            {/* Add Block */}
             <span className="hidden sm:inline-block h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
-
             <div className="flex items-center gap-2 rounded-lg border bg-white dark:bg-[#1A1A1E] dark:border-slate-700 px-2 py-1.5">
               <input
                 type="text"
                 placeholder="New block name"
                 value={newBlockName}
                 onChange={(e) => setNewBlockName?.(e.target.value)}
-                onKeyDown={(e) => (e.key === "Enter" ? onAddBlock?.() : null)}
+                onKeyDown={(e) =>
+                  e.key === "Enter" ? onAddBlock?.() : null
+                }
                 className="w-[160px] sm:w-[200px] bg-transparent outline-none text-sm placeholder:text-slate-400 dark:text-slate-200"
               />
               <button
@@ -92,9 +109,28 @@ export default function SurveyToolbar({
                 Add
               </button>
             </div>
+
+            {/* Randomization Button */}
+            {selectedBlock && (
+              <button
+                onClick={() => {
+                  const current = selectedBlockData?.randomization || {
+                    type: "none",
+                    subsetCount: "",
+                  };
+                  setTempRandomization(current);
+                  setShowRandomizationModal(true);
+                }}
+                className="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-md shadow transition-all duration-300 hover:scale-105"
+              >
+                <Settings size={14} />
+                Randomization
+              </button>
+            )}
           </>
         )}
 
+        {/* Right Side Buttons */}
         <div className="ml-auto flex items-center gap-2">
           {rightSlot}
           {showNewQuestion && (
@@ -117,7 +153,6 @@ export default function SurveyToolbar({
               <IoCopyOutline className="w-5 h-5 text-[#427336] dark:text-[#4DC334]" />
             </button>
           )}
-
           {showQR && (
             <button
               title="Download QR code"
@@ -130,6 +165,90 @@ export default function SurveyToolbar({
         </div>
       </div>
 
+      {/* === Randomization Modal === */}
+      {showRandomizationModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-[#1A1A1E] p-6 rounded-lg shadow-2xl w-[380px]">
+            <h2 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-100">
+              Randomization Settings
+            </h2>
+
+            <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="randType"
+                  checked={tempRandomization.type === "none"}
+                  onChange={() =>
+                    setTempRandomization({ type: "none", subsetCount: "" })
+                  }
+                />
+                No randomization
+              </label>
+
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="randType"
+                  checked={tempRandomization.type === "full"}
+                  onChange={() =>
+                    setTempRandomization({ type: "full", subsetCount: "" })
+                  }
+                />
+                Randomize all questions in this block
+              </label>
+
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="randType"
+                  checked={tempRandomization.type === "subset"}
+                  onChange={() =>
+                    setTempRandomization({
+                      type: "subset",
+                      subsetCount: tempRandomization.subsetCount || 1,
+                    })
+                  }
+                />
+                Randomly present subset of questions
+              </label>
+
+              {tempRandomization.type === "subset" && (
+                <input
+                  type="number"
+                  min="1"
+                  value={tempRandomization.subsetCount}
+                  onChange={(e) =>
+                    setTempRandomization({
+                      ...tempRandomization,
+                      subsetCount: Number(e.target.value),
+                    })
+                  }
+                  className="border p-2 w-full rounded-md dark:bg-[#222] dark:border-slate-700"
+                  placeholder="Enter number of questions to show"
+                />
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 mt-5">
+              <button
+                onClick={() => setShowRandomizationModal(false)}
+                className="px-4 py-2 bg-gray-400 hover:bg-gray-500 text-white rounded-md"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveRandomization}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === QR Modal === */}
       {showQRModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center">
           <div className="bg-white p-6 rounded-lg shadow-2xl w-[300px] text-center relative">

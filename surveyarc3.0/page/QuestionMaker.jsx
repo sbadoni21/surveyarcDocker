@@ -53,7 +53,9 @@ export default function Dist() {
 
   // tab handling
   const normalizeHashToTab = useCallback((hash) => {
-    const k = String(hash || "").replace(/^#/, "").toLowerCase();
+    const k = String(hash || "")
+      .replace(/^#/, "")
+      .toLowerCase();
     if (["questions", "question", "questoins"].includes(k)) return "questions";
     if (["rules", "logicrules", "logic"].includes(k)) return "rules";
     if (["demo", "preview"].includes(k)) return "demo";
@@ -83,7 +85,6 @@ export default function Dist() {
     [normalizeHashToTab]
   );
 
-  // --- helpers ---
   const normalizeSurveyFromApi = (raw) => {
     const blocks = Array.isArray(raw?.blocks)
       ? raw.blocks.map((b) => ({
@@ -94,6 +95,12 @@ export default function Dist() {
             : Array.isArray(b.question_order)
             ? b.question_order
             : [],
+          // normalize the randomization object consistently
+          randomization:
+            b.randomization ??
+            (b.randomizeQuestions
+              ? { type: "full", subsetCount: null }
+              : b.randomization ?? { type: "none", subsetCount: null }),
         }))
       : [];
 
@@ -112,7 +119,6 @@ export default function Dist() {
     return { ...raw, blocks, blockOrder, questionOrder };
   };
 
-  // initial fetch (decrypt already handled in your API route)
   useEffect(() => {
     async function fetchData() {
       if (!orgId || !surveyId) return;
@@ -125,7 +131,6 @@ export default function Dist() {
         const normalized = normalizeSurveyFromApi(rawSurvey);
         setSurvey(normalized);
 
-        // default to first block (by blockOrder if present, else first in blocks)
         if (!selectedBlock) {
           const firstBlockId =
             normalized.blockOrder?.[0] ??
@@ -139,17 +144,14 @@ export default function Dist() {
       }
     }
     fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, surveyId]);
 
-  // Map id -> question
   const questionsById = useMemo(() => {
     const m = new Map();
     for (const q of questions) m.set(q.questionId, q);
     return m;
   }, [questions]);
 
-  // Questions for selected block
   const questionsInSelectedBlock = useMemo(() => {
     const block = (survey?.blocks || []).find(
       (b) => b.blockId === selectedBlock
@@ -160,7 +162,6 @@ export default function Dist() {
       .filter(Boolean);
   }, [survey?.blocks, selectedBlock, questionsById]);
 
-  // ===== Add Question =====
   const handleAddQuestion = async () => {
     if (!selectedBlock) {
       alert("Please select a block to add question");
@@ -187,7 +188,6 @@ export default function Dist() {
     try {
       await QuestionModel.create(orgId, surveyId, payload);
 
-      // latest survey from API (already decrypted by your route)
       const current = normalizeSurveyFromApi(await getSurvey(surveyId));
 
       const updatedBlocks = (current.blocks || []).map((b) =>
@@ -204,7 +204,7 @@ export default function Dist() {
         questionId,
       ];
 
-      // patch (snake_case for API model)
+      // Persist updated blocks and question order — don't send legacy randomizeQuestions field
       await SurveyModel.update(surveyId, {
         blocks: updatedBlocks,
         block_order: current.blockOrder, // unchanged
@@ -235,7 +235,13 @@ export default function Dist() {
     if (!newBlockName.trim()) return alert("Please enter block name");
 
     const blockId = `B${Math.floor(1000 + Math.random() * 9000)}`;
-    const newBlock = { blockId, name: newBlockName.trim(), questionOrder: [] };
+    const newBlock = {
+      blockId,
+      name: newBlockName.trim(),
+      questionOrder: [],
+      // default randomization object
+      randomization: { type: "none", subsetCount: null },
+    };
 
     try {
       const current = normalizeSurveyFromApi(await getSurvey(surveyId));
@@ -291,8 +297,23 @@ export default function Dist() {
           <>
             <SurveyToolbar
               blocks={survey?.blocks || []}
-              selectedBlock={selectedBlock}                 // value = blockId
-              onSelectBlock={setSelectedBlock}             // setter expects blockId
+              selectedBlock={selectedBlock} // value = blockId
+              onSelectBlock={setSelectedBlock}
+              onSelectBlockRandomization={(blockId, updatedBlocks) => {
+                setSelectedBlock(blockId);
+                if (updatedBlocks) {
+                  // update local UI
+                  setSurvey((prev) =>
+                    prev ? { ...prev, blocks: updatedBlocks } : prev
+                  );
+
+                  // persist the updated blocks (which include the randomization object)
+                  updateSurvey(orgId, surveyId, {
+                    blocks: updatedBlocks,
+                    block_order: survey?.blockOrder || [],
+                  });
+                }
+              }}
               newBlockName={newBlockName}
               setNewBlockName={setNewBlockName}
               onAddBlock={handleAddBlock}
@@ -307,9 +328,9 @@ export default function Dist() {
             />
 
             <QuestionsTab
-              questions={questionsInSelectedBlock}
+              questions={questions}
               blocks={survey?.blocks || []}
-              selectedBlockId={selectedBlock}              // blockId
+              selectedBlockId={selectedBlock} // blockId
               publicSurveyUrl={publicSurveyUrl}
               showTypePopup={showTypePopup}
               fetchQuestions={getAllQuestions}
@@ -323,7 +344,9 @@ export default function Dist() {
               handleCopyLink={handleCopyLink}
               handleAddQuestion={handleAddQuestion}
               onBlocksChange={(newBlocks) =>
-                setSurvey((prev) => (prev ? { ...prev, blocks: newBlocks } : prev))
+                setSurvey((prev) =>
+                  prev ? { ...prev, blocks: newBlocks } : prev
+                )
               }
             />
           </>

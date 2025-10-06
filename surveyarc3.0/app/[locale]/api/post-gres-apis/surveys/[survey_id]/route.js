@@ -13,7 +13,6 @@ const looksEncrypted = (o) =>
 
 const safeParse = (t) => { try { return { ok: true, json: JSON.parse(t) }; } catch { return { ok: false, raw: t }; } };
 
-// Force decrypt helper with verbose logs
 async function forceDecryptResponse(res, label = "") {
   const text = await res.text();
   console.log(`[${label}] raw text:`, text);
@@ -33,7 +32,6 @@ async function forceDecryptResponse(res, label = "") {
       try {
         console.log(`[${label}] attempting decrypt (object)…`);
         const dec = await decryptGetResponse(data);
-        console.log(`[${label}] ✅ decrypted object:`, dec);
         return NextResponse.json(dec, { status: res.status });
       } catch (e) {
         console.warn(`[${label}] ❌ decrypt failed, returning raw object:`, e);
@@ -74,7 +72,6 @@ async function forceDecryptResponse(res, label = "") {
   return NextResponse.json(data, { status: res.status });
 }
 
-// Optional: camel → snake for PATCH keys the backend expects
 function toSnakeCasePatch(body) {
   const out = { ...body };
   if ("blockOrder" in out) { out.block_order = out.blockOrder; delete out.blockOrder; }
@@ -84,16 +81,12 @@ function toSnakeCasePatch(body) {
 
 export async function GET(_req, { params }) {
   const { survey_id } = await params;
-  console.log("[GET] survey_id:", survey_id);
-
   try {
     const res = await fetch(`${BASE}/surveys/${encodeURIComponent(survey_id)}`, {
       signal: AbortSignal.timeout(30000),
     });
-    console.log("[GET] backend status:", res.status);
     return forceDecryptResponse(res, "GET /surveys/[id]");
   } catch (e) {
-    console.error("[GET] ❌ error:", e);
     return NextResponse.json({ status: "error", message: String(e?.message || e) }, { status: 500 });
   }
 }

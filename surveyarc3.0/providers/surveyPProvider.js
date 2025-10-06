@@ -11,9 +11,7 @@ export const SurveyProvider = ({ children }) => {
   const [selectedSurvey, setSelectedSurvey] = useState(null);
 
   const getSurvey = async (surveyId) => {
-    console.log("gcfhvjikol")
     const data = await SurveyModel.get(surveyId);
-    console.log(data)
     setSelectedSurvey(data);
     return data;
   };

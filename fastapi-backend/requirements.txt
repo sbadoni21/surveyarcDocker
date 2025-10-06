@@ -7,3 +7,4 @@ pydantic[email]
 psycopg2-binary 
 redis
 alembic
+firebase-admin
