@@ -68,6 +68,8 @@ class SupportGroupOut(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
+    calendar_id: Optional[str] = None
+
     
 class SupportTeamOut(BaseModel):
     team_id: str

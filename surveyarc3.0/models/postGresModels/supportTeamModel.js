@@ -17,6 +17,7 @@ const toCamel = (t) => ({
   active: t.active !== false,
   createdAt: t.created_at,
   updatedAt: t.updated_at,
+  calendarId: t.calendar_id,
 });
 
 // Team member data conversion

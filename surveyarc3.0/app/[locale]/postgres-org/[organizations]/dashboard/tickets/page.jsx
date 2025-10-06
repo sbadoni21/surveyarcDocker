@@ -1,14 +1,13 @@
-// app/(whatever)/TicketsPage.jsx
+// app/(whatever)/tickets/page.jsx
 "use client";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { Box, Button, Container, Grid, Paper, Stack, Typography } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import TicketFilters from "@/components/tickets/TicketFilters";
 import TicketList from "@/components/tickets/TicketList";
-import TicketDetail from "@/components/tickets/TicketDetail";
 import TicketForm from "@/components/tickets/TicketForm";
 import { useTickets } from "@/providers/ticketsProvider";
-import { usePathname } from "next/navigation";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import { useTags } from "@/providers/postGresPorviders/TagProvider";
 
@@ -30,17 +29,14 @@ function StatCard({ label, count, active, onClick }) {
 }
 
 export default function TicketsPage() {
+  const router = useRouter();
   const path = usePathname();
   const orgId = path.split("/")[3];
   const { uid: currentUserId } = useUser() || {};
   const requesterId = currentUserId;
   const { list: listTags, getCachedTags } = useTags();
   const availableTags = getCachedTags(orgId);
-  const {
-    tickets, selectedTicket, setSelectedTicket, list, create, update, count, loading,
-    // NEW provider methods
-    assignGroup, patchTeams, patchAgents, getParticipants
-  } = useTickets();
+  const { tickets, list, create, count, loading } = useTickets();
 
   const [filters, setFilters] = useState({
     orgId,
@@ -53,9 +49,6 @@ export default function TicketsPage() {
   const [counts, setCounts] = useState({});
   const [createOpen, setCreateOpen] = useState(false);
 
-  // keep a lightweight participants snapshot (groupId, teamIds, agentIds, assigneeId)
-  const [participants, setParticipants] = useState(null);
-
   const refresh = async () => {
     await list({
       orgId,
@@ -66,10 +59,15 @@ export default function TicketsPage() {
     });
   };
 
-  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [filters, orgId, currentUserId]);
- useEffect(() => {
+  useEffect(() => { 
+    refresh(); 
+    /* eslint-disable-next-line */ 
+  }, [filters, orgId, currentUserId]);
+
+  useEffect(() => {
     if (orgId) listTags({ orgId }).catch(() => {});
   }, [orgId, listTags]);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -84,51 +82,28 @@ export default function TicketsPage() {
     return () => { mounted = false; };
   }, [orgId, count]);
 
-  // when a ticket is selected/updated, fetch participants snapshot
-  useEffect(() => {
-    if (!selectedTicket?.ticketId) {
-      setParticipants(null);
-      return;
-    }
-    let mounted = true;
-    getParticipants(selectedTicket.ticketId)
-      .then((p) => mounted && setParticipants(p))
-      .catch(() => mounted && setParticipants(null));
-    return () => { mounted = false; };
-  }, [selectedTicket?.ticketId, getParticipants]);
-
-  // ---------- handlers we pass to TicketDetail ----------
-  const handleAssignGroup = async (ticketId, groupIdOrNull) => {
-    const updated = await assignGroup(ticketId, groupIdOrNull);
-    setSelectedTicket(updated);
-    // refresh participants snapshot
-    const snap = await getParticipants(ticketId);
-    setParticipants(snap);
-    return updated;
-  };
-
-  const handlePatchTeams = async (ticketId, teamIds, mode = "add") => {
-    const updated = await patchTeams(ticketId, teamIds, mode);
-    setSelectedTicket(updated);
-    const snap = await getParticipants(ticketId);
-    setParticipants(snap);
-    return updated;
-  };
-
-  const handlePatchAgents = async (ticketId, agentIds, mode = "add") => {
-    const updated = await patchAgents(ticketId, agentIds, mode);
-    setSelectedTicket(updated);
-    const snap = await getParticipants(ticketId);
-    setParticipants(snap);
-    return updated;
+  const handleTicketSelect = (ticket) => {
+    // Navigate to the ticket detail page
+    router.push(`/postgres-org/${orgId}/dashboard/tickets/${ticket.ticketId}`);
   };
 
   return (
     <Container maxWidth="xl" sx={{ py: 2 }}>
       <Stack spacing={1.5}>
-        <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ xs: "stretch", sm: "center" }} justifyContent="space-between" spacing={1}>
+        <Stack 
+          direction={{ xs: "column", sm: "row" }} 
+          alignItems={{ xs: "stretch", sm: "center" }} 
+          justifyContent="space-between" 
+          spacing={1}
+        >
           <Typography variant="h5">Tickets</Typography>
-          <Button startIcon={<AddIcon />} variant="contained" onClick={() => setCreateOpen(true)}>New Ticket</Button>
+          <Button 
+            startIcon={<AddIcon />} 
+            variant="contained" 
+            onClick={() => setCreateOpen(true)}
+          >
+            New Ticket
+          </Button>
         </Stack>
 
         <Grid container spacing={1}>
@@ -153,35 +128,12 @@ export default function TicketsPage() {
           />
         </Paper>
 
-        <Grid container spacing={1.5}>
-          <Grid item xs={12} md={5} lg={4}>
-            <TicketList tickets={tickets} loading={loading} onSelect={(t) => setSelectedTicket(t)} />
-          </Grid>
-          <Grid item xs={12} md={7} lg={8}>
-            {selectedTicket ? (
-              <TicketDetail
-                ticket={selectedTicket}
-                orgId={orgId}
-                currentUserId={currentUserId}
-                participants={participants}                
-                onUpdate={async (id, patch) => {
-                  const updated = await update(id, patch);
-                  setSelectedTicket(updated);
-                  const snap = await getParticipants(id);
-                  setParticipants(snap);
-                }}
-                // NEW: assignment actions
-                onAssignGroup={handleAssignGroup}
-                onPatchTeams={handlePatchTeams}
-                onPatchAgents={handlePatchAgents}
-              />
-            ) : (
-              <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                <Typography variant="body1" color="text.secondary">Select a ticket to view its details.</Typography>
-              </Paper>
-            )}
-          </Grid>
-        </Grid>
+        {/* Full width ticket list */}
+        <TicketList 
+          tickets={tickets} 
+          loading={loading} 
+          onSelect={handleTicketSelect} 
+        />
       </Stack>
 
       <TicketForm
@@ -194,7 +146,8 @@ export default function TicketsPage() {
         onSubmit={async (payload) => {
           const created = await create(payload);
           setCreateOpen(false);
-          setSelectedTicket(created);
+          // Navigate to the newly created ticket
+          router.push(`/app/org/${orgId}/tickets/${created.ticketId}`);
           const r = await count({ orgId, status: created.status });
           setCounts((c) => ({ ...c, [created.status]: r.count ?? (c[created.status] ?? 0) + 1 }));
         }}

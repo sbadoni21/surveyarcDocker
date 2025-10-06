@@ -27,13 +27,13 @@ async function forceDecryptResponse(res) {
 }
 
 export async function PATCH(req, { params }) {
-  const { team_id, user_id } = params;
+  const { teamId, userId } = await params;
   
   try {
     const raw = await req.json(); // { role?, proficiency?, active? }
     const payload = ENC ? await encryptPayload(raw) : raw;
 
-    const res = await fetch(`${BASE}/support-teams/${encodeURIComponent(team_id)}/members/${encodeURIComponent(user_id)}`, {
+    const res = await fetch(`${BASE}/support-teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`, {
       method: "PATCH",
       headers: { 
         "Content-Type": "application/json", 
@@ -53,10 +53,10 @@ export async function PATCH(req, { params }) {
 
 export async function DELETE(req, { params }) {
   console.log(params)
-  const { team_id, user_id } = await params;
+  const { teamId, userId } = await params;
   
   try {
-    const res = await fetch(`${BASE}/support-teams/${encodeURIComponent(team_id)}/members/${encodeURIComponent(user_id)}`, {
+    const res = await fetch(`${BASE}/support-teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`, {
       method: "DELETE",
       signal: AbortSignal.timeout(30000),
     });

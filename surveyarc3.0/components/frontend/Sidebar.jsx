@@ -94,7 +94,7 @@ export default function Sidebar() {
   const menuItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "" },
     { icon: Ticket, label: "Tickets", path: "tickets" },
-    { icon: UserCircle, label: "My Tickets", path: "my-tickets" },
+    { icon: UserCircle, label: "My Group Tickets", path: "my-group-tickets" },
     { icon: Users, label: "Support Groups", path: "support-groups" },
     { icon: Users, label: "Team", path: "team" },
     { icon: FolderOpen, label: "Projects", path: "projects" },

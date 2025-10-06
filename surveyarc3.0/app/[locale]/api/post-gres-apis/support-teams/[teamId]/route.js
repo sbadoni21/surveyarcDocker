@@ -27,7 +27,7 @@ async function forceDecryptResponse(res) {
 }
 
 export async function GET(req, { params }) {
-  const { team_id } = params;
+  const { team_id } =  await params;
   
   try {
     const res = await fetch(`${BASE}/support-teams/${encodeURIComponent(team_id)}`, {
@@ -44,13 +44,13 @@ export async function GET(req, { params }) {
 }
 
 export async function PATCH(req, { params }) {
-  const { team_id } = params;
+  const { teamId } = await params;
   
   try {
     const raw = await req.json();
     const payload = ENC ? await encryptPayload(raw) : raw;
 
-    const res = await fetch(`${BASE}/support-teams/${encodeURIComponent(team_id)}`, {
+    const res = await fetch(`${BASE}/support-teams/${encodeURIComponent(teamId)}`, {
       method: "PATCH",
       headers: { 
         "Content-Type": "application/json", 
@@ -69,7 +69,7 @@ export async function PATCH(req, { params }) {
 }
 
 export async function DELETE(req, { params }) {
-  const { team_id } = params;
+  const { team_id } = await params;
   
   try {
     const res = await fetch(`${BASE}/support-teams/${encodeURIComponent(team_id)}`, {
