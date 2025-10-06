@@ -1,162 +1,183 @@
-import {
-  getFirestore,
-  collection,
-  doc,
-  setDoc,
-  getDoc,
-  updateDoc,
-  Timestamp,
-  arrayUnion,
-  arrayRemove,
-  getDocs,
-  deleteDoc
-} from "firebase/firestore";
-import { firebaseApp } from "@/firebase/firebase"; // your initialized FirebaseApp
+// models/postGresModels/projectModel.js
+const BASE = "/api/post-gres-apis/projects";
 
-const db = getFirestore(firebaseApp);
-
-export default class ProjectModel {
-  collectionRef(orgId) {
-    return collection(db, "organizations", orgId, "projects");
+const toJson = async (res) => {
+  const txt = await res.text();
+  let data = {};
+  try {
+    data = txt ? JSON.parse(txt) : {};
+  } catch {
+    /* ignore parse error */
   }
-  docRef(orgId, projectId) {
-    return doc(db, "organizations", orgId, "projects", projectId);
+  if (!res.ok) {
+    const msg =
+      typeof data === "object" && data?.detail
+        ? JSON.stringify(data.detail)
+        : txt;
+    throw new Error(`${res.status} ${res.statusText} :: ${msg || "Request failed"}`);
   }
+  return data;
+};
 
-  _now() {
-    return Timestamp.now();
-  }
+const defaultData = ({ projectId, orgId, name, description = "", ownerUID }) => {
+  const now = new Date().toISOString();
+  return {
+    project_id: projectId,
+    org_id: orgId,
+    name,
+    description,
+    owner_uid: ownerUID,
+    is_active: true,
+    members: [
+      { uid: ownerUID, role: "owner", status: "active", joined_at: now },
+    ],
+    start_date: now,
+    due_date: null,
+    milestones: [],
+    status: "planning",
+    progress_percent: 0,
+    priority: "medium",
+    category: "",
+    tags: [],
+    attachments: [],
+    is_public: false,
+    notifications_enabled: true,
+    last_activity: now,
+    survey_ids: [],
+    created_at: now,
+    updated_at: now,
+  };
+};
 
-  defaultData({ projectId, name, description = "", ownerUID }) {
-    const now = this._now();
-    return {
-      projectId,
-      name,
-      description,
-      ownerUID,
-      createdAt: now,
-      updatedAt: now,
-      isActive: true,
-      members: [
-        {
-          uid: ownerUID,
-          role: "owner",
-          status: "active",
-          joinedAt: now
-        }
-      ],
+const projectModel = {
+  defaultData,
 
-      startDate: now,
-      dueDate: null,
-      milestones: [],
-
-      status: "planning",
-      progressPercent: 0,
-
-      priority: "medium",
-      category: "",
-      tags: [],
-
-      attachments: [],
-
-      isPublic: false,
-      notificationsEnabled: true,
-
-      lastActivity: now,
-
-      surveyIds: []
-    };
-  }
-/** Create a new project under the specified organization */
-async create(data) {
-  const projectRef = this.docRef(data.orgId, data.projectId);
-  await setDoc(projectRef, this.defaultData({
-    projectId: data.projectId,
-    name: data.name,
-    description: data.description,
-    ownerUID: data.ownerUID
-  }));
-  return projectRef;
-}
-
-  /** Get a project by organization ID and project ID */
-  async getById(orgId, projectId) {
-    const projectRef = this.docRef(orgId, projectId);
-    const snap = await getDoc(projectRef);
-    return snap.exists() ? snap.data() : null;
-  }
-
-
-async getAll(orgId) {
-  const orgDocRef = doc(db, "organizations", orgId);
-  const projectsColRef = collection(orgDocRef, "projects");
-  const querySnapshot = await getDocs(projectsColRef);
-
-  if (querySnapshot.empty) {
-    return null; 
-  }
-  const projects = [];
-  querySnapshot.forEach(doc => {
-    projects.push({ id: doc.id, ...doc.data() });
-  });
-
-  return projects;
-}
-
-  async update(orgId, projectId, updateData) {
-    const projectRef = this.docRef(orgId, projectId);
-    await updateDoc(projectRef, {
-      ...updateData,
-      updatedAt: this._now()
+  // ========== PROJECT OPERATIONS ==========
+  
+  async create(data) {
+    const payload = defaultData({
+      projectId: data.projectId,
+      orgId: data.orgId,
+      name: data.name,
+      description: data.description,
+      ownerUID: data.ownerUID,
     });
-    return projectRef;
-  }
+    const res = await fetch(`${BASE}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify(payload),
+    });
+    return toJson(res);
+  },
+
+  async getAll(orgId) {
+    const url = new URL(`${BASE}`, window.location.origin);
+    url.searchParams.set("orgId", String(orgId));
+    const res = await fetch(url.toString(), { cache: "no-store" });
+    const txt = await res.text();
+    let data;
+    try {
+      data = txt ? JSON.parse(txt) : [];
+    } catch {
+      data = [];
+    }
+    if (!Array.isArray(data)) data = [];
+    return data;
+  },
+
+  async getById(orgId, projectId) {
+    const url = new URL(`${BASE}/${projectId}`, window.location.origin);
+    url.searchParams.set("orgId", String(orgId));
+    const res = await fetch(url.toString(), { cache: "no-store" });
+    return toJson(res);
+  },
+
+  async update(orgId, projectId, patch) {
+    const res = await fetch(`${BASE}/${projectId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ orgId, ...patch }),
+    });
+    return toJson(res);
+  },
 
   async delete(orgId, projectId) {
-    const projectRef = this.docRef(orgId, projectId);
-    await deleteDoc(projectRef);
-    return projectRef;
-  }
+    const url = new URL(`${BASE}/${projectId}`, window.location.origin);
+    url.searchParams.set("orgId", String(orgId));
+    const res = await fetch(url.toString(), { method: "DELETE", cache: "no-store" });
+    return toJson(res);
+  },
 
-  /** Add a member to the project */
+  // ========== MEMBER OPERATIONS ==========
+  
+  async getMembers(orgId, projectId) {
+    const url = new URL(`${BASE}/${projectId}/members`, window.location.origin);
+    url.searchParams.set("orgId", String(orgId));
+    const res = await fetch(url.toString(), { cache: "no-store" });
+    return toJson(res);
+  },
+
+  async getMember(orgId, projectId, memberUid) {
+    const url = new URL(`${BASE}/${projectId}/members/${memberUid}`, window.location.origin);
+    url.searchParams.set("orgId", String(orgId));
+    const res = await fetch(url.toString(), { cache: "no-store" });
+    return toJson(res);
+  },
+
   async addMember(orgId, projectId, member) {
-    const projectRef = this.docRef(orgId, projectId);
-    await updateDoc(projectRef, {
-      members: arrayUnion(member),
-      updatedAt: this._now()
+    const res = await fetch(`${BASE}/${projectId}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ orgId, ...member }),
     });
-  }
+    return toJson(res);
+  },
 
-  /** Remove a member from the project */
+  async updateMember(orgId, projectId, memberUid, memberUpdate) {
+    const res = await fetch(`${BASE}/${projectId}/members/${memberUid}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ orgId, ...memberUpdate }),
+    });
+    return toJson(res);
+  },
+
   async removeMember(orgId, projectId, memberUid) {
-    const project = await this.getById(orgId, projectId);
-    if (!project) throw new Error("Project not found");
+    const url = new URL(`${BASE}/${projectId}/members/${memberUid}`, window.location.origin);
+    url.searchParams.set("orgId", String(orgId));
+    const res = await fetch(url.toString(), { method: "DELETE", cache: "no-store" });
+    return toJson(res);
+  },
 
-    const memberToRemove = project.members.find(m => m.uid === memberUid);
-    if (!memberToRemove) return; // member not found
+  // ========== SURVEY OPERATIONS ==========
+  
+  async getSurveys(orgId, projectId) {
+    const url = new URL(`${BASE}/${projectId}/surveys`, window.location.origin);
+    url.searchParams.set("orgId", String(orgId));
+    const res = await fetch(url.toString(), { cache: "no-store" });
+    return toJson(res);
+  },
 
-    const projectRef = this.docRef(orgId, projectId);
-    await updateDoc(projectRef, {
-      members: arrayRemove(memberToRemove),
-      updatedAt: this._now()
-    });
-  }
-
-  /** Add a survey ID to the project */
   async addSurveyId(orgId, projectId, surveyId) {
-    const projectRef = this.docRef(orgId, projectId);
-    await updateDoc(projectRef, {
-      surveyIds: arrayUnion(surveyId),
-      updatedAt: this._now()
+    const res = await fetch(`${BASE}/${projectId}/surveys`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ orgId, surveyId }),
     });
-  }
+    return toJson(res);
+  },
 
-  /** Remove a survey ID from the project */
   async removeSurveyId(orgId, projectId, surveyId) {
-    const projectRef = this.docRef(orgId, projectId);
-    await updateDoc(projectRef, {
-      surveyIds: arrayRemove(surveyId),
-      updatedAt: this._now()
-    });
-  }
-}
+    const url = new URL(`${BASE}/${projectId}/surveys/${surveyId}`, window.location.origin);
+    url.searchParams.set("orgId", String(orgId));
+    const res = await fetch(url.toString(), { method: "DELETE", cache: "no-store" });
+    return toJson(res);
+  },
+};
+
+export default projectModel;

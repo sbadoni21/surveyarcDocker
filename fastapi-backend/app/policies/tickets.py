@@ -1,86 +1,142 @@
+# app/policies/tickets.py
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional
 
 from ..db import get_db
-from ..models.tickets import Ticket, TicketWatcher, TicketCollaborator  # TicketCollaborator if you added it
-# If you didn't add TicketCollaborator yet, comment it out in checks.
-from ..models.support import SupportGroup, SupportGroupMember, GroupMemberRole
-# ---- Replace this with your real auth dependency ----
-def get_current_user():
-    """
-    Return object/dict with:
-    - uid: str (user id)
-    - role: str ("admin" | "group_lead" | "agent" | "user")
-    - org_ids: list[str]
-    """
-    # placeholder; wire to your auth
-    return {"uid": "usr_demo", "role": "agent", "org_ids": ["org_abc"]}
+from ..models.tickets import Ticket, TicketWatcher, TicketCollaborator
+from ..models.support import SupportGroup, SupportTeam
+
+# Import the real auth dependency
+from .auth import get_current_user
+
 
 def _is_group_member(db: Session, group_id: Optional[str], user_id: str) -> bool:
+    """Check if user is a member of the support group"""
     if not group_id:
         return False
     grp: SupportGroup | None = db.get(SupportGroup, group_id)
     if not grp:
         return False
-    # members is relationship to UserStub with .user_id
     return any(m.user_id == user_id for m in grp.members or [])
 
-def can_view_ticket(ticket_id: str, db: Session = Depends(get_db), user = Depends(get_current_user)):
+
+def _is_team_member(db: Session, team_id: Optional[str], user_id: str) -> bool:
+    """Check if user is a member of the support team"""
+    if not team_id:
+        return False
+    team: SupportTeam | None = db.get(SupportTeam, team_id)
+    if not team:
+        return False
+    return any(m.user_id == user_id for m in team.members or [])
+
+
+def can_view_ticket(
+    ticket_id: str, 
+    db: Session = Depends(get_db), 
+    user: dict = Depends(get_current_user)  # ← Now uses real auth
+):
+    """
+    Determine if user can view a ticket.
+    """
     t: Ticket | None = db.get(Ticket, ticket_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
+    
     uid = user["uid"]
     role = user.get("role", "user")
 
-    # requester can view
+    # Requester can view
     if t.requester_id == uid:
         return t
 
-    # watchers can view
+    # Assignee can view (primary assignee)
+    if t.assignee_id == uid:
+        return t
+
+    # Agent assigned to ticket can view (additional agent)
+    if t.agent_id == uid:
+        return t
+
+    # Team member can view
+    if _is_team_member(db, t.team_id, uid):
+        return t
+
+    # Watchers can view
     if db.query(TicketWatcher).filter_by(ticket_id=ticket_id, user_id=uid).first():
         return t
 
-    # collaborators (if implemented)
+    # Collaborators can view
     try:
         if db.query(TicketCollaborator).filter_by(ticket_id=ticket_id, user_id=uid).first():
             return t
     except Exception:
         pass
 
-    # group members can view
+    # Group members can view
     if _is_group_member(db, t.group_id, uid):
         return t
 
-    # admins can view
+    # Admins can view
     if role in ("admin",):
         return t
 
     raise HTTPException(403, "Forbidden")
 
-def can_edit_ticket(ticket_id: str, db: Session = Depends(get_db), user = Depends(get_current_user)):
-    t = can_view_ticket(ticket_id, db, user)  # also ensures exists
+
+def can_edit_ticket(
+    ticket_id: str, 
+    db: Session = Depends(get_db), 
+    user: dict = Depends(get_current_user)  # ← Now uses real auth
+):
+    """
+    Determine if user can edit a ticket.
+    """
+    t = can_view_ticket(ticket_id, db, user)
     uid = user["uid"]
     role = user.get("role", "user")
 
-    # assignee can edit
+    # Assignee can edit
     if t.assignee_id == uid:
         return t
 
-    # group agent can edit
+    # Agent assigned to ticket can edit
+    if t.agent_id == uid:
+        return t
+
+    # Team member can edit
+    if _is_team_member(db, t.team_id, uid):
+        return t
+
+    # Group agent can edit
     if role in ("admin", "group_lead", "agent") and _is_group_member(db, t.group_id, uid):
         return t
 
-    # admin can edit
+    # Admin can edit
     if role in ("admin",):
         return t
 
     raise HTTPException(403, "Forbidden")
 
-def can_reassign_ticket(ticket_id: str, db: Session = Depends(get_db), user = Depends(get_current_user)):
+
+def can_reassign_ticket(
+    ticket_id: str, 
+    db: Session = Depends(get_db), 
+    user: dict = Depends(get_current_user)  # ← Now uses real auth
+):
+    """
+    Determine if user can reassign a ticket.
+    """
     t = can_view_ticket(ticket_id, db, user)
+    uid = user["uid"]
     role = user.get("role", "user")
 
+    # Admins and group leads can reassign
     if role in ("admin", "group_lead"):
         return t
+    
+    # Team leads can reassign tickets on their team
+    if role == "team_lead" and _is_team_member(db, t.team_id, uid):
+        return t
+
     raise HTTPException(403, "Forbidden")

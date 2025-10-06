@@ -2,10 +2,8 @@
 
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import projectModel from "@/models/postGresModels/projectModel";
 import UserModel from "@/models/postGresModels/userModel";
 import { timeformater } from "@/utils/timeformater";
-import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
 
 // MUI
@@ -24,13 +22,21 @@ import GroupIcon from "@mui/icons-material/Group";
 import LockIcon from "@mui/icons-material/Lock";
 import PersonRemoveIcon from "@mui/icons-material/PersonRemove";
 import ClearIcon from "@mui/icons-material/Clear";
+import { useProject } from "@/providers/postGresPorviders/projectProvider";
+import { useUser } from "@/providers/postGresPorviders/UserProvider";
 
 const ITEMS_PER_PAGE = 10;
 
 // --- sorting helpers (no hooks) ---
 function descendingComparator(a, b, orderBy) {
-  const va = orderBy === "members" ? (Array.isArray(a.members) ? a.members.length : 0) : a?.[orderBy];
-  const vb = orderBy === "members" ? (Array.isArray(b.members) ? b.members.length : 0) : b?.[orderBy];
+  const va =
+    orderBy === "members"
+      ? (Array.isArray(a.members) ? a.members.length : 0)
+      : a?.[orderBy];
+  const vb =
+    orderBy === "members"
+      ? (Array.isArray(b.members) ? b.members.length : 0)
+      : b?.[orderBy];
   if (va === undefined || va === null) return 1;
   if (vb === undefined || vb === null) return -1;
   if (orderBy === "name") return vb.toString().localeCompare(va.toString());
@@ -48,9 +54,10 @@ export default function ProjectsList({
   deleteProject,
   onEditProject,
 }) {
-  // ---- always call hooks at the top, in the same order
+  // ---- hooks
   const router = useRouter();
   const { user } = useUser();
+  const { addMember, removeMember, getProjectById } = useProject();
   const { organisation } = useOrganisation();
 
   const [order, setOrder] = useState("desc");
@@ -66,31 +73,40 @@ export default function ProjectsList({
   const [newMemberUid, setNewMemberUid] = useState("");
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const [newMemberRole, setNewMemberRole] = useState("contributor");
-  const [selectedOrgMember, setSelectedOrgMember] = useState(null); // object from org team_members
+  const [selectedOrgMember, setSelectedOrgMember] = useState(null);
 
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState({ open: false, severity: "info", msg: "" });
 
-  // ---- derived values (no new hooks)
-  const uid = user?.uid || "";
+  // ---------- ID/role normalization helpers ----------
+  const norm = (v) => (typeof v === "string" ? v.toLowerCase().trim() : v);
+  const getId = (obj) => obj?.uid || obj?.user_id || obj?.id || "";
+  const getRole = (obj) => norm(obj?.role || obj?.member_role || "");
+
+  // ---------- permissions ----------
   const isOwner = useMemo(() => {
-    const team = organisation?.team_members || [];
-    return team.some((m) => m?.uid === uid && m?.role === "owner");
-  }, [organisation, uid]);
+    const team = Array.isArray(organisation?.team_members) ? organisation.team_members : [];
+    const myId = getId(user) || user?.uid || "";
+    return team.some((m) => getId(m) === myId && norm(m?.role) === "owner");
+  }, [organisation, user]);
 
   const userInProject = useCallback(
-    (project) =>
-      Array.isArray(project?.members) && project.members.some((m) => m?.uid === uid),
-    [uid]
+    (project) => {
+      const myId = getId(user);
+      return Array.isArray(project?.members) && project.members.some((m) => getId(m) === myId);
+    },
+    [user]
   );
 
   const canManageProject = useCallback(
     (project) => {
       if (isOwner) return true;
-      const me = (project?.members || []).find((m) => m?.uid === uid);
-      return me?.role === "editor";
+      const myId = getId(user);
+      const me = (project?.members || []).find((m) => getId(m) === myId);
+      const r = getRole(me);
+      return ["owner", "admin", "editor"].includes(r);
     },
-    [isOwner, uid]
+    [isOwner, user]
   );
 
   const canEnter = useCallback(
@@ -98,17 +114,18 @@ export default function ProjectsList({
     [isOwner, userInProject]
   );
 
-  // org members (source of truth for assignment)
+  // org members
   const orgTeamMembers = useMemo(
-    () => Array.isArray(organisation?.team_members) ? organisation.team_members : [],
+    () => (Array.isArray(organisation?.team_members) ? organisation.team_members : []),
     [organisation]
   );
 
-  // exclude already-assigned members from the options (optional; toggle to false if you want to show everyone)
+  // exclude already-assigned members
   const unassignedCandidates = useMemo(() => {
-    if (!activeProject) return orgTeamMembers;
-    const assigned = new Set((activeProject.members || []).map((m) => m.uid));
-    return orgTeamMembers.filter((m) => !assigned.has(m.uid));
+    const team = orgTeamMembers;
+    if (!activeProject) return team;
+    const assigned = new Set((activeProject.members || []).map((m) => getId(m)));
+    return team.filter((m) => !assigned.has(getId(m)));
   }, [orgTeamMembers, activeProject]);
 
   // ---- filtering/sorting/paging
@@ -182,10 +199,10 @@ export default function ProjectsList({
     setMemberOpen(false);
   }, []);
 
-  // When user picks from org team list, sync UID/email into hidden fields used by handleAssign
+  // When user picks from org team list
   useEffect(() => {
     if (selectedOrgMember) {
-      setNewMemberUid(selectedOrgMember.uid || "");
+      setNewMemberUid(getId(selectedOrgMember) || "");
       setNewMemberEmail(selectedOrgMember.email || "");
     } else {
       setNewMemberUid("");
@@ -193,6 +210,7 @@ export default function ProjectsList({
     }
   }, [selectedOrgMember]);
 
+  // REFACTORED: Using provider's addMember method
   const handleAssign = useCallback(async () => {
     if (!activeProject?.project_id) {
       openToast("No active project selected.", "error");
@@ -202,92 +220,75 @@ export default function ProjectsList({
       openToast("Pick a member from the organisation.", "error");
       return;
     }
+    
     setBusy(true);
     try {
       const now = new Date().toISOString();
-      const list = Array.isArray(activeProject.members) ? [...activeProject.members] : [];
-      const idx = list.findIndex((m) => m?.uid === newMemberUid);
-      const isNew = idx === -1;
+      
+      // Check if member already exists
+      const existingMember = (activeProject.members || []).find(
+        (m) => getId(m) === newMemberUid
+      );
+      
+      const memberData = {
+        uid: newMemberUid,
+        role: newMemberRole || "contributor",
+        status: "active",
+        joined_at: existingMember?.joined_at || now,
+        email: newMemberEmail || "",
+      };
 
-      let nextMembers;
-      if (isNew) {
-        nextMembers = [
-          ...list,
-          {
-            uid: newMemberUid,
-            role: newMemberRole || "contributor",
-            status: "active",
-            joined_at: now,
-            email: newMemberEmail || "",
-          },
-        ];
-      } else {
-        const prev = list[idx] || {};
-        nextMembers = [...list];
-        nextMembers[idx] = {
-          ...prev,
-          uid: newMemberUid,
-          role: newMemberRole || prev.role || "contributor",
-          status: "active",
-          joined_at: prev.joined_at || now,
-          email: newMemberEmail || prev.email || "",
-        };
-      }
-     console.log(nextMembers)
-      // A) update project members
-      const updated = await projectModel.update(orgId, activeProject.project_id, {
-        members: nextMembers,
-        updated_at: now,
-      });
-
-      // B) merge org into user.org_ids; rollback A if B fails
-      try {
-        await UserModel.update(newMemberUid, { org_ids: [String(orgId)] });
-      } catch (err) {
-        const rolled = nextMembers.filter((m) => m?.uid !== newMemberUid);
-        await projectModel.update(orgId, activeProject.project_id, {
-          members: rolled,
-          updated_at: new Date().toISOString(),
-        });
-        throw err;
-      }
-
+      await addMember(activeProject.project_id, memberData);
+      
+      const updated = await getProjectById(activeProject.project_id);
       setActiveProject(updated);
-      openToast("Member assigned.", "success");
+      
+      openToast("Member assigned successfully!", "success");
       setSelectedOrgMember(null);
       setNewMemberUid("");
       setNewMemberEmail("");
       setNewMemberRole("contributor");
     } catch (e) {
+      console.error("Assignment error:", e);
       openToast(String(e?.message || e), "error");
     } finally {
       setBusy(false);
     }
-  }, [activeProject, newMemberUid, newMemberRole, newMemberEmail, orgId, openToast]);
+  }, [
+    activeProject, 
+    newMemberUid, 
+    newMemberRole, 
+    newMemberEmail, 
+    orgId, 
+    openToast, 
+    addMember, 
+    getProjectById
+  ]);
 
+  // REFACTORED: Using provider's removeMember method
   const handleRemoveMember = useCallback(
     async (memberUid) => {
       if (!activeProject?.project_id) return;
       setBusy(true);
       try {
-        const list = Array.isArray(activeProject.members) ? activeProject.members : [];
-        const next = list.filter((m) => m?.uid !== memberUid);
-
-        const updated = await projectModel.update(orgId, activeProject.project_id, {
-          members: next,
-          updated_at: new Date().toISOString(),
-        });
+        // Use provider method
+        await removeMember(activeProject.project_id, memberUid);
+        
+        // Refresh the active project data
+        const updated = await getProjectById(activeProject.project_id);
         setActiveProject(updated);
-        openToast("Member removed.", "success");
+        
+        openToast("Member removed successfully!", "success");
       } catch (e) {
+        console.error("Remove member error:", e);
         openToast(String(e?.message || e), "error");
       } finally {
         setBusy(false);
       }
     },
-    [activeProject, orgId, openToast]
+    [activeProject, removeMember, getProjectById, openToast]
   );
-
+console.log(projects)
   return (
     <Box>
       {/* Toolbar: search / filters */}
@@ -407,8 +408,12 @@ export default function ProjectsList({
                 <TableRow
                   key={p.project_id}
                   hover
-                  sx={{ cursor: "pointer", opacity: allowed ? 1 : 0.95 }}
-                  onClick={() => handleEnter(p)}
+                  sx={{ cursor: allowed ? "pointer" : "default", opacity: allowed ? 1 : 0.95 }}
+                  onClick={() =>
+                    allowed
+                      ? handleEnter(p)
+                      : openToast("You're not part of this project's team yet.", "warning")
+                  }
                 >
                   <TableCell sx={{ fontWeight: 600 }}>
                     <Stack direction="row" alignItems="center" spacing={1}>
@@ -446,37 +451,60 @@ export default function ProjectsList({
 
                   <TableCell align="right" onClick={(e) => e.stopPropagation()}>
                     <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-                      {isOwner && (
-                        <Tooltip title="Manage members">
-                          <span>
-                            <IconButton size="small" onClick={() => openMembers(p)}>
-                              <GroupIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                      )}
-                      {canManage && (
-                        <>
-                          <Tooltip title="Edit project">
-                            <span>
-                              <IconButton size="small" onClick={() => onEditProject(p)}>
-                                <EditIcon fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                          <Tooltip title="Delete project">
-                            <span>
-                              <IconButton
-                                size="small"
-                                color="error"
-                                onClick={() => deleteProject(p.project_id)}
-                              >
-                                <DeleteIcon fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                        </>
-                      )}
+                      <Tooltip
+                        title={
+                          (isOwner || canManage)
+                            ? "Manage members"
+                            : "You need to be org owner or project owner/admin/editor"
+                        }
+                      >
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => openMembers(p)}
+                            disabled={!(isOwner || canManage)}
+                          >
+                            <GroupIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+
+                      <Tooltip
+                        title={
+                          canManage
+                            ? "Edit project"
+                            : "You need owner/admin/editor on this project"
+                        }
+                      >
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => onEditProject(p)}
+                            disabled={!canManage}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+
+                      <Tooltip
+                        title={
+                          canManage
+                            ? "Delete project"
+                            : "You need owner/admin/editor on this project"
+                        }
+                      >
+                        <span>
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => deleteProject(p.project_id)}
+                            disabled={!canManage}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
                     </Stack>
                   </TableCell>
                 </TableRow>
@@ -497,17 +525,21 @@ export default function ProjectsList({
       {/* Pagination */}
       {totalPages > 1 && (
         <Stack direction="row" justifyContent="center" mt={2}>
-          <Pagination count={totalPages} page={page} onChange={(_, v) => setPage(v)} color="primary" />
+          <Pagination
+            count={totalPages}
+            page={page}
+            onChange={(_, v) => setPage(v)}
+            color="primary"
+          />
         </Stack>
       )}
 
-      {/* Member Management (owners only) */}
+      {/* Member Management Dialog */}
       <Dialog open={memberOpen} onClose={closeMembers} fullWidth maxWidth="md">
         <DialogTitle>
           Manage Members {activeProject ? `— ${activeProject.name}` : ""}
         </DialogTitle>
         <DialogContent dividers>
-          {/* existing members */}
           <Table size="small" sx={{ mb: 2 }}>
             <TableHead>
               <TableRow>
@@ -520,10 +552,10 @@ export default function ProjectsList({
             </TableHead>
             <TableBody>
               {(activeProject?.members || []).map((m) => (
-                <TableRow key={m.uid}>
-                  <TableCell><code style={{ fontSize: 12 }}>{m.uid}</code></TableCell>
+                <TableRow key={getId(m)}>
+                  <TableCell><code style={{ fontSize: 12 }}>{getId(m)}</code></TableCell>
                   <TableCell>{m.email || "—"}</TableCell>
-                  <TableCell>{m.role || "contributor"}</TableCell>
+                  <TableCell>{getRole(m) || "contributor"}</TableCell>
                   <TableCell>{m.joined_at ? timeformater(m.joined_at) : "—"}</TableCell>
                   <TableCell align="right">
                     <Tooltip title="Remove">
@@ -532,7 +564,7 @@ export default function ProjectsList({
                           size="small"
                           color="error"
                           disabled={busy}
-                          onClick={() => handleRemoveMember(m.uid)}
+                          onClick={() => handleRemoveMember(getId(m))}
                         >
                           <PersonRemoveIcon fontSize="small" />
                         </IconButton>
@@ -551,23 +583,29 @@ export default function ProjectsList({
             </TableBody>
           </Table>
 
-          {/* assign from organisation team_members */}
           <Stack spacing={2} direction={{ xs: "column", sm: "row" }} alignItems="stretch">
             <Autocomplete
               options={unassignedCandidates}
-              getOptionLabel={(opt) => opt?.email || opt?.uid || ""}
+              getOptionLabel={(opt) => opt?.email || getId(opt) || ""}
               value={selectedOrgMember}
               onChange={(_, val) => setSelectedOrgMember(val)}
               renderInput={(params) => (
-                <TextField {...params} size="small" label="Pick org member" placeholder="Search by email/uid" />
+                <TextField
+                  {...params}
+                  size="small"
+                  label="Pick org member"
+                  placeholder="Search by email/uid"
+                />
               )}
               renderOption={(props, opt) => (
-                <li {...props} key={opt.uid}>
+                <li {...props} key={getId(opt)}>
                   <Stack direction="row" spacing={1} alignItems="center">
-                    <Avatar sx={{ width: 24, height: 24 }}>{(opt.email || opt.uid || "?").charAt(0).toUpperCase()}</Avatar>
+                    <Avatar sx={{ width: 24, height: 24 }}>
+                      {(opt.email || getId(opt) || "?").charAt(0).toUpperCase()}
+                    </Avatar>
                     <span>{opt.email || "—"}</span>
-                    <code style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>{opt.uid}</code>
-                    {opt.role && <Chip size="small" sx={{ ml: 1 }} label={opt.role} />}
+                    <code style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>{getId(opt)}</code>
+                    {getRole(opt) && <Chip size="small" sx={{ ml: 1 }} label={getRole(opt)} />}
                   </Stack>
                 </li>
               )}

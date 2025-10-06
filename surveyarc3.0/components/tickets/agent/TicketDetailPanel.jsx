@@ -11,6 +11,7 @@ import TicketMetadata from "./TicketMetadata";
 import ConversationSection from "./ConversationSection";
 import WorklogsSection from "./WorklogsSection";
 import SidebarActionsPanel from "./SidebarActionsPanel";
+import SLAInfoCard from "./SLAInfoCard";
 
 export default function TicketDetailPanel({ ticket, onTicketChanged, currentUserId }) {
   const [busy, setBusy] = useState(false);
@@ -58,6 +59,13 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
     onTicketChanged?.(fresh);
   };
 
+  const handleSLAPaused = async () => {
+    // Refresh ticket to get updated SLA status
+    const fresh = await TicketModel.get(full.ticketId);
+    setFull(fresh);
+    onTicketChanged?.(fresh);
+  };
+
   const handleCommentDeleted = (commentId) => {
     setComments((prev) => prev.filter((c) => (c.comment_id || c.commentId) !== commentId));
   };
@@ -86,6 +94,7 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
             currentUserId={currentUserId}
             onCommentAdded={handleCommentAdded}
             onCommentDeleted={handleCommentDeleted}
+            onSLAPaused={handleSLAPaused}
             busy={busy}
             setBusy={setBusy}
           />
@@ -107,6 +116,8 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
             busy={busy}
             setBusy={setBusy}
           />
+          <SLAInfoCard slaId={full.slaId} ticket={full} dimension="resolution" />
+
         </div>
       </div>
     </div>

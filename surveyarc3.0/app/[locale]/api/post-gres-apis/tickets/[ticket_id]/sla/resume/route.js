@@ -1,4 +1,4 @@
-// app/api/post-gres-apis/tickets/[ticket_id]/worklogs/route.js
+// app/api/post-gres-apis/tickets/[ticket_id]/sla/resume/route.js
 import { NextResponse } from "next/server";
 import { decryptGetResponse } from "@/utils/crypto_client";
 import { cookies } from "next/headers";
@@ -19,13 +19,12 @@ async function forceDecryptResponse(res) {
   }
 }
 
-export async function GET(req, { params }) {
+export async function POST(req, { params }) {
   const { ticket_id } = await params;
   
   const headers = new Headers();
   headers.set("Content-Type", "application/json");
   
-  // Get user ID from cookie or header
   const cookieStore = await cookies();
   const userId = cookieStore.get('currentUserId')?.value || req.headers.get("x-user-id");
   
@@ -34,10 +33,12 @@ export async function GET(req, { params }) {
   }
   
   try {
-    const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticket_id)}/worklogs`, {
+    const body = await req.json();
+    const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticket_id)}/sla/resume`, {
+      method: "POST",
       headers,
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(30000),
-      cache: "no-store",
     });
     return forceDecryptResponse(res);
   } catch (e) {

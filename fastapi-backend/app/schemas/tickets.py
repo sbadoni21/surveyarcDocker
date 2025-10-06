@@ -3,8 +3,10 @@ from pydantic import BaseModel, Field
 from pydantic import field_validator, model_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from ..models.tickets import TicketStatus, TicketPriority, TicketSeverity, TicketLinkType
-from ..models.tickets import WorklogType  # your SQLAlchemy Enum
+from ..models.tickets import (
+    TicketStatus, TicketPriority, TicketSeverity, TicketLinkType,
+    WorklogType, SLAPauseReason
+)
 
 
 # ------------------------------ Shared ------------------------------
@@ -90,15 +92,69 @@ class SLAOut(SLABase):
     model_config = {"from_attributes": True}
 
 
+# ------------------------------- SLA Pause/Resume --------------------------------
+
+class SLAPauseRequest(BaseModel):
+    """Request to pause an SLA timer"""
+    dimension: str = Field(..., description="first_response or resolution")
+    reason: SLAPauseReason = Field(default=SLAPauseReason.agent_paused)
+    reason_note: Optional[str] = Field(None, description="Additional context")
+
+
+class SLAResumeRequest(BaseModel):
+    """Request to resume an SLA timer"""
+    dimension: str = Field(..., description="first_response or resolution")
+
+
+class SLAPauseHistoryOut(BaseModel):
+    """Response model for pause history"""
+    pause_id: str
+    ticket_id: str
+    dimension: str
+    action: str  # "pause" or "resume"
+    action_at: datetime
+    actor_id: str
+    reason: Optional[SLAPauseReason] = None
+    reason_note: Optional[str] = None
+    pause_duration_minutes: Optional[int] = None
+    due_date_extension_minutes: Optional[int] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class TicketSLAStatusOut(BaseModel):
     ticket_id: str
     sla_id: Optional[str] = None
+    
+    # First Response
     first_response_due_at: Optional[datetime] = None
-    resolution_due_at: Optional[datetime] = None
+    first_response_started_at: Optional[datetime] = None
+    first_response_completed_at: Optional[datetime] = None
+    first_response_paused: bool = False
+    first_response_paused_at: Optional[datetime] = None
+    elapsed_first_response_minutes: int = 0
+    total_paused_first_response_minutes: int = 0
     breached_first_response: bool = False
+    last_resume_first_response: Optional[datetime] = None
+    
+    # Resolution
+    resolution_due_at: Optional[datetime] = None
+    resolution_started_at: Optional[datetime] = None
+    resolution_completed_at: Optional[datetime] = None
+    resolution_paused: bool = False
+    resolution_paused_at: Optional[datetime] = None
+    elapsed_resolution_minutes: int = 0
+    total_paused_resolution_minutes: int = 0
     breached_resolution: bool = False
+    last_resume_resolution: Optional[datetime] = None
+    
+    # Legacy fields (backward compatibility)
     paused: bool = False
     pause_reason: Optional[str] = None
+    
+    # General
+    calendar_id: Optional[str] = None
     updated_at: Optional[datetime] = None
     meta: Dict[str, Any] = Field(default_factory=dict)
 

@@ -1,12 +1,12 @@
 "use client";
 import React, { createContext, useContext, useEffect, useState } from "react";
-import ProjectModel from "@/models/projectModel";
 import { getCookie } from "cookies-next";
+import projectModel from "@/models/projectModel";
 
 const ProjectContext = createContext();
 
 export const ProjectProvider = ({ children }) => {
-  const model = new ProjectModel();
+  const model =  projectModel;
 
   const [projects, setProjects] = useState([]);
   const [selectedProject, setSelectedProject] = useState(null);

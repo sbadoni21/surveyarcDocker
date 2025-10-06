@@ -1,4 +1,4 @@
-// app/api/post-gres-apis/tickets/[ticket_id]/sla/first-response/route.js
+// app/api/post-gres-apis/projects/[projectId]/surveys/[surveyid]/route.js
 import { NextResponse } from "next/server";
 import { decryptGetResponse } from "@/utils/crypto_client";
 import { encryptPayload } from "@/utils/crypto_utils";
@@ -6,7 +6,6 @@ import { encryptPayload } from "@/utils/crypto_utils";
 const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
 const ENC = process.env.ENCRYPT_SURVEYS === "1";
 
-// ----- shared decrypt helper (GET) -----
 async function forceDecryptResponse(res) {
   const text = await res.text();
   try {
@@ -34,21 +33,36 @@ async function forceDecryptResponse(res) {
   }
 }
 
-// POST /api/post-gres-apis/tickets/[ticket_id]/sla/first-response
-export async function POST(req, { params }) {
-  const { ticket_id } = params;
+// DELETE /api/post-gres-apis/projects/[projectId]/surveys/[surveyid]?orgId=...
+export async function DELETE(req, { params }) {
+  const { projectId, surveyid } = params;
+  const { searchParams } = new URL(req.url);
+  const orgId = searchParams.get("orgId");
+  
+  if (!orgId) {
+    return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
+  }
 
   try {
-    const raw = await req.json().catch(() => ({})); // Default to empty object if no body
-    const payload = ENC ? await encryptPayload(raw) : raw;
+    // Get current project
+    const getRes = await fetch(`${BASE}/projects/${orgId}/${projectId}`, {
+      signal: AbortSignal.timeout(30000),
+      cache: "no-store",
+    });
+    const project = await getRes.json();
+    
+    const surveyIds = (project.survey_ids || []).filter(id => id !== surveyid);
 
-    const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticket_id)}/sla/first-response`, {
-      method: "POST",
+    // Update project
+    const payload = ENC ? await encryptPayload({ survey_ids: surveyIds }) : { survey_ids: surveyIds };
+    const res = await fetch(`${BASE}/projects/${orgId}/${projectId}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json", ...(ENC ? { "x-encrypted": "1" } : {}) },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30000),
       cache: "no-store",
     });
+    
     return forceDecryptResponse(res);
   } catch (e) {
     return NextResponse.json({ detail: "Upstream error", message: String(e?.message || e) }, { status: 500 });

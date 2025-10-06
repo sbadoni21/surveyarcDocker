@@ -53,7 +53,7 @@ const UserModel = {
    * PATCH /users/{uid}
    */
   async update(uid, data) {
-    const res = await fetch(`${BASE}/orgs/${encodeURIComponent(uid)}`, {
+    const res = await fetch(`${BASE}/org/${encodeURIComponent(uid)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),

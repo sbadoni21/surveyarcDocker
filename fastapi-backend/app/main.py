@@ -19,8 +19,8 @@ Base.metadata.create_all(bind=engine)
 from app.routes import (
     secure_crud, user, project, survey, questions, responses, tickets, webhook, answer,
     archive, audit_log, domains, integration, invite, invoice,
-    marketplace, metric, order, organisation, payment, pricing_plan, rule, contacts, support_groups, support_teams, support_routing,slas,business_calendars,tags, ticket_categories
-)
+    marketplace, metric, order, organisation, payment, pricing_plan, rule, contacts, support_groups, support_teams, support_routing,slas,business_calendars,tags, ticket_categories,
+    ticket_sla)
 
 app = FastAPI(
     title="Survey & Ticket Management API",
@@ -257,6 +257,7 @@ app.include_router(slas.router, tags=["Service Level Agreements"])
 app.include_router(business_calendars.router, tags=["Business Calendars"])
 app.include_router(ticket_categories.router, tags=["Categories"])
 app.include_router(tags.router, tags=["Tags"])
+app.include_router(ticket_sla.router, tags=["Sla tickets"])
 
 
 # Add encryption middleware with configuration

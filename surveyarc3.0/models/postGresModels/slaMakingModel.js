@@ -1,6 +1,6 @@
 // models/postGresModels/slaMakingModel.js
 const BASE = "/api/post-gres-apis/slas";
-
+const BASE2= "/api/post-gres-apis/"
 const safeJson = async (res) => {
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -96,7 +96,7 @@ const SlaMakingModel = {
     const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/objectives`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload), // server will bind sla_id from path
+      body: JSON.stringify(payload), // server binds sla_id from path
       cache: "no-store",
     });
     return safeJson(res);
@@ -139,7 +139,7 @@ const SlaMakingModel = {
     const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/credit-rules`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload), // server will bind sla_id from path
+      body: JSON.stringify(payload), // server binds sla_id from path
       cache: "no-store",
     });
     return safeJson(res);
@@ -170,6 +170,61 @@ const SlaMakingModel = {
       throw new Error(text || `HTTP ${res.status}`);
     }
     return true;
+  },
+
+  // -------- Ticket SLA (Status / Timers / History / Pause / Resume) --------
+
+  async getTicketStatus(ticketId) {
+    if (!ticketId) throw new Error("ticketId is required");
+    const res = await fetch(`${BASE2}/tickets/${encodeURIComponent(ticketId)}/sla/status`, {
+      cache: "no-store",
+    });
+    return safeJson(res);
+  },
+
+  async getTicketTimers(ticketId) {
+    if (!ticketId) throw new Error("ticketId is required");
+    const res = await fetch(`${BASE2}/tickets/${encodeURIComponent(ticketId)}/sla/timers`, {
+      cache: "no-store",
+    });
+    return safeJson(res);
+  },
+
+  async getTicketPauseHistory(ticketId, { dimension } = {}) {
+    if (!ticketId) throw new Error("ticketId is required");
+    const params = new URLSearchParams();
+    if (dimension) params.set("dimension", dimension);
+    const res = await fetch(
+      `${BASE2}/tickets/${encodeURIComponent(ticketId)}/sla/pause-history${params.toString() ? `?${params.toString()}` : ""}`,
+      { cache: "no-store" }
+    );
+    return safeJson(res);
+  },
+
+  async pauseTicketSLA(ticketId, { dimension, reason, reason_note }, { userId } = {}) {
+    if (!ticketId) throw new Error("ticketId is required");
+    const headers = { "Content-Type": "application/json" };
+    if (userId) headers["X-User-Id"] = userId; // FastAPI guard
+    const res = await fetch(`${BASE2}/tickets/${encodeURIComponent(ticketId)}/sla/pause`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ dimension, reason, reason_note }),
+      cache: "no-store",
+    });
+    return safeJson(res);
+  },
+
+  async resumeTicketSLA(ticketId, { dimension }, { userId } = {}) {
+    if (!ticketId) throw new Error("ticketId is required");
+    const headers = { "Content-Type": "application/json" };
+    if (userId) headers["X-User-Id"] = userId;
+    const res = await fetch(`${BASE}/tickets/sla/${encodeURIComponent(ticketId)}/resume`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ dimension }),
+      cache: "no-store",
+    });
+    return safeJson(res);
   },
 };
 

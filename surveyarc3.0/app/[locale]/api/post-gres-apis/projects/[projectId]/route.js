@@ -1,4 +1,4 @@
-// app/api/post-gres-apis/projects/route.js
+// app/api/post-gres-apis/projects/[projectId]/route.js
 import { NextResponse } from "next/server";
 import { decryptGetResponse } from "@/utils/crypto_client";
 import { encryptPayload } from "@/utils/crypto_utils";
@@ -33,8 +33,9 @@ async function forceDecryptResponse(res) {
   }
 }
 
-// GET /api/post-gres-apis/projects?orgId=...
-export async function GET(req) {
+// GET /api/post-gres-apis/projects/[projectId]?orgId=...
+export async function GET(req, { params }) {
+  const { projectId } =  await params;
   const { searchParams } = new URL(req.url);
   const orgId = searchParams.get("orgId");
   
@@ -47,7 +48,7 @@ export async function GET(req) {
   if (useCache) qs.set("use_cache", useCache);
 
   try {
-    const res = await fetch(`${BASE}/projects/${orgId}?${qs.toString()}`, {
+    const res = await fetch(`${BASE}/projects/${orgId}/${projectId}?${qs.toString()}`, {
       signal: AbortSignal.timeout(30000),
       cache: "no-store",
     });
@@ -57,16 +58,46 @@ export async function GET(req) {
   }
 }
 
-// POST /api/post-gres-apis/projects
-export async function POST(req) {
+// PATCH /api/post-gres-apis/projects/[projectId]
+export async function PATCH(req, { params }) {
+  const { projectId } =  await params;
+  
   try {
     const raw = await req.json();
-    const payload = ENC ? await encryptPayload(raw) : raw;
+    const { orgId, ...updateData } = raw;
 
-    const res = await fetch(`${BASE}/projects/`, {
-      method: "POST",
+    if (!orgId) {
+      return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
+    }
+
+    const payload = ENC ? await encryptPayload(updateData) : updateData;
+
+    const res = await fetch(`${BASE}/projects/${orgId}/${projectId}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json", ...(ENC ? { "x-encrypted": "1" } : {}) },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30000),
+      cache: "no-store",
+    });
+    return forceDecryptResponse(res);
+  } catch (e) {
+    return NextResponse.json({ detail: "Upstream error", message: String(e?.message || e) }, { status: 500 });
+  }
+}
+
+// DELETE /api/post-gres-apis/projects/[projectId]?orgId=...
+export async function DELETE(req, { params }) {
+  const { projectId } =  await params;
+  const { searchParams } = new URL(req.url);
+  const orgId = searchParams.get("orgId");
+  
+  if (!orgId) {
+    return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
+  }
+
+  try {
+    const res = await fetch(`${BASE}/projects/${orgId}/${projectId}`, {
+      method: "DELETE",
       signal: AbortSignal.timeout(30000),
       cache: "no-store",
     });

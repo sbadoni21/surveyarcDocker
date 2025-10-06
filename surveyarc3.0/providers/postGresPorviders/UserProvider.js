@@ -1,7 +1,7 @@
 // providers/postGresPorviders/UserProvider.js
 'use client';
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import { auth, onAuthStateChanged } from '@/firebase/firebase';
 import UserModel from '@/models/postGresModels/userModel';
 
 const UserContext = createContext();
@@ -126,7 +126,6 @@ export const UserProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    const auth = getAuth();
     const pathname = window.location.pathname;
     const isRegistrationRoute = pathname.includes('/register') || pathname.includes('/postgres-register');
 

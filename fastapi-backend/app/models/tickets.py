@@ -75,6 +75,19 @@ class WorklogType(str, enum.Enum):
     review        = "review"
     other         = "other"
 
+class SLAPauseReason(str, enum.Enum):
+    """Reasons for pausing SLA timers"""
+    awaiting_customer = "awaiting_customer"
+    awaiting_third_party = "awaiting_third_party"
+    agent_paused = "agent_paused"
+    scheduled_maintenance = "scheduled_maintenance"
+    outside_business_hours = "outside_business_hours"
+    other = "other"
+
+
+# Named enum type for PostgreSQL
+sla_pause_reason_enum = SAEnum(SLAPauseReason, name="sla_pause_reason", metadata=Base.metadata)
+
 
 # ------------------------------- Named PG Enum types (reuse these) -------------------------------
 # These create named PostgreSQL enum types once and allow reuse across models/tables.
@@ -274,39 +287,6 @@ class TicketEvent(Base):
     ticket = relationship("Ticket", back_populates="events")
 
 
-class TicketSLAStatus(Base):
-    __tablename__ = "ticket_sla_status"
-
-    ticket_id: Mapped[str] = mapped_column(String, ForeignKey("tickets.ticket_id", ondelete="CASCADE"), primary_key=True)
-    sla_id:    Mapped[Optional[str]] = mapped_column(String, ForeignKey("slas.sla_id"), nullable=True)
-
-    first_response_due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    resolution_due_at:     Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    breached_first_response: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    breached_resolution:     Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
-    paused:       Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    pause_reason: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
-    first_response_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    resolution_started_at:     Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    elapsed_first_response_minutes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    elapsed_resolution_minutes:     Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    meta:          Mapped[dict] = mapped_column(JSONB, default=dict)
-
-    # last_resume_{dimension} is useful to accumulate elapsed segments
-    last_resume_first_response: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_resume_resolution:     Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    # Which calendar governs this ticket's SLA (optional; falls back to org/team default)
-    calendar_id: Mapped[Optional[str]] = mapped_column(String, ForeignKey("biz_calendars.calendar_id"), nullable=True)
-
-    ticket = relationship("Ticket", back_populates="sla_status")
-    sla    = relationship("SLA", back_populates="statuses")
 
 
 class TicketLink(Base):
@@ -362,3 +342,172 @@ class TicketWorklog(Base):
     kind:       Mapped[WorklogType] = mapped_column(ticket_worklog_type_enum, default=WorklogType.other)
     note:       Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class TicketSLAStatus(Base):
+    """
+    Enhanced SLA tracking with pause/resume history
+    """
+    __tablename__ = "ticket_sla_status"
+
+    ticket_id: Mapped[str] = mapped_column(
+        String, 
+        ForeignKey("tickets.ticket_id", ondelete="CASCADE"), 
+        primary_key=True
+    )
+    sla_id: Mapped[Optional[str]] = mapped_column(
+        String, 
+        ForeignKey("slas.sla_id"), 
+        nullable=True
+    )
+
+    # ============ FIRST RESPONSE TRACKING ============
+    first_response_due_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    first_response_started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    first_response_completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    
+    # Pause state for first response
+    first_response_paused: Mapped[bool] = mapped_column(Boolean, default=False)
+    first_response_paused_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    
+    # Time tracking
+    elapsed_first_response_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    total_paused_first_response_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    
+    # Breach tracking
+    breached_first_response: Mapped[bool] = mapped_column(Boolean, default=False)
+    
+    # Last resume timestamp (for calculating elapsed time)
+    last_resume_first_response: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # ============ RESOLUTION TRACKING ============
+    resolution_due_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resolution_started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resolution_completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    
+    # Pause state for resolution
+    resolution_paused: Mapped[bool] = mapped_column(Boolean, default=False)
+    resolution_paused_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    
+    # Time tracking
+    elapsed_resolution_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    total_paused_resolution_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    
+    # Breach tracking
+    breached_resolution: Mapped[bool] = mapped_column(Boolean, default=False)
+    
+    # Last resume timestamp (for calculating elapsed time)
+    last_resume_resolution: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # ============ LEGACY/GENERAL FIELDS ============
+    # Keep for backward compatibility
+    paused: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    pause_reason: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    # Calendar for business hours calculation
+    calendar_id: Mapped[Optional[str]] = mapped_column(
+        String, 
+        ForeignKey("biz_calendars.calendar_id"), 
+        nullable=True
+    )
+
+    # Metadata
+    meta: Mapped[dict] = mapped_column(JSONB, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        server_default=func.now(), 
+        onupdate=func.now()
+    )
+
+    # Relationships
+    ticket = relationship("Ticket", back_populates="sla_status")
+    sla = relationship("SLA", back_populates="statuses")
+    pause_history = relationship(
+        "TicketSLAPauseHistory", 
+        back_populates="sla_status", 
+        cascade="all, delete-orphan",
+        order_by="TicketSLAPauseHistory.created_at.desc()"
+    )
+
+
+
+# ------------------------------- Pause/Resume History Table -------------------------------
+
+class TicketSLAPauseHistory(Base):
+    """
+    Audit trail for every pause/resume action on SLA timers
+    """
+    __tablename__ = "ticket_sla_pause_history"
+
+    pause_id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
+    ticket_id: Mapped[str] = mapped_column(
+        String, 
+        ForeignKey("ticket_sla_status.ticket_id", ondelete="CASCADE"), 
+        index=True, 
+        nullable=False
+    )
+    
+    # Which dimension was paused (first_response or resolution)
+    dimension: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    
+    # Pause or Resume action
+    action: Mapped[str] = mapped_column(String, nullable=False)  # "pause" or "resume"
+    
+    # Timestamps
+    action_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        nullable=False, 
+        index=True
+    )
+    
+    # Who triggered this action
+    actor_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    
+    # Pause reason (only for pause actions)
+    reason: Mapped[Optional[SLAPauseReason]] = mapped_column(
+        sla_pause_reason_enum, 
+        nullable=True
+    )
+    reason_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # Duration calculation (filled when resuming)
+    pause_duration_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    
+    # Due date adjustment (how much was added to due_at)
+    due_date_extension_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    
+    # Metadata
+    meta: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        server_default=func.now(), 
+        index=True
+    )
+
+    # Relationships
+    sla_status = relationship("TicketSLAStatus", back_populates="pause_history")
+
+    __table_args__ = (
+        Index("ix_sla_pause_history_ticket_dimension", "ticket_id", "dimension"),
+        Index("ix_sla_pause_history_action_at", "ticket_id", "action_at"),
+    )

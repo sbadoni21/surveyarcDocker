@@ -22,7 +22,7 @@ async function forceDecryptResponse(res) {
 }
 
 export async function GET(_req, { params }) {
-  const { sla_id } = params;
+  const { sla_id } = await params;
   try {
     const res = await fetch(`${BASE}/slas/${encodeURIComponent(sla_id)}/credit-rules`, {
       signal: AbortSignal.timeout(30000),

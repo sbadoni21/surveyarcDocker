@@ -22,7 +22,7 @@ async function forceDecryptResponse(res) {
 }
 
 export async function GET(_req, { params }) {
-  const { sla_id } = params;
+  const { sla_id } = await params;
   try {
     const res = await fetch(`${BASE}/slas/${encodeURIComponent(sla_id)}/objectives`, {
       signal: AbortSignal.timeout(30000),
@@ -35,7 +35,7 @@ export async function GET(_req, { params }) {
 }
 
 export async function POST(req, { params }) {
-  const { sla_id } = params;
+  const { sla_id } = await params;
   try {
     const raw = await req.json();
     const payload = ENC ? await encryptPayload({ ...raw, sla_id }) : { ...raw, sla_id };

@@ -21,7 +21,7 @@ async function forceDecryptResponse(res) {
 }
 
 export async function GET(_req, { params }) {
-  const { objective_id } = params;
+  const { objective_id } = await params;
   try {
     const res = await fetch(`${BASE}/slas/objectives/${encodeURIComponent(objective_id)}`, {
       signal: AbortSignal.timeout(30000),
@@ -34,7 +34,7 @@ export async function GET(_req, { params }) {
 }
 
 export async function PATCH(req, { params }) {
-  const { objective_id } = params;
+  const { objective_id } = await params;
   try {
     const raw = await req.json();
     const payload = ENC ? await encryptPayload(raw) : raw;
@@ -53,7 +53,7 @@ export async function PATCH(req, { params }) {
 }
 
 export async function DELETE(_req, { params }) {
-  const { objective_id } = params;
+  const { objective_id } = await params;
   try {
     const res = await fetch(`${BASE}/slas/objectives/${encodeURIComponent(objective_id)}`, {
       method: "DELETE",
