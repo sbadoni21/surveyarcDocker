@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, act } from "react";
 import defaultConfigMap from "@/enums/defaultConfigs";
 import { FileText } from "lucide-react";
 import RenderQuestion from "./AnswerUI";
@@ -12,39 +12,94 @@ export default function SurveyForm({
   rules,
 }) {
   const [currentBlockIndex, setCurrentBlockIndex] = useState(0);
+  const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [answers, setAnswers] = useState({});
   const [pendingActions, setPendingActions] = useState([]);
   const [jumpToQuestion, setJumpToQuestion] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   const ruleEngine = useMemo(() => new RuleEngine(rules), [rules]);
+  useEffect(() => {
+    setCurrentPageIndex(0);
+    setJumpToQuestion(null);
+  }, [currentBlockIndex]);
 
-  const blocksWithQuestions = blocks
-  .map((block) => ({
-    ...block,
-    questions: (block.questionOrder || [])
-      .map((id) => questions.find((q) => q.questionId === id))
-      .filter(Boolean),
-  }))
-  .filter(
-    (block) => block.questions.length > 0 && !block.blockId.startsWith("unassigned_")
+  const [blocksWithQuestions, setBlocksWithQuestions] = useState(() =>
+    blocks
+      .map((block) => ({
+        ...block,
+        questions: (block.questionOrder || [])
+          .map((id) => questions.find((q) => q.questionId === id))
+          .filter(Boolean),
+      }))
+      .filter(
+        (block) =>
+          block.questions.length > 0 && !block.blockId.startsWith("unassigned_")
+      )
   );
 
+  // 🧠 Keep it updated if blocks or questions change
+  useEffect(() => {
+    setBlocksWithQuestions(
+      blocks
+        .map((block) => ({
+          ...block,
+          questions: (block.questionOrder || [])
+            .map((id) => questions.find((q) => q.questionId === id))
+            .filter(Boolean),
+        }))
+        .filter(
+          (block) =>
+            block.questions.length > 0 &&
+            !block.blockId.startsWith("unassigned_")
+        )
+    );
+  }, [blocks, questions]);
 
   const currentBlock = blocksWithQuestions[currentBlockIndex];
+
+  const blockPages = useMemo(() => {
+    if (!currentBlock) return [];
+
+    const pages = [];
+    let currentPage = [];
+
+    currentBlock.questionOrder.forEach((qid) => {
+      if (qid.startsWith("PB-")) {
+        if (currentPage.length > 0) {
+          pages.push(currentPage);
+
+          currentPage = [];
+        }
+      } else {
+        const question = questions.find((q) => q.questionId === qid);
+        if (question) currentPage.push(question);
+      }
+    });
+
+    if (currentPage.length > 0) {
+      pages.push(currentPage);
+    }
+
+    return pages;
+  }, [currentBlock, questions]);
 
   const handleChange = (questionId, value) => {
     const updatedAnswers = { ...answers, [questionId]: value };
     setAnswers(updatedAnswers);
-
+    // console.log(updatedAnswers);
     const actions = ruleEngine.evaluate(updatedAnswers);
+    // console.log(actions);
     setPendingActions(actions || []);
   };
 
   const isLastBlock = currentBlockIndex === blocksWithQuestions.length - 1;
 
   const handleNextBlock = () => {
+    const isLastPage = currentPageIndex === blockPages.length - 1;
+
     let skipBlockIds = new Set();
+    let skipQuestionIds = new Set();
     let gotoTargetBlock = null;
     let gotoTargetQuestion = null;
     let shouldEnd = false;
@@ -65,6 +120,12 @@ export default function SurveyForm({
         case "skip_block":
           (Array.isArray(action.blockIds) ? action.blockIds : []).forEach(
             (id) => skipBlockIds.add(id)
+          );
+          break;
+
+        case "skip_questions":
+          (Array.isArray(action.questionIds) ? action.questionIds : []).forEach(
+            (id) => skipQuestionIds.add(id)
           );
           break;
 
@@ -107,16 +168,30 @@ export default function SurveyForm({
     });
 
     if (messageToShow) alert(messageToShow);
-    if (Object.keys(variablesToSet).length > 0)
-      console.log("Variables set:", variablesToSet);
-    if (Object.keys(calculations).length > 0)
-      console.log("Calculated:", calculations);
-
     if (shouldEnd) {
       handleSubmit(answers);
       return;
     }
 
+    // 🧠 Update skipped questions within the current block immediately
+    if (skipQuestionIds.size > 0) {
+      setBlocksWithQuestions((prev) =>
+        prev.map((block, idx) => {
+          if (idx !== currentBlockIndex) return block;
+          return {
+            ...block,
+            questions: block.questions.filter(
+              (q) => !skipQuestionIds.has(q.questionId)
+            ),
+            questionOrder: block.questionOrder.filter(
+              (qid) => !skipQuestionIds.has(qid)
+            ),
+          };
+        })
+      );
+    }
+
+    // 🔹 Handle goto logic
     if (gotoTargetBlock || gotoTargetQuestion) {
       let targetBlockIndex = currentBlockIndex;
 
@@ -142,22 +217,47 @@ export default function SurveyForm({
 
       setCurrentBlockIndex(targetBlockIndex);
       setPendingActions([]);
+      setCurrentPageIndex(0);
       return;
     }
 
-    let nextBlockIndex = currentBlockIndex + 1;
-    while (nextBlockIndex < blocksWithQuestions.length) {
-      if (skipBlockIds.has(blocksWithQuestions[nextBlockIndex].blockId))
-        nextBlockIndex++;
-      else break;
-    }
-
-    if (nextBlockIndex < blocksWithQuestions.length) {
-      setCurrentBlockIndex(nextBlockIndex);
-      setPendingActions([]);
+    // 🔹 Move to next page or block
+    if (!isLastPage) {
+      setCurrentPageIndex(currentPageIndex + 1);
       setJumpToQuestion(null);
     } else {
-      handleSubmit(answers);
+      let nextBlockIndex = currentBlockIndex + 1;
+
+      // Skip entire blocks if required
+      while (nextBlockIndex < blocksWithQuestions.length) {
+        if (skipBlockIds.has(blocksWithQuestions[nextBlockIndex].blockId))
+          nextBlockIndex++;
+        else break;
+      }
+
+      if (nextBlockIndex < blocksWithQuestions.length) {
+        const updatedBlocks = [...blocksWithQuestions];
+        const nextBlock = { ...updatedBlocks[nextBlockIndex] };
+
+        if (skipQuestionIds.size > 0 && Array.isArray(nextBlock.questions)) {
+          nextBlock.questions = nextBlock.questions.filter(
+            (q) => !skipQuestionIds.has(q.questionId)
+          );
+          nextBlock.questionOrder = nextBlock.questionOrder.filter(
+            (qid) => !skipQuestionIds.has(qid)
+          );
+        }
+
+        updatedBlocks[nextBlockIndex] = nextBlock;
+        setBlocksWithQuestions(updatedBlocks);
+
+        setCurrentBlockIndex(nextBlockIndex);
+        setCurrentPageIndex(0);
+        setPendingActions([]);
+        setJumpToQuestion(null);
+      } else {
+        handleSubmit(answers);
+      }
     }
   };
 
@@ -177,18 +277,20 @@ export default function SurveyForm({
     );
   }
 
-  const questionsToShow =
-    jumpToQuestion && jumpToQuestion.blockId === currentBlock.blockId
-      ? currentBlock.questions.filter((q) => {
-          const targetIndex = currentBlock.questions.findIndex(
-            (ques) => ques.questionId === jumpToQuestion.questionId
-          );
-          const currentIndex = currentBlock.questions.findIndex(
-            (ques) => ques.questionId === q.questionId
-          );
-          return currentIndex >= targetIndex;
-        })
-      : currentBlock.questions;
+  const questionsToShow = (blockPages[currentPageIndex] || []).filter((q) => {
+    if (jumpToQuestion?.blockId === currentBlock.blockId) {
+      const targetIndex = currentBlock.questions.findIndex(
+        (qq) => qq.questionId === jumpToQuestion.questionId
+      );
+      const currentIndex = currentBlock.questions.findIndex(
+        (qq) => qq.questionId === q.questionId
+      );
+
+      return currentIndex >= targetIndex;
+    }
+
+    return true;
+  });
 
   return (
     <div className="h-screen dark:bg-[#121214] lg:bg-white transition-colors lg:flex lg:items-center lg:justify-center duration-300">
@@ -238,9 +340,13 @@ export default function SurveyForm({
             <div className="flex-1 overflow-y-auto px-4 py-8 lg:px-8 bg-white dark:bg-[#1A1A1E]">
               {questionsToShow.map((question, idx) => (
                 <div key={question.questionId} className="mb-8">
-                  <p className="text-sm lg:text-2xl font-semibold mb-6 text-gray-800 dark:text-[#CBC9DE]">
-                    {idx + 1}. {question.label}
-                  </p>
+                  {!["end_screen", "welcome_screen"].includes(
+                    question.type
+                  ) && (
+                    <p className="text-sm lg:text-2xl font-semibold mb-6 text-gray-800 dark:text-[#CBC9DE]">
+                      {idx + 1}. {question.label}
+                    </p>
+                  )}
                   <RenderQuestion
                     question={question}
                     value={answers[question.questionId] || ""}
@@ -309,12 +415,52 @@ export default function SurveyForm({
                   )}
                 </button>
               ) : (
-                <button
-                  onClick={handleNextBlock}
-                  className="flex items-center justify-end w-fit text-sm lg:text-lg gap-2 px-12 py-2 lg:px-8 lg:py-3 rounded-xl font-medium lg:font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg bg-gradient-to-r from-orange-400 to-orange-500 dark:from-orange-500 dark:to-orange-600 text-white"
-                >
-                  Next
-                </button>
+                <>
+                  {/* <button
+                    disabled={currentBlockIndex === 0 && currentPageIndex === 0}
+                    onClick={() => {
+                      if (currentPageIndex > 0) {
+                        setCurrentPageIndex(currentPageIndex - 1);
+                      } else if (currentBlockIndex > 0) {
+                        const prevBlockIndex = currentBlockIndex - 1;
+                        setCurrentBlockIndex(prevBlockIndex);
+
+                        // Recalculate pages for previous block
+                        const prevBlockPages = blocksWithQuestions[
+                          prevBlockIndex
+                        ].questionOrder
+                          .reduce(
+                            (pages, qid) => {
+                              if (qid.startsWith("PB-")) {
+                                if (pages[pages.length - 1].length > 0)
+                                  pages.push([]);
+                              } else {
+                                const question = questions.find(
+                                  (q) => q.questionId === qid
+                                );
+                                if (question)
+                                  pages[pages.length - 1].push(question);
+                              }
+                              return pages;
+                            },
+                            [[]]
+                          )
+                          .filter((p) => p.length > 0);
+
+                        setCurrentPageIndex(prevBlockPages.length - 1); // go to last page
+                      }
+                    }}
+                  >
+                    Previous
+                  </button> */}
+
+                  <button
+                    onClick={handleNextBlock}
+                    className="flex items-center justify-end w-fit text-sm lg:text-lg gap-2 px-12 py-2 lg:px-8 lg:py-3 rounded-xl font-medium lg:font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg bg-gradient-to-r from-orange-400 to-orange-500 dark:from-orange-500 dark:to-orange-600 text-white"
+                  >
+                    Next
+                  </button>
+                </>
               )}
             </div>
           </div>

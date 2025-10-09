@@ -32,7 +32,6 @@ export default function QuestionEditorPanel({
   const normalizedUpdateConfig = (keyOrObject, value) => {
     if (isEditMode) {
       if (typeof keyOrObject === "object") {
-        
         setEditableQuestion((prev) => ({
           ...prev,
           config: keyOrObject,
@@ -75,31 +74,36 @@ export default function QuestionEditorPanel({
               ] || <Type className="w-5 h-5" />
             }
           >
-            <div className="animate-in slide-in-from-bottom duration-300 delay-100">
-              <LabeledInput
-                label="Question Label *"
-                value={editableQuestion.label}
-                onChange={(e) =>
-                  setEditableQuestion((prev) => ({
-                    ...prev,
-                    label: e.target.value,
-                  }))
-                }
-              />
-            </div>
-
-            <div className="animate-in slide-in-from-bottom duration-300 delay-200">
-              <LabeledInput
-                label="Description"
-                value={editableQuestion.description}
-                onChange={(e) =>
-                  setEditableQuestion((prev) => ({
-                    ...prev,
-                    description: e.target.value,
-                  }))
-                }
-              />
-            </div>
+            {!["end_screen", "welcome_screen"].includes(
+              editableQuestion.type
+            ) && (
+              <>
+                <div className="animate-in slide-in-from-bottom duration-300 delay-100">
+                  <LabeledInput
+                    label="Question Label *"
+                    value={editableQuestion.label}
+                    onChange={(e) =>
+                      setEditableQuestion((prev) => ({
+                        ...prev,
+                        label: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="animate-in slide-in-from-bottom duration-300 delay-200">
+                  <LabeledInput
+                    label="Description"
+                    value={editableQuestion.description}
+                    onChange={(e) =>
+                      setEditableQuestion((prev) => ({
+                        ...prev,
+                        description: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </>
+            )}
 
             <div className="rounded-lg bg-white/40 backdrop-blur-sm animate-in slide-in-from-bottom duration-300 delay-300">
               <QuestionConfigForm
@@ -165,33 +169,39 @@ export default function QuestionEditorPanel({
               ] || <Type className="w-5 h-5" />
             }
           >
-            <div className="animate-in slide-in-from-bottom duration-300 delay-100">
-              <LabeledInput
-                label="Question Label *"
-                value={newQuestionData.label}
-                onChange={(e) =>
-                  setNewQuestionData((prev) => ({
-                    ...prev,
-                    label: e.target.value,
-                  }))
-                }
-                placeholder="Enter your question here..."
-              />
-            </div>
+            {!["end_screen", "welcome_screen"].includes(
+              selectedType
+            ) && (
+              <>
+                <div className="animate-in slide-in-from-bottom duration-300 delay-100">
+                  <LabeledInput
+                    label="Question Label *"
+                    value={newQuestionData.label}
+                    onChange={(e) =>
+                      setNewQuestionData((prev) => ({
+                        ...prev,
+                        label: e.target.value,
+                      }))
+                    }
+                    placeholder="Enter your question here..."
+                  />
+                </div>
 
-            <div className="animate-in slide-in-from-bottom duration-300 delay-200">
-              <LabeledInput
-                label="Description (Optional)"
-                value={newQuestionData.description}
-                onChange={(e) =>
-                  setNewQuestionData((prev) => ({
-                    ...prev,
-                    description: e.target.value,
-                  }))
-                }
-                placeholder="Add helpful context or instructions..."
-              />
-            </div>
+                <div className="animate-in slide-in-from-bottom duration-300 delay-200">
+                  <LabeledInput
+                    label="Description (Optional)"
+                    value={newQuestionData.description}
+                    onChange={(e) =>
+                      setNewQuestionData((prev) => ({
+                        ...prev,
+                        description: e.target.value,
+                      }))
+                    }
+                    placeholder="Add helpful context or instructions..."
+                  />
+                </div>
+              </>
+            )}
 
             <div className="rounded-xl bg-white/40 backdrop-blur-sm animate-in slide-in-from-bottom duration-300 delay-300">
               <QuestionConfigForm
@@ -279,7 +289,7 @@ export default function QuestionEditorPanel({
 
 function EditorCard({ title, icon, children }) {
   return (
-      <div className=" mx-auto rounded-xl p-6 shadow-xl space-y-6 overflow-y-auto h-[77vh] dark:bg-[#1A1A1E] bg-white dark:border-none border border-white/60 animate-in zoom-in-95 duration-300">
+    <div className=" mx-auto rounded-xl p-6 shadow-xl space-y-6 overflow-y-auto h-[77vh] dark:bg-[#1A1A1E] bg-white dark:border-none border border-white/60 animate-in zoom-in-95 duration-300">
       <div className="text-center mb-6 animate-in slide-in-from-top duration-300">
         <div className="flex items-center gap-5">
           <div className="relative inline-block">

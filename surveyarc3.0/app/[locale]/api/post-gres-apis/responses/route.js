@@ -42,7 +42,7 @@ export async function GET(req) {
   } catch (e) {
     return NextResponse.json({ status: "error", message: String(e?.message || e) }, { status: 500 });
   }
-}
+}    
 
 export async function POST(req) {
   try {

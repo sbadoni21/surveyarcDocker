@@ -3,6 +3,10 @@ import { routing } from "@/src/i18n/routing";
 
 import { QuestionProvider } from "@/providers/questionPProvider";
 import ThemeToggle from "@/components/ThemeToggle";
+import { RuleProvider } from "@/providers/rulePProvider";
+import { OrganisationProvider } from "@/providers/postGresPorviders/organisationProvider";
+import { ContactProvider } from "@/providers/postGresPorviders/contactProvider";
+import { ResponseProvider } from "@/providers/postGresPorviders/responsePProvider";
 
 export default async function Layout(props) {
   const { children } = props;
@@ -13,7 +17,16 @@ export default async function Layout(props) {
   }
   return (
     <body lang={locale}>
-      <QuestionProvider><ThemeToggle />{children}</QuestionProvider>
+      <OrganisationProvider>
+        <QuestionProvider>
+          <ThemeToggle />
+          <RuleProvider>
+            <ContactProvider>
+              <ResponseProvider>{children}</ResponseProvider>
+            </ContactProvider>
+          </RuleProvider>
+        </QuestionProvider>
+      </OrganisationProvider>
     </body>
   );
 }

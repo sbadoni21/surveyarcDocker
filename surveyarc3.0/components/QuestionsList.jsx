@@ -223,6 +223,8 @@ const SortableBlock = ({
   blockIndex,
   totalBlocks,
   activeId,
+  handleAddPageBreak,
+  handleRemovePageBreak,
 }) => {
   return (
     <BlockContainer
@@ -241,19 +243,54 @@ const SortableBlock = ({
       totalBlocks={totalBlocks}
     >
       <SortableContext
-        items={questions.map((q) => q.questionId)}
+        items={block.questionOrder || []}
         strategy={verticalListSortingStrategy}
       >
-        {questions.map((q, index) => (
-          <SortableItem
-            key={q.questionId}
-            q={q}
-            index={index}
-            onDelete={() => onDeleteQuestion(q.questionId)}
-            onSelect={() => onSelectQuestion(q.questionId)}
-            isDragging={activeId === q.questionId}
-          />
-        ))}
+        {(block.questionOrder || []).map((qid, index) => {
+          // if the ID is a page break, render special divider
+          if (qid.startsWith("PB-")) {
+            return (
+              <div key={qid} className="my-3 text-center relative group">
+                <div className="border-t border-dashed border-gray-400 dark:border-gray-600 mb-2" />
+                <div className="text-xs text-gray-500 uppercase tracking-wider">
+                  Page Break
+                </div>
+                <button
+                  className="absolute top-1/2 right-2 -translate-y-1/2 text-red-500 text-xs opacity-0 group-hover:opacity-100 transition"
+                  onClick={() => handleRemovePageBreak(block.blockId, qid)}
+                >
+                  ✕
+                </button>
+              </div>
+            );
+          }
+
+          // normal question
+          const q = questions.find((qq) => qq.questionId === qid);
+          if (!q) return null;
+
+          return (
+            <React.Fragment key={q.questionId}>
+              <SortableItem
+                q={q}
+                index={index}
+                onDelete={() => onDeleteQuestion(q.questionId)}
+                onSelect={() => onSelectQuestion(q.questionId)}
+                isDragging={activeId === q.questionId}
+              />
+
+              {/* --- Add Page Break button BELOW each question --- */}
+              <div className="text-center mt-2 mb-4">
+                <button
+                  onClick={() => handleAddPageBreak(block.blockId, index)}
+                  className="text-xs text-blue-500 hover:underline"
+                >
+                  + Add Page Break
+                </button>
+              </div>
+            </React.Fragment>
+          );
+        })}
       </SortableContext>
     </BlockContainer>
   );
@@ -411,6 +448,40 @@ const DraggableQuestionsList = ({
 
     await persistBlocks(newBlocks);
   };
+
+  // --- Page Break Handlers ---
+const handleAddPageBreak = async (blockId, index) => {
+  const newBlocks = renderBlocks.map((b) => {
+    if (b.blockId !== blockId) return b;
+    const newOrder = [...(b.questionOrder || [])];
+    newOrder.splice(index + 1, 0, `PB-${Date.now()}`);
+    return { ...b, questionOrder: newOrder };
+  });
+
+  setRenderBlocks(newBlocks);
+  onBlocksChange?.(newBlocks);
+
+  // ✅ persist to DB
+  await persistBlocks(newBlocks);
+};
+
+const handleRemovePageBreak = async (blockId, breakId) => {
+  const newBlocks = renderBlocks.map((b) =>
+    b.blockId === blockId
+      ? {
+          ...b,
+          questionOrder: (b.questionOrder || []).filter((id) => id !== breakId),
+        }
+      : b
+  );
+
+  setRenderBlocks(newBlocks);
+  onBlocksChange?.(newBlocks);
+
+  // ✅ persist to DB
+  await persistBlocks(newBlocks);
+};
+
 
   const handleDeleteQuestion = async (questionId) => {
     const confirmDelete = window.confirm("Delete this question?");
@@ -581,6 +652,8 @@ const DraggableQuestionsList = ({
             )}
             totalBlocks={renderBlocks.length}
             activeId={activeId}
+            handleAddPageBreak={handleAddPageBreak}
+            handleRemovePageBreak={handleRemovePageBreak}
           />
         ))}
 

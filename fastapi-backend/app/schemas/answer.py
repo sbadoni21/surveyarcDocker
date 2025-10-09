@@ -6,7 +6,7 @@ class AnswerBase(BaseModel):
     question_id: str
     project_id: str
     survey_id: str
-    org_id: str
+    org_id: str 
     response_id: str
     answer_config: Optional[Dict] = {}
 
