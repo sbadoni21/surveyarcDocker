@@ -17,6 +17,7 @@ import { useQuestion } from "@/providers/questionPProvider";
 import { useSurvey } from "@/providers/surveyPProvider";
 import QuestionModel from "@/models/questionModel";
 import SurveyModel from "@/models/surveyModel";
+import SurveyFlowView from "@/components/SurveyFlowView";
 
 export default function Dist() {
   // UI state
@@ -56,11 +57,13 @@ export default function Dist() {
     const k = String(hash || "")
       .replace(/^#/, "")
       .toLowerCase();
+
     if (["questions", "question", "questoins"].includes(k)) return "questions";
     if (["rules", "logicrules", "logic"].includes(k)) return "rules";
+    if (["flow", "surveyflow"].includes(k)) return "flow"; // ✅ Add this
     if (["demo", "preview"].includes(k)) return "demo";
     if (["distribution", "share"].includes(k)) return "distribution";
-    if (["campaign", "share"].includes(k)) return "campaign";
+    if (["campaign"].includes(k)) return "campaign";
     return "questions";
   }, []);
 
@@ -361,6 +364,7 @@ export default function Dist() {
           />
         )}
 
+        {activeTab === "flow" && <SurveyFlowView questions={questions} surveyId={surveyId}   blocks={survey?.blocks || []}/>}
         {activeTab === "demo" && <SurveyDemoPage />}
         {activeTab === "distribution" && <DistributionPage />}
         {activeTab === "campaign" && <CampaignPage />}
