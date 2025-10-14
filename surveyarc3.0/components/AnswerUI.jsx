@@ -263,8 +263,8 @@ export default function RenderQuestion({
           ))}
         </div>
       );
-    
-      case QUESTION_TYPES.PICTURE_CHOICE:
+
+    case QUESTION_TYPES.PICTURE_CHOICE:
       return (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           {config.images?.map((img, index) => (
@@ -517,30 +517,109 @@ export default function RenderQuestion({
       );
     }
 
-    case QUESTION_TYPES.NPS:
+    case QUESTION_TYPES.NPS: {
+      const min = config?.min ?? 0;
+      const max = config?.max ?? 10;
+
+      const minLabel = config?.minLabel ?? "Not at all likely";
+      const neutralLabel = config?.neutralLabel ?? "Neutral";
+      const maxLabel = config?.maxLabel ?? "Extremely likely";
+
+      const cols = Array.from({ length: max - min + 1 }, (_, i) => i + min);
+      const neutralIdx = Math.round((min + max) / 2);
+
+      // sizes for mobile (px); keep tap target >=44px
+      const BTN = 44; // button size
+      const GAP = 8; // gap between buttons
+      const trackMinWidth = cols.length * BTN + (cols.length - 1) * GAP; // prevents wrap
+
       return (
-        <div className="text-center space-y-4">
-          <div className="flex justify-between text-sm text-gray-600 dark:text-yellow-200">
-            <span>{config.minLabel}</span>
-            <span>{config.maxLabel}</span>
-          </div>
-          <div className="flex justify-center gap-2">
-            {Array.from({ length: 11 }, (_, i) => i).map((score) => (
-              <button
-                key={score}
-                className={`w-12 h-12 rounded-full text-sm font-semibold ${
-                  value === score
-                    ? "bg-orange-500 text-white"
-                    : "bg-orange-100 dark:bg-gray-700 text-gray-800 dark:text-[#96949C]"
-                }`}
-                onClick={() => onChange(score)}
+        <div className="text-center space-y-2 sm:space-y-3">
+          {/* horizontal scroll container on mobile */}
+          <div className="w-full overflow-x-auto scrollbar-hide">
+            <div className="mx-auto sm:max-w-xl">
+              {/* buttons grid — fixed minWidth so it doesn't wrap */}
+              <div
+                role="radiogroup"
+                aria-label="Net Promoter Score"
+                className="grid sm:gap-2"
+                style={{
+                  gridTemplateColumns: `repeat(${cols.length}, ${BTN}px)`,
+                  columnGap: GAP,
+                  minWidth: trackMinWidth,
+                  justifyContent: "center",
+                }}
               >
-                {score}
-              </button>
-            ))}
+                {cols.map((score) => (
+                  <button
+                    key={score}
+                    type="button"
+                    role="radio"
+                    aria-checked={value === score}
+                    aria-label={`Score ${score}`}
+                    onClick={() => onChange(score)}
+                    className={[
+                      "rounded-full font-semibold transition-colors outline-none",
+                      "focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2 dark:focus:ring-offset-gray-900",
+                      "sm:w-12 sm:h-12 sm:text-sm",
+                      value === score
+                        ? "bg-orange-500 text-white"
+                        : "bg-orange-100 dark:bg-gray-700 text-gray-800 dark:text-[#96949C] hover:bg-orange-200 dark:hover:bg-gray-600",
+                    ].join(" ")}
+                    style={{ width: BTN, height: BTN, fontSize: 12 }}
+                  >
+                    {score}
+                  </button>
+                ))}
+              </div>
+
+              {/* labels row aligned to 0 / mid / max */}
+              <div
+                className="grid mt-1 sm:mt-2 text-[11px] sm:text-xs text-gray-600 dark:text-yellow-200"
+                style={{
+                  gridTemplateColumns: `repeat(${cols.length}, ${BTN}px)`,
+                  columnGap: GAP,
+                  minWidth: trackMinWidth,
+                  justifyContent: "center",
+                }}
+              >
+                {cols.map((score) => {
+                  let text = "";
+                  if (score === min) text = minLabel;
+                  else if (score === neutralIdx) text = neutralLabel;
+                  else if (score === max) text = maxLabel;
+
+                  return (
+                    <div key={`lbl-${score}`} className="min-h-[1rem] flex">
+                      {text && (
+                        <span
+                          className={[
+                            "whitespace-nowrap",
+                            score === min
+                              ? "ml-0 text-left"
+                              : score === max
+                              ? "mr-0 text-right"
+                              : "mr-0 text-center",
+                          ].join(" ")}
+                          style={{ width: BTN }}
+                        >
+                          {text}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* optional selection helper */}
+          <div className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 h-4">
+            {value != null ? `Selected: ${value}` : "\u00A0"}
           </div>
         </div>
       );
+    }
 
     case QUESTION_TYPES.MATRIX: {
       const columns = config.columns || config.cols || [];

@@ -25,6 +25,7 @@ import EndScreenConfig from "./QuestionsConfigComponents/EndScreenConfig";
 import RedirectConfig from "./QuestionsConfigComponents/RedirectConfig";
 import EmailConfig from "./QuestionsConfigComponents/EmailConfig";
 import OptionsConfig from "./QuestionsConfigComponents/OptionsConfig";
+import NpsQuestion from "./QuestionsConfigComponents/NPSQuestion";
 
 export default function QuestionConfigForm({ type, config, updateConfig }) {
 
@@ -40,7 +41,7 @@ export default function QuestionConfigForm({ type, config, updateConfig }) {
     [QUESTION_TYPES.YES_NO]: <p className="dark:bg-[#1A1A1E] dark:text-[#96949C]">No extra config required (Yes/No).</p>,
     [QUESTION_TYPES.PICTURE_CHOICE]: <PictureChoiceConfig config={config} updateConfig={updateConfig} />,
     [QUESTION_TYPES.LEGAL]: <LegalConfig config={config} updateConfig={updateConfig} />,
-    [QUESTION_TYPES.NPS]: <RatingConfig config={config} updateConfig={updateConfig} />,
+    [QUESTION_TYPES.NPS]: <NpsQuestion config={config} updateConfig={updateConfig} />,
     [QUESTION_TYPES.OPINION_SCALE]: <RatingConfig config={config} updateConfig={updateConfig} />,
     [QUESTION_TYPES.RATING]: <RatingConfig config={config} updateConfig={updateConfig} />,
     [QUESTION_TYPES.RANKING]: <RankingConfig config={config} updateConfig={updateConfig} />,
