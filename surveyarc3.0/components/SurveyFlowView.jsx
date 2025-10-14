@@ -187,7 +187,7 @@ export default function SurveyFlowView({ questions = [], surveyId, blocks = [] }
           data: { label:`[Q.Id - ${q.questionId} ] : ${ q.label}` },
           position: { x: innerX, y: innerY },
           parentNode: `block-${b.blockId}`,
-          extent: 'parent',
+          extent: 'parent', 
           style: {
             borderRadius: 12,
             padding: 12,
