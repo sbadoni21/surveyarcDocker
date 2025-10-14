@@ -6,146 +6,207 @@ import SurveyForm from "@/components/SurveyForm";
 import { useQuestion } from "@/providers/questionPProvider";
 import { useSurvey } from "@/providers/surveyPProvider";
 import Loading from "@/app/[locale]/loading";
-
 import { useRule } from "@/providers/rulePProvider";
 
 export default function SurveyDemoPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const pathParts = pathname.split("/");
-  const orgId = pathParts[3];
-  const projectId = pathParts[6];
-  const surveyId = pathParts[7];
+  const parts = pathname.split("/");
+  const orgId = parts[3];
+  const projectId = parts[6];
+  const surveyId = parts[7];
 
   const [questions, setQuestions] = useState([]);
   const [blocks, setBlocks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [survey, setSurvey] = useState(null);
+
   const { getAllQuestions } = useQuestion();
   const { rules, getAllRules } = useRule();
   const { getSurvey } = useSurvey();
 
-  const shuffleArray = (array) => {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
+  const shuffleArray = (a) => {
+    const x = [...a];
+    for (let i = x.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      [x[i], x[j]] = [x[j], x[i]];
     }
-    return shuffled;
+    return x;
   };
 
   const applyBlockRandomization = (block) => {
-    let questionOrder = block.questionOrder || [];
-
+    let order = block.questionOrder || [];
     const type = block.randomization?.type || "none";
     const subsetCount = block.randomization?.subsetCount || "";
 
     switch (type) {
       case "full":
-        questionOrder = shuffleArray(questionOrder);
+        order = shuffleArray(order);
         break;
-
-      case "subset":
-        const count =
-          parseInt(subsetCount) || Math.ceil(questionOrder.length / 2);
-        questionOrder = shuffleArray(questionOrder).slice(0, count);
+      case "subset": {
+        const c = parseInt(subsetCount) || Math.ceil(order.length / 2);
+        order = shuffleArray(order).slice(0, c);
         break;
-
+      }
       case "rotate":
-        questionOrder = [...questionOrder.slice(1), questionOrder[0]];
+        order = [...order.slice(1), order[0]];
         break;
-
       case "none":
       default:
-        // keep original order
         break;
     }
-
-    return { ...block, questionOrder };
+    return { ...block, questionOrder: order };
   };
 
   useEffect(() => {
     const fetchSurveyData = async () => {
       try {
-        const surveyDoc = await getSurvey(surveyId);
-        if (!surveyDoc) {
-          router.push("/404");
-          return;
-        }
-
-        const randomizedBlocks = (surveyDoc.blocks || []).map(
-          applyBlockRandomization
-        );
-
-        setSurvey(surveyDoc);
-        setBlocks(randomizedBlocks);
-      } catch (err) {
-        console.error("Error fetching survey:", err);
+        const s = await getSurvey(surveyId);
+        if (!s) return router.push("/404");
+        const randomized = (s.blocks || []).map(applyBlockRandomization);
+        setSurvey(s);
+        setBlocks(randomized);
+      } catch (e) {
+        console.error("Error fetching survey:", e);
         router.push("/404");
       }
     };
-
     const fetchQuestions = async () => {
       try {
-        const questionsData = await getAllQuestions(orgId, surveyId);
-        setQuestions(questionsData || []);
-      } catch (err) {
-        console.error("Error fetching questions:", err);
+        const q = await getAllQuestions(orgId, surveyId);
+        setQuestions(q || []);
+      } catch (e) {
+        console.error("Error fetching questions:", e);
       }
     };
-
     const fetchRules = async () => {
       try {
         await getAllRules(surveyId);
-      } catch (err) {
-        console.error("Error fetching rules:", err);
+      } catch (e) {
+        console.error("Error fetching rules:", e);
       }
     };
-
-    Promise.all([fetchSurveyData(), fetchQuestions(), fetchRules()]).finally(
-      () => setLoading(false)
+    Promise.all([fetchSurveyData(), fetchQuestions(), fetchRules()]).finally(() =>
+      setLoading(false)
     );
   }, [orgId, projectId, surveyId]);
 
   useEffect(() => {
     if (blocks.length && questions.length) {
-      const orderedQuestions = [];
-
-      blocks.forEach((block) => {
-        if (block.questionOrder && block.questionOrder.length > 0) {
-          block.questionOrder.forEach((qid) => {
-            const q = questions.find(
-              (qq) => qq.id === qid || qq.questionId === qid
-            );
-            if (q) orderedQuestions.push(q);
-          });
-        }
-      });
-
-      const remaining = questions.filter(
-        (q) =>
-          !orderedQuestions.find(
-            (oq) => oq.id === q.id || oq.questionId === q.questionId
-          )
+      const ordered = [];
+      blocks.forEach((b) =>
+        b.questionOrder?.forEach((qid) => {
+          const q = questions.find((qq) => qq.id === qid || qq.questionId === qid);
+          if (q) ordered.push(q);
+        })
       );
-
-      setQuestions([...orderedQuestions, ...remaining]);
+      const remaining = questions.filter(
+        (q) => !ordered.find((o) => o.id === q.id || o.questionId === q.questionId)
+      );
+      setQuestions([...ordered, ...remaining]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blocks]);
 
-  const handleSubmit = async (answers) => {
-    alert("Survey submitted!");
-  };
+  const handleSubmit = async () => alert("Survey submitted!");
 
   if (loading) return <Loading />;
   if (!survey) return <p>Survey not found</p>;
 
   return (
-    <SurveyForm
-      questions={questions}
-      blocks={blocks}
-      handleSubmit={handleSubmit}
-      rules={rules}
-    />
+    <div>
+      <div
+        style={{
+          margin: "16px auto",
+          maxWidth: 1300,
+          display: "grid",
+          gridTemplateColumns: "400px 1fr",
+          gap: 10,
+          alignItems: "start",
+        }}
+      >
+        {/* ---------------- Phone Frame ---------------- */}
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 12, marginBottom: 8, color: "#555" }}>Phone</div>
+          <div
+            style={{
+              width: 300,
+              height: 580,
+              borderRadius: 36,
+              padding: "18px 10px",
+              background: "#000",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <div
+              style={{
+                width: 300,
+                height: 560,
+                background: "#fff",
+                borderRadius: 28,
+                overflow: "auto",
+              }}
+            >
+              <SurveyForm
+                questions={questions}
+                blocks={blocks}
+                handleSubmit={handleSubmit}
+                rules={rules}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ---------------- Laptop Frame ---------------- */}
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 12, marginBottom: 8, color: "#555" }}>Laptop</div>
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 1000,
+              height: 620,
+              borderRadius: 12,
+              background: "#e8e8e8",
+              padding: "12px 12px 0 12px",
+              boxShadow: "0 8px 20px rgba(0,0,0,0.25)",
+              position: "relative",
+            }}
+          >
+            {/* Screen area */}
+            <div
+              style={{
+                background: "#fff",
+                height: "100%",
+                borderRadius: 8,
+                overflow: "auto",
+              }}
+            >
+              <SurveyForm
+                questions={questions}
+                blocks={blocks}
+                handleSubmit={handleSubmit}
+                rules={rules}
+              />
+            </div>
+
+            {/* Laptop base */}
+            <div
+              style={{
+                width: "110%",
+                height: 20,
+                background: "#c0c0c0",
+                borderRadius: "0 0 12px 12px",
+                position: "absolute",
+                bottom: -20,
+                left: "-5%",
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

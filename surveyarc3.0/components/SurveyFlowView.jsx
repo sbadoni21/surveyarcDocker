@@ -18,11 +18,16 @@ const BLOCK_LABEL_OFFSET = 12; // how far above the block border the label chip 
 const RULE_Y_START = 200;    // logic nodes start below the block row
 const RULE_Y_STEP = 120;
 
+// Message pill metrics (to avoid overlaps with logic nodes)
+const MSG_W = 220;
+const MSG_H = 56;
+const MSG_X_OFFSET = 130;      // gap to the right of rule card
+const MSG_Y_STEP = 8;         // small vertical staggering for multiple messages on same rule
+
 const fetchedSurveys = new Set();
 
 export default function SurveyFlowView({ questions = [], surveyId, blocks = [] }) {
 
-    console.log(blocks);
   const { rules, getAllRules } = useRule();
   const [loading, setLoading] = useState(true);
   const fetchInFlight = useRef(false);
@@ -179,7 +184,7 @@ export default function SurveyFlowView({ questions = [], surveyId, blocks = [] }
 
         nodes.push({
           id: q.questionId,
-          data: { label: q.label || `Q: ${q.questionId}` },
+          data: { label:`[Q.Id - ${q.questionId} ] : ${ q.label}` },
           position: { x: innerX, y: innerY },
           parentNode: `block-${b.blockId}`,
           extent: 'parent',
@@ -224,14 +229,14 @@ export default function SurveyFlowView({ questions = [], surveyId, blocks = [] }
     });
   }, [blockLayouts]);
 
-  // -------- Block Label Nodes (chips just above border; black bg; unassigned accented) ----------
+  // -------- Block Label Nodes (chips just above border) ----------
   const blockLabelNodes = useMemo(() => {
     return blockLayouts.map((lay) => {
       const isUnassigned = lay.blockId === '__unassigned__';
       return {
         id: `block-label-${lay.blockId}`,
         data: { label: blocksWithResolvedQs.find(b => b.blockId === lay.blockId)?.name || 'Block' },
-        position: { x: 12, y: -BLOCK_LABEL_OFFSET - 18 }, // ~18px chip height; sits just above border
+        position: { x: 12, y: -BLOCK_LABEL_OFFSET - 18 }, // ~18px chip height
         parentNode: `block-${lay.blockId}`,
         draggable: false,
         selectable: false,
@@ -239,8 +244,8 @@ export default function SurveyFlowView({ questions = [], surveyId, blocks = [] }
           padding: '2px 8px',
           border: isUnassigned ? '1px dashed #EF4444' : '1px solid #3b3b45',
           borderRadius: 999,
-          background: '#000',                 // black background for readability
-          color: isUnassigned ? '#FCA5A5' : '#E5E7EB', // red-ish text for unassigned
+          background: '#000',
+          color: isUnassigned ? '#FCA5A5' : '#E5E7EB',
           fontSize: 11,
           fontWeight: 700,
           lineHeight: 1.2,
@@ -249,7 +254,7 @@ export default function SurveyFlowView({ questions = [], surveyId, blocks = [] }
           width: 'auto',
           textAlign: 'left',
           display: 'inline-block',
-          boxShadow: '0 1px 2px rgba(0,0,0,.6)', // subtle lift so it pops
+          boxShadow: '0 1px 2px rgba(0,0,0,.6)',
         },
       };
     });
@@ -267,9 +272,10 @@ export default function SurveyFlowView({ questions = [], surveyId, blocks = [] }
     return g;
   }, [rules]);
 
-  // -------- Logic Nodes (stacked under their primary question’s global column) ----------
-  const logicNodes = useMemo(() => {
-    const nodes = [];
+  // -------- Logic & Message Nodes ----------
+  const { logicNodes, messageNodes } = useMemo(() => {
+    const logic = [];
+    const msgs = [];
     const entries = Object.entries(ruleGroups);
 
     for (const [primaryQ, list] of entries) {
@@ -286,8 +292,10 @@ export default function SurveyFlowView({ questions = [], surveyId, blocks = [] }
           .map(a => actionPreview(a))
           .join('\n');
 
-        nodes.push({
-          id: `logic-${rule.ruleId}`,
+        const logicId = `logic-${rule.ruleId}`;
+
+        logic.push({
+          id: logicId,
           data: { label: `${rule.name || 'Rule'}\n\nIF\n${condText}\n\nTHEN\n${actText}` },
           position: { x, y },
           style: {
@@ -303,12 +311,29 @@ export default function SurveyFlowView({ questions = [], surveyId, blocks = [] }
             boxShadow: '0 6px 18px rgba(0,0,0,.25)',
           },
         });
+
+        // Create message nodes (to the right of the rule) without overlapping the rule
+        let msgIndex = 0;
+        (rule.actions || []).forEach((a, ai) => {
+          if (a?.type === 'show_message') {
+            const msgId = `msg-${rule.ruleId}-${ai}`;
+            const msgX = x + (Q_WIDTH + 40) + MSG_X_OFFSET;
+            const msgY = y + msgIndex * (MSG_H + MSG_Y_STEP);
+            msgs.push({
+              id: msgId,
+              data: { label: `🛈 ${a.message || '(message)'}` },
+              position: { x: msgX, y: msgY },
+              style: messageNodeStyle(),
+            });
+            msgIndex += 1;
+          }
+        });
       });
     }
-    return nodes;
+    return { logicNodes: logic, messageNodes: msgs };
   }, [ruleGroups, qIndexMap]);
 
-  // -------- END terminator node (for skip_end) ----------
+  // -------- END terminator node ----------
   const endNode = useMemo(() => {
     return {
       id: 'end-node',
@@ -327,6 +352,7 @@ export default function SurveyFlowView({ questions = [], surveyId, blocks = [] }
     };
   }, [canvasRightX]);
 
+  // -------- Edges (conditions, actions, skip, messages, end) ----------
   const edges = useMemo(() => {
     const edgesArr = [];
 
@@ -336,6 +362,7 @@ export default function SurveyFlowView({ questions = [], surveyId, blocks = [] }
       const primaryCond = (rule.conditions || []).find(c => !!c.questionId);
       const primaryQ = primaryCond?.questionId || null;
 
+      // Conditions
       (rule.conditions || []).forEach((cond, idx) => {
         if (cond.questionId) {
           edgesArr.push({
@@ -355,7 +382,48 @@ export default function SurveyFlowView({ questions = [], surveyId, blocks = [] }
         }
       });
 
+      // Actions
       (rule.actions || []).forEach((a, idx) => {
+        // Show message → edge to msg node
+        if (a?.type === 'show_message') {
+          const msgId = `msg-${rule.ruleId}-${idx}`;
+          edgesArr.push({
+            id: `act-${logicId}-${msgId}-${idx}`,
+            source: logicId,
+            target: msgId,
+            type: 'smoothstep',
+            animated: true,
+            style: { stroke: '#22c55e', strokeWidth: 2.4 },
+            markerEnd: { type: MarkerType.ArrowClosed, color: '#22c55e' },
+            label: 'Show Message',
+            labelStyle: { fontSize: 11, fill: '#E5E7EB' },
+            labelBgPadding: [6, 3],
+            labelBgBorderRadius: 8,
+            labelBgStyle: { fill: 'rgba(6,78,59,.9)', stroke: '#22c55e' },
+          });
+          return; // continue next action
+        }
+
+        // End survey actions → connect to END node
+        if (a?.type === 'end' || a?.type === 'skip_end') {
+          edgesArr.push({
+            id: `act-${logicId}-end-node-${idx}`,
+            source: logicId,
+            target: 'end-node',
+            type: 'smoothstep',
+            animated: true,
+            style: { stroke: '#10B981', strokeWidth: 2.8 },
+            markerEnd: { type: MarkerType.ArrowClosed, color: '#10B981' },
+            label: 'End Survey',
+            labelStyle: { fontSize: 11, fill: '#E5E7EB' },
+            labelBgPadding: [6, 3],
+            labelBgBorderRadius: 8,
+            labelBgStyle: { fill: 'rgba(6,78,59,.9)', stroke: '#10B981' },
+          });
+          return;
+        }
+
+        // Other actions (goto*, skip_question, skip_block)
         const res = resolveActionOrSkipTargetId({
           action: a,
           primaryQuestionId: primaryQ,
@@ -404,9 +472,10 @@ export default function SurveyFlowView({ questions = [], surveyId, blocks = [] }
     blockLabelNodes.forEach(n => ids.add(n.id));
     questionNodes.forEach(n => ids.add(n.id));
     logicNodes.forEach(n => ids.add(n.id));
+    messageNodes.forEach(n => ids.add(n.id));
     ids.add('end-node');
     return ids;
-  }, [blockNodes, blockLabelNodes, questionNodes, logicNodes]);
+  }, [blockNodes, blockLabelNodes, questionNodes, logicNodes, messageNodes]);
 
   const placeholderNodes = useMemo(() => {
     const nodes = [];
@@ -455,7 +524,16 @@ export default function SurveyFlowView({ questions = [], surveyId, blocks = [] }
       )}
 
       <ReactFlow
-        nodes={[...blockNodes, ...blockLabelNodes, ...questionNodes, endNode, ...placeholderNodes, ...logicNodes]}
+        nodes={[
+          ...blockNodes,
+          ...blockLabelNodes,
+          ...questionNodes,
+          endNode,
+          ...placeholderNodes,
+          ...logicNodes,
+          ...messageNodes,
+        ]}
+        
         edges={edges}
         fitView
         fitViewOptions={{ padding: 0.2, minZoom: 0.8, maxZoom: 1.25 }}
@@ -468,9 +546,10 @@ export default function SurveyFlowView({ questions = [], surveyId, blocks = [] }
         <MiniMap
           nodeColor={(n) =>
             n.id === 'end-node' ? '#991B1B' :
+            (n.id.startsWith('msg-') ? '#0f766e' :
             (n.id.startsWith('block-__unassigned__') ? '#7F1D1D' :
               (n.id.startsWith('block-') ? '#1f2937' :
-               (n.id.startsWith('logic-') ? '#374151' : '#6366F1')))
+               (n.id.startsWith('logic-') ? '#374151' : '#6366F1'))))
           }
           maskColor="rgba(17,24,39,0.7)"
         />
@@ -481,7 +560,7 @@ export default function SurveyFlowView({ questions = [], surveyId, blocks = [] }
   );
 }
 
-
+/* ---------- helpers ---------- */
 function valuePreview(v) {
   if (v == null) return 'null';
   if (Array.isArray(v)) return v.map(safeStr).join(' | ');
@@ -506,7 +585,9 @@ function actionPreview(a) {
     case 'goto_block_question': return `goto ${a.targetQuestionId}`;
     case 'skip_question': return `skip question`;
     case 'skip_block': return `skip block`;
+    case 'end':
     case 'skip_end': return `end survey`;
+    case 'show_message': return `show message`;
     default: return `action: ${a ? a.type : 'unknown'}`;
   }
 }
@@ -525,7 +606,9 @@ function actionEdgeLabel(a, toId, blocks = [], meta = {}) {
       const nextName = meta?.nextBlockName ? ` (${meta.nextBlockName})` : '';
       return `⤼ Skip block${nextName}`;
     }
-    case 'skip_end': return '⤼ End';
+    case 'end':
+    case 'skip_end': return 'End Survey';
+    case 'show_message': return 'Show Message';
     default: return '→ action';
   }
 }
@@ -537,7 +620,7 @@ function actionEdgeLabel(a, toId, blocks = [], meta = {}) {
  * - goto_block_question -> targetQuestionId
  * - skip_question       -> next question after primaryQuestionId (prefer same block, else global)
  * - skip_block          -> first question of the next block
- * - skip_end            -> 'end-node'
+ * - end / skip_end      -> handled separately (END node)
  */
 function resolveActionOrSkipTargetId({
   action,
@@ -609,11 +692,8 @@ function resolveActionOrSkipTargetId({
       return { targetId: res.entry || null, meta: { nextBlockName: res.nextBlockName } };
     }
 
-    case 'skip_end':
-      return { targetId: 'end-node' };
-
     default:
-      return null;
+      return null; // end/skip_end handled in edges builder; show_message handled separately
   }
 }
 
@@ -687,7 +767,7 @@ function collectActionTargetsForBlocks(rules = [], blocksWithResolvedQs = [], gl
       if (a.type === 'skip_block' && primary) {
         addQuestion(getNextBlockEntry(primary));
       }
-      // skip_end -> END node
+      // end/skip_end -> END node (no placeholder)
     }
   }
 
@@ -720,6 +800,22 @@ function detectLoop(edges) {
   return Object.keys(graph).some(node => dfs(node));
 }
 
+/* ---------- styles ---------- */
+function messageNodeStyle() {
+  return {
+    width: MSG_W,
+    height: MSG_H,
+    borderRadius: 10,
+    padding: 10,
+    background: 'rgba(15,118,110,.2)',
+    color: '#000',
+    border: '1px solid #0f766e',
+    fontSize: 12,
+    whiteSpace: 'pre-wrap',
+    boxShadow: '0 4px 12px rgba(0,0,0,.2)',
+  };
+}
+
 function Legend() {
   return (
     <div className="hidden md:flex items-center gap-3 text-xs text-black-300">
@@ -730,19 +826,19 @@ function Legend() {
         <i className="w-3 h-3 inline-block rounded-sm" style={{ border: '1px dashed #EF4444' }} /> Unassigned Block
       </span>
       <span className="inline-flex items-center gap-1">
-        <i className="w-3 h-3 inline-block rounded-sm" style={{ background: '#000' }} /> Block Label (black)
+        <i className="w-3 h-3 inline-block rounded-sm" style={{ background: '#000' }} /> Block Label
       </span>
       <span className="inline-flex items-center gap-1">
         <i className="w-3 h-3 inline-block rounded-sm" style={{ background: '#4F46E5' }} /> Condition Edge
       </span>
       <span className="inline-flex items-center gap-1">
-        <i className="w-3 h-3 inline-block rounded-sm" style={{ background: '#10B981' }} /> Action (Goto)
+        <i className="w-3 h-3 inline-block rounded-sm" style={{ background: '#10B981' }} /> Action (Goto/End)
       </span>
       <span className="inline-flex items-center gap-1">
         <i className="w-3 h-3 inline-block rounded-sm" style={{ background: '#F59E0B' }} /> Skip (dashed)
       </span>
       <span className="inline-flex items-center gap-1">
-        <i className="w-3 h-3 inline-block rounded-sm" style={{ background: '#EF4444' }} /> Other Actions
+        <i className="w-3 h-3 inline-block rounded-sm" style={{ background: '#0f766e' }} /> Message
       </span>
     </div>
   );
