@@ -89,7 +89,84 @@ const TagModel = {
     const t = await json(res);
     return toCamel(t);
   },
+async getStats(orgId) {
+    const qs = new URLSearchParams({ org_id: orgId });
+    const res = await fetch(`${BASE}/stats?${qs.toString()}`, { cache: "no-store" });
+    return json(res);
+  },
 
+  async bulkCreate(tags, skipExisting = true) {
+    const payload = {
+      tags: tags.map(t => ({
+        org_id: t.orgId,
+        name: t.name,
+        color: t.color || null,
+        description: t.description || null,
+        category: t.category || null,
+      })),
+      skip_existing: skipExisting
+    };
+    
+    const res = await fetch(`${BASE}/bulk-create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+    const arr = await json(res);
+    return (arr || []).map(toCamel);
+  },
+
+  async bulkDelete(tagIds, orgId, force = false) {
+    const qs = new URLSearchParams();
+    if (orgId) qs.set("org_id", orgId);
+    if (force) qs.set("force", "true");
+    
+    const res = await fetch(`${BASE}/bulk-delete?${qs.toString()}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tag_ids: tagIds }),
+      cache: "no-store",
+    });
+    return json(res);
+  },
+
+  async merge(sourceTagIds, targetTagId, orgId, deleteSource = true) {
+    const qs = new URLSearchParams();
+    if (orgId) qs.set("org_id", orgId);
+    if (deleteSource) qs.set("delete_source", "true");
+    
+    const res = await fetch(`${BASE}/merge?${qs.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source_tag_ids: sourceTagIds,
+        target_tag_id: targetTagId,
+      }),
+      cache: "no-store",
+    });
+    return json(res);
+  },
+
+  async cleanupUnused(orgId, olderThanDays = 30) {
+    const qs = new URLSearchParams();
+    if (orgId) qs.set("org_id", orgId);
+    if (olderThanDays) qs.set("older_than_days", String(olderThanDays));
+    
+    const res = await fetch(`${BASE}/cleanup-unused?${qs.toString()}`, {
+      method: "DELETE",
+      cache: "no-store",
+    });
+    return json(res);
+  },
+
+  async incrementUsage(tagId) {
+    const res = await fetch(`${BASE}/increment-usage/${encodeURIComponent(tagId)}`, {
+      method: "POST",
+      cache: "no-store",
+    });
+    return json(res);
+  },
   async remove(tagId) {
     const res = await fetch(`${BASE}/${encodeURIComponent(tagId)}`, {
       method: "DELETE",

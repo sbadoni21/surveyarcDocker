@@ -1,6 +1,7 @@
 // models/postGresModels/slaMakingModel.js
 const BASE = "/api/post-gres-apis/slas";
-const BASE2= "/api/post-gres-apis/"
+const BASE2 = "/api/post-gres-apis"; // no trailing slash; we'll append paths
+
 const safeJson = async (res) => {
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -9,8 +10,21 @@ const safeJson = async (res) => {
   return res.json();
 };
 
+const safeBlob = async (res) => {
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get("content-disposition") || "";
+  const match = cd.match(/filename="?([^"]+)"?/i);
+  return { blob, filename: match?.[1] || "download.json" };
+};
+
+const toISO = (d) => (d instanceof Date ? d.toISOString() : d);
+
 const SlaMakingModel = {
-  // -------- SLAs --------
+  // -------- SLAs (CRUD + actions) --------
   async list({ orgId, active, scope, q, limit, offset } = {}) {
     const params = new URLSearchParams();
     if (orgId) params.set("org_id", orgId);
@@ -76,11 +90,167 @@ const SlaMakingModel = {
     return safeJson(res);
   },
 
+  async publish(slaId, { effective_from } = {}) {
+    const body = effective_from ? { effective_from: toISO(effective_from) } : {};
+    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    return safeJson(res);
+  },
+
+  async archive(slaId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/archive`, {
+      method: "POST",
+      cache: "no-store",
+    });
+    return safeJson(res);
+  },
+
+  async validate(slaId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/validate`, {
+      method: "POST",
+      cache: "no-store",
+    });
+    return safeJson(res);
+  },
+
   async duplicate(slaId, overrides = {}) {
     const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/duplicate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(overrides),
+      cache: "no-store",
+    });
+    return safeJson(res);
+  },
+
+  async createNewVersion(slaId, changes = {}) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/version`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(changes),
+      cache: "no-store",
+    });
+    return safeJson(res);
+  },
+
+  async listVersions(slaId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/versions`, { cache: "no-store" });
+    return safeJson(res);
+  },
+
+  async dependencies(slaId, { limit } = {}) {
+    const params = new URLSearchParams();
+    if (limit != null) params.set("limit", String(limit));
+    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/dependencies?${params}`, {
+      cache: "no-store",
+    });
+    return safeJson(res);
+  },
+
+  // -------- Bulk ops --------
+  async bulkUpsert(slas = [], { updateExisting = true } = {}) {
+    const params = new URLSearchParams();
+    params.set("update_existing", String(updateExisting));
+    const res = await fetch(`${BASE}/bulk?${params}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(slas),
+      cache: "no-store",
+    });
+    return safeJson(res);
+  },
+
+  async bulkDelete(slaIds = [], { force = false } = {}) {
+    const params = new URLSearchParams();
+    params.set("force", String(force));
+    const res = await fetch(`${BASE}/bulk?${params}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sla_ids: slaIds }),
+      cache: "no-store",
+    });
+    return safeJson(res);
+  },
+
+  // -------- Org-level query/match/report --------
+  async match(orgId, criteria = {}) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/match`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(criteria),
+      cache: "no-store",
+    });
+    return safeJson(res);
+  },
+
+  async simulate(orgId, criteria = {}) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/simulate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(criteria),
+      cache: "no-store",
+    });
+    return safeJson(res);
+  },
+
+  async effective(orgId, { at_time, scope } = {}) {
+    const params = new URLSearchParams();
+    if (at_time) params.set("at_time", toISO(at_time));
+    if (scope) params.set("scope", scope);
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/effective?${params}`, {
+      cache: "no-store",
+    });
+    return safeJson(res);
+  },
+
+  async stats(orgId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/stats`, { cache: "no-store" });
+    return safeJson(res);
+  },
+
+  async compliance(orgId, { from_date, to_date } = {}) {
+    const params = new URLSearchParams();
+    if (from_date) params.set("from_date", toISO(from_date));
+    if (to_date) params.set("to_date", toISO(to_date));
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/compliance?${params}`, {
+      cache: "no-store",
+    });
+    return safeJson(res);
+  },
+
+  async export(orgId, { includeObjectives = true, includeCreditRules = true } = {}) {
+    const params = new URLSearchParams();
+    params.set("include_objectives", String(includeObjectives));
+    params.set("include_credit_rules", String(includeCreditRules));
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/export?${params}`, {
+      cache: "no-store",
+    });
+    return safeBlob(res); // returns { blob, filename }
+  },
+
+  async import(orgId, file, { updateExisting = true } = {}) {
+    const params = new URLSearchParams();
+    params.set("update_existing", String(updateExisting));
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/import?${params}`, {
+      method: "POST",
+      body: fd,
+      cache: "no-store",
+    });
+    return safeJson(res);
+  },
+
+  async cleanup(orgId, { olderThanDays = 90, dryRun = true } = {}) {
+    const params = new URLSearchParams();
+    params.set("older_than_days", String(olderThanDays));
+    params.set("dry_run", String(dryRun));
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/cleanup?${params}`, {
+      method: "POST",
       cache: "no-store",
     });
     return safeJson(res);
@@ -96,7 +266,7 @@ const SlaMakingModel = {
     const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/objectives`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload), // server binds sla_id from path
+      body: JSON.stringify(payload),
       cache: "no-store",
     });
     return safeJson(res);
@@ -139,7 +309,7 @@ const SlaMakingModel = {
     const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/credit-rules`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload), // server binds sla_id from path
+      body: JSON.stringify(payload),
       cache: "no-store",
     });
     return safeJson(res);
@@ -172,8 +342,7 @@ const SlaMakingModel = {
     return true;
   },
 
-  // -------- Ticket SLA (Status / Timers / History / Pause / Resume) --------
-
+  // -------- Ticket SLA (status / timers / pause / resume / history) --------
   async getTicketStatus(ticketId) {
     if (!ticketId) throw new Error("ticketId is required");
     const res = await fetch(`${BASE2}/tickets/${encodeURIComponent(ticketId)}/sla/status`, {
@@ -195,7 +364,7 @@ const SlaMakingModel = {
     const params = new URLSearchParams();
     if (dimension) params.set("dimension", dimension);
     const res = await fetch(
-      `${BASE2}/tickets/${encodeURIComponent(ticketId)}/sla/pause-history${params.toString() ? `?${params.toString()}` : ""}`,
+      `${BASE2}/tickets/${encodeURIComponent(ticketId)}/sla/pause-history${params.toString() ? `?${params}` : ""}`,
       { cache: "no-store" }
     );
     return safeJson(res);
@@ -204,7 +373,7 @@ const SlaMakingModel = {
   async pauseTicketSLA(ticketId, { dimension, reason, reason_note }, { userId } = {}) {
     if (!ticketId) throw new Error("ticketId is required");
     const headers = { "Content-Type": "application/json" };
-    if (userId) headers["X-User-Id"] = userId; // FastAPI guard
+    if (userId) headers["X-User-Id"] = userId;
     const res = await fetch(`${BASE2}/tickets/${encodeURIComponent(ticketId)}/sla/pause`, {
       method: "POST",
       headers,
@@ -218,7 +387,8 @@ const SlaMakingModel = {
     if (!ticketId) throw new Error("ticketId is required");
     const headers = { "Content-Type": "application/json" };
     if (userId) headers["X-User-Id"] = userId;
-    const res = await fetch(`${BASE}/tickets/sla/${encodeURIComponent(ticketId)}/resume`, {
+    // fixed path: /tickets/{id}/sla/resume
+    const res = await fetch(`${BASE2}/tickets/${encodeURIComponent(ticketId)}/sla/resume`, {
       method: "POST",
       headers,
       body: JSON.stringify({ dimension }),

@@ -8,34 +8,33 @@ import {
   LogOut,
   Menu,
   Ticket,
-  Tag,
-  Calendar,
-  GitBranch,
-  Clock,
-  UserCircle,
-  Layers,
   X,
+  Building2,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { deleteCookie, getCookie } from "cookies-next";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/firebase/firebase";
+import { useUser } from "@/providers/postGresPorviders/UserProvider";
 
 export default function Sidebar() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { user } = useUser(); // Get user from UserProvider - must be at top level
+  
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [activeItem, setActiveItem] = useState("Dashboard");
   const [orgName, setOrgName] = useState("");
   const [orgHoverTitle, setOrgHoverTitle] = useState("");
 
-  const pathname = usePathname();
-  const router = useRouter();
-
-  // Derive orgId from route
-  const orgId = useMemo(() => {
+  // Derive orgId and language from route
+  const { orgId, language } = useMemo(() => {
     const segs = pathname.split("/").filter(Boolean);
-    const idFromPath = segs.at(2);
-    return idFromPath || (getCookie("currentOrgId") ? String(getCookie("currentOrgId")) : "");
+    const lang = segs[0] || 'en'; // First segment is language
+    const idFromPath = segs.at(2); // Third segment after postgres-org
+    const id = idFromPath || (getCookie("currentOrgId") ? String(getCookie("currentOrgId")) : "");
+    return { orgId: id, language: lang };
   }, [pathname]);
 
   useEffect(() => {
@@ -91,18 +90,33 @@ export default function Sidebar() {
     };
   }, [orgId]);
 
+  // Get user role for org-tickets routing
+  const userRole = useMemo(() => {
+    if (!user || !user.role) return 'agent';
+    return user.role.toLowerCase();
+  }, [user]);
+
+  // Determine first available org-tickets page based on role
+  const getOrgTicketsPath = () => {
+    const roleMap = {
+      owner: 'business-calendars',
+      admin: 'business-calendars',
+      manager: 'business-calendars',
+      team_lead: 'my-group-tickets',
+      agent: 'agent-tickets'
+    };
+    return `org-tickets/${roleMap[userRole] || 'agent-tickets'}`;
+  };
+
+  // Only show Org Tickets if user has a valid role
+  const shouldShowOrgTickets = userRole && ['owner', 'admin', 'manager', 'team_lead', 'agent'].includes(userRole);
+
   const menuItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "" },
     { icon: Ticket, label: "Tickets", path: "tickets" },
-    { icon: UserCircle, label: "My Group Tickets", path: "my-group-tickets" },
-    { icon: Users, label: "Support Groups", path: "support-groups" },
+    ...(shouldShowOrgTickets ? [{ icon: Building2, label: "Org Tickets", path: getOrgTicketsPath() }] : []),
     { icon: Users, label: "Team", path: "team" },
     { icon: FolderOpen, label: "Projects", path: "projects" },
-    { icon: Clock, label: "SLA", path: "sla" },
-    { icon: Calendar, label: "Business Calendars", path: "business-calendars" },
-    { icon: GitBranch, label: "Routing", path: "routing" },
-    { icon: Layers, label: "Category Management", path: "category-management" },
-    { icon: Tag, label: "Tags", path: "tags" },
     { icon: Settings, label: "Settings", path: "settings" },
   ];
 
@@ -119,8 +133,11 @@ export default function Sidebar() {
     // Get the segment after dashboard
     const segment = parts[dashboardIdx + 1];
     
+    // Check if we're in org-tickets section
+    if (segment === "org-tickets") return "Org Tickets";
+    
     // Match against menu items
-    const match = menuItems.find((m) => m.path === segment);
+    const match = menuItems.find((m) => m.path.startsWith(segment));
     return match ? match.label : "Dashboard";
   };
 
@@ -139,8 +156,8 @@ export default function Sidebar() {
 
   const handleItemClick = (item) => {
     const path = item.path
-      ? `/postgres-org/${orgId}/dashboard/${item.path}`
-      : `/postgres-org/${orgId}/dashboard`;
+      ? `/${language}/postgres-org/${orgId}/dashboard/${item.path}`
+      : `/${language}/postgres-org/${orgId}/dashboard`;
     router.push(path);
     setIsMobileOpen(false);
   };

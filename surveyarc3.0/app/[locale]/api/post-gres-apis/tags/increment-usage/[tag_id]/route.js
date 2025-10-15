@@ -37,7 +37,7 @@ async function forceDecryptResponse(res) {
 
 // POST /api/post-gres-apis/tags/increment-usage/[tag_id] - Increment tag usage
 export async function POST(_req, { params }) {
-  const { tag_id } = params;
+  const { tag_id } = await params;
   console.log("[POST] Incrementing usage for tag:", tag_id);
   
   try {

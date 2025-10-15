@@ -27,10 +27,10 @@ async function forceDecryptResponse(res) {
 }
 
 export async function GET(req, { params }) {
-  const { team_id } =  await params;
+  const { teamId } =  await params;
   
   try {
-    const res = await fetch(`${BASE}/support-teams/${encodeURIComponent(team_id)}`, {
+    const res = await fetch(`${BASE}/support-teams/${encodeURIComponent(teamId)}`, {
       cache: "no-store",
       signal: AbortSignal.timeout(30000),
     });

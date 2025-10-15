@@ -1,5 +1,6 @@
 // providers/postGresPorviders/SLAMakingProvider.jsx
 "use client";
+
 import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
 import SlaMakingModel from "@/models/postGresModels/slaMakingModel";
 
@@ -11,7 +12,7 @@ export const SLAMakingProvider = ({ children }) => {
   const [creditRulesBySla, setCreditRulesBySla] = useState({});  // { [sla_id]: CreditRule[] }
   const [loading, setLoading] = useState(false);
 
-  // ---------- SLA ----------
+  // ---------- SLA list/load ----------
   const listSlas = useCallback(async ({ orgId, active, scope, q, limit, offset } = {}) => {
     setLoading(true);
     try {
@@ -23,9 +24,7 @@ export const SLAMakingProvider = ({ children }) => {
     }
   }, []);
 
-  const getSla = useCallback(async (slaId) => {
-    return SlaMakingModel.get(slaId);
-  }, []);
+  const getSla = useCallback(async (slaId) => SlaMakingModel.get(slaId), []);
 
   const createSla = useCallback(async (payload) => {
     const created = await SlaMakingModel.create(payload);
@@ -43,10 +42,12 @@ export const SLAMakingProvider = ({ children }) => {
     await SlaMakingModel.remove(slaId);
     setSlas((prev) => prev.filter((s) => s.sla_id !== slaId));
     setObjectivesBySla((m) => {
-      const { [slaId]: _, ...rest } = m; return rest;
+      const { [slaId]: _omit, ...rest } = m;
+      return rest;
     });
     setCreditRulesBySla((m) => {
-      const { [slaId]: _, ...rest } = m; return rest;
+      const { [slaId]: _omit, ...rest } = m;
+      return rest;
     });
   }, []);
 
@@ -62,13 +63,41 @@ export const SLAMakingProvider = ({ children }) => {
     return updated;
   }, []);
 
+  const publishSla = useCallback(async (slaId, opts) => {
+    const updated = await SlaMakingModel.publish(slaId, opts);
+    setSlas((prev) => prev.map((s) => (s.sla_id === slaId ? updated : s)));
+    return updated;
+  }, []);
+
+  const archiveSla = useCallback(async (slaId) => {
+    const updated = await SlaMakingModel.archive(slaId);
+    setSlas((prev) => prev.map((s) => (s.sla_id === slaId ? updated : s)));
+    return updated;
+  }, []);
+
+  const validateSla = useCallback(async (slaId) => SlaMakingModel.validate(slaId), []);
+
   const duplicateSla = useCallback(async (slaId, overrides = {}) => {
     const clone = await SlaMakingModel.duplicate(slaId, overrides);
     setSlas((prev) => [clone, ...prev]);
     return clone;
   }, []);
 
-  // -------- Objectives --------
+  const createNewVersion = useCallback(async (slaId, changes = {}) => {
+    const v = await SlaMakingModel.createNewVersion(slaId, changes);
+    setSlas((prev) => [v, ...prev.filter((s) => s.slug !== v.slug || s.sla_id === v.sla_id)]);
+    return v;
+  }, []);
+
+  const listVersions = useCallback(async (slaId) => SlaMakingModel.listVersions(slaId), []);
+
+  const dependencies = useCallback(async (slaId, opts = {}) => SlaMakingModel.dependencies(slaId, opts), []);
+
+  // ---------- Bulk ----------
+  const bulkUpsert = useCallback(async (slasPayload, opts) => SlaMakingModel.bulkUpsert(slasPayload, opts), []);
+  const bulkDelete = useCallback(async (ids, opts) => SlaMakingModel.bulkDelete(ids, opts), []);
+
+  // ---------- Objectives ----------
   const listObjectives = useCallback(async (slaId) => {
     const arr = await SlaMakingModel.listObjectives(slaId);
     setObjectivesBySla((m) => ({ ...m, [slaId]: Array.isArray(arr) ? arr : [] }));
@@ -92,18 +121,15 @@ export const SLAMakingProvider = ({ children }) => {
   }, []);
 
   const removeObjective = useCallback(async (objectiveId) => {
-    // We need to know its SLA bucket. Best effort: remove from all buckets.
     await SlaMakingModel.removeObjective(objectiveId);
     setObjectivesBySla((m) => {
       const out = {};
-      for (const [sid, arr] of Object.entries(m)) {
-        out[sid] = (arr || []).filter((o) => o.objective_id !== objectiveId);
-      }
+      for (const [sid, arr] of Object.entries(m)) out[sid] = (arr || []).filter((o) => o.objective_id !== objectiveId);
       return out;
     });
   }, []);
 
-  // -------- Credit Rules --------
+  // ---------- Credit Rules ----------
   const listCreditRules = useCallback(async (slaId) => {
     const arr = await SlaMakingModel.listCreditRules(slaId);
     setCreditRulesBySla((m) => ({ ...m, [slaId]: Array.isArray(arr) ? arr : [] }));
@@ -130,12 +156,20 @@ export const SLAMakingProvider = ({ children }) => {
     await SlaMakingModel.removeCreditRule(ruleId);
     setCreditRulesBySla((m) => {
       const out = {};
-      for (const [sid, arr] of Object.entries(m)) {
-        out[sid] = (arr || []).filter((r) => r.rule_id !== ruleId);
-      }
+      for (const [sid, arr] of Object.entries(m)) out[sid] = (arr || []).filter((r) => r.rule_id !== ruleId);
       return out;
     });
   }, []);
+
+  // ---------- Matching / Reporting / Import-Export / Cleanup ----------
+  const match = useCallback(async (orgId, criteria) => SlaMakingModel.match(orgId, criteria), []);
+  const simulate = useCallback(async (orgId, criteria) => SlaMakingModel.simulate(orgId, criteria), []);
+  const effective = useCallback(async (orgId, opts) => SlaMakingModel.effective(orgId, opts), []);
+  const stats = useCallback(async (orgId) => SlaMakingModel.stats(orgId), []);
+  const compliance = useCallback(async (orgId, opts) => SlaMakingModel.compliance(orgId, opts), []);
+  const exportSlas = useCallback(async (orgId, opts) => SlaMakingModel.export(orgId, opts), []);
+  const importSlas = useCallback(async (orgId, file, opts) => SlaMakingModel.import(orgId, file, opts), []);
+  const cleanup = useCallback(async (orgId, opts) => SlaMakingModel.cleanup(orgId, opts), []);
 
   const value = useMemo(
     () => ({
@@ -144,6 +178,7 @@ export const SLAMakingProvider = ({ children }) => {
       objectivesBySla,
       creditRulesBySla,
       loading,
+
       // sla ops
       listSlas,
       getSla,
@@ -152,23 +187,77 @@ export const SLAMakingProvider = ({ children }) => {
       removeSla,
       activateSla,
       deactivateSla,
+      publishSla,
+      archiveSla,
+      validateSla,
       duplicateSla,
-      // objective ops
+      createNewVersion,
+      listVersions,
+      dependencies,
+
+      // bulk
+      bulkUpsert,
+      bulkDelete,
+
+      // objectives
       listObjectives,
       createObjective,
       updateObjective,
       removeObjective,
-      // credit rule ops
+
+      // credit rules
       listCreditRules,
       createCreditRule,
       updateCreditRule,
       removeCreditRule,
+
+      // matching / reports / import-export
+      match,
+      simulate,
+      effective,
+      stats,
+      compliance,
+      exportSlas,
+      importSlas,
+      cleanup,
     }),
     [
-      slas, objectivesBySla, creditRulesBySla, loading,
-      listSlas, getSla, createSla, updateSla, removeSla, activateSla, deactivateSla, duplicateSla,
-      listObjectives, createObjective, updateObjective, removeObjective,
-      listCreditRules, createCreditRule, updateCreditRule, removeCreditRule,
+      slas,
+      objectivesBySla,
+      creditRulesBySla,
+      loading,
+      listSlas,
+      getSla,
+      createSla,
+      updateSla,
+      removeSla,
+      activateSla,
+      deactivateSla,
+      publishSla,
+      archiveSla,
+      validateSla,
+      duplicateSla,
+      createNewVersion,
+      listVersions,
+      dependencies,
+      bulkUpsert,
+      bulkDelete,
+      listObjectives,
+      createObjective,
+      updateObjective,
+      removeObjective,
+      listCreditRules,
+      createCreditRule,
+      updateCreditRule,
+      removeCreditRule,
+      match,
+      simulate,
+      effective,
+      stats,
+      compliance,
+      exportSlas,
+      importSlas,
+      cleanup,
     ]
   );
 

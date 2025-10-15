@@ -1,4 +1,3 @@
-
 // components/tags/TagForm.jsx
 "use client";
 import { useState, useEffect } from "react";
@@ -14,15 +13,38 @@ import {
   Typography,
   Autocomplete,
   Chip,
+  IconButton,
+  alpha,
+  useTheme,
+  Divider,
 } from "@mui/material";
-import { ColorLens as ColorIcon } from "@mui/icons-material";
+import {
+  ColorLens as ColorIcon,
+  Close as CloseIcon,
+  Palette as PaletteIcon,
+  Check as CheckIcon,
+  Category as CategoryIcon,
+  Label as LabelIcon,
+} from "@mui/icons-material";
 import { useTags } from "@/providers/postGresPorviders/TagProvider";
 
 const PREDEFINED_COLORS = [
-  "#f44336", "#e91e63", "#9c27b0", "#673ab7",
-  "#3f51b5", "#2196f3", "#03a9f4", "#00bcd4",
-  "#009688", "#4caf50", "#8bc34a", "#cddc39",
-  "#ffeb3b", "#ffc107", "#ff9800", "#ff5722",
+  { name: "Red", value: "#f44336" },
+  { name: "Pink", value: "#e91e63" },
+  { name: "Purple", value: "#9c27b0" },
+  { name: "Deep Purple", value: "#673ab7" },
+  { name: "Indigo", value: "#3f51b5" },
+  { name: "Blue", value: "#2196f3" },
+  { name: "Light Blue", value: "#03a9f4" },
+  { name: "Cyan", value: "#00bcd4" },
+  { name: "Teal", value: "#009688" },
+  { name: "Green", value: "#4caf50" },
+  { name: "Light Green", value: "#8bc34a" },
+  { name: "Lime", value: "#cddc39" },
+  { name: "Yellow", value: "#ffeb3b" },
+  { name: "Amber", value: "#ffc107" },
+  { name: "Orange", value: "#ff9800" },
+  { name: "Deep Orange", value: "#ff5722" },
 ];
 
 const PREDEFINED_CATEGORIES = [
@@ -34,9 +56,14 @@ const PREDEFINED_CATEGORIES = [
   "Customer",
   "Internal",
   "External",
+  "Bug",
+  "Feature",
+  "Enhancement",
+  "Documentation",
 ];
 
 export default function TagForm({ open, onClose, onSubmit, tag, orgId }) {
+  const theme = useTheme();
   const { create: createTag, update: updateTag, getCategories } = useTags();
   
   const [form, setForm] = useState({
@@ -48,11 +75,14 @@ export default function TagForm({ open, onClose, onSubmit, tag, orgId }) {
   
   const [saving, setSaving] = useState(false);
   const [existingCategories, setExistingCategories] = useState([]);
+  const [showCustomColor, setShowCustomColor] = useState(false);
 
   // Load existing categories
   useEffect(() => {
     if (open && orgId) {
-      getCategories(orgId).then(setExistingCategories).catch(() => {});
+      getCategories(orgId)
+        .then(cats => setExistingCategories(Array.isArray(cats) ? cats : []))
+        .catch(() => setExistingCategories([]));
     }
   }, [open, orgId, getCategories]);
 
@@ -73,11 +103,9 @@ export default function TagForm({ open, onClose, onSubmit, tag, orgId }) {
         category: "",
       });
     }
-  }, [tag]);
+  }, [tag, open]);
 
-
-
- const handleSubmit = async () => {
+  const handleSubmit = async () => {
     setSaving(true);
     try {
       const payload = {
@@ -101,7 +129,6 @@ export default function TagForm({ open, onClose, onSubmit, tag, orgId }) {
     }
   };
 
-
   const canSave = form.name.trim().length > 0;
   
   // Combine existing and predefined categories
@@ -110,108 +137,291 @@ export default function TagForm({ open, onClose, onSubmit, tag, orgId }) {
   ].sort();
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog 
+      open={open} 
+      onClose={onClose} 
+      maxWidth="sm" 
+      fullWidth
+      PaperProps={{
+        sx: { borderRadius: 3 }
+      }}
+    >
       <DialogTitle>
-        {tag ? "Edit Tag" : "Create Tag"}
+        <Stack direction="row" alignItems="center" justifyContent="space-between">
+          <Stack direction="row" alignItems="center" spacing={2}>
+            <Box
+              sx={{
+                width: 48,
+                height: 48,
+                borderRadius: 2,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                bgcolor: "primary.main",
+                boxShadow: 2,
+              }}
+            >
+              <LabelIcon sx={{ color: "white" }} />
+            </Box>
+            <Typography variant="h5" fontWeight={700}>
+              {tag ? "Edit Tag" : "Create Tag"}
+            </Typography>
+          </Stack>
+          <IconButton onClick={onClose} size="small">
+            <CloseIcon />
+          </IconButton>
+        </Stack>
       </DialogTitle>
       
-      <DialogContent>
-        <Stack spacing={3} sx={{ mt: 1 }}>
-  <TextField
-    label="Tag Name"
-    value={form.name}
-    onChange={(e) => setForm(prev => ({ ...prev, name: e.target.value }))}
-    fullWidth
-    required
-    placeholder="e.g., Bug, Feature Request, High Priority"
-  />
+      <Divider />
+      
+      <DialogContent sx={{ pt: 3 }}>
+        <Stack spacing={3}>
+          {/* Tag Name */}
+          <TextField
+            label="Tag Name"
+            value={form.name}
+            onChange={(e) => setForm(prev => ({ ...prev, name: e.target.value }))}
+            fullWidth
+            required
+            placeholder="e.g., Bug, Feature Request, High Priority"
+            InputProps={{
+              startAdornment: <LabelIcon sx={{ mr: 1, color: "text.secondary" }} />,
+            }}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                borderRadius: 2,
+              },
+            }}
+          />
 
-  <TextField
-    label="Description"
-    value={form.description}
-    onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
-    fullWidth
-    multiline
-    rows={2}
-    placeholder="Optional description for this tag"
-  />
+          {/* Description */}
+          <TextField
+            label="Description"
+            value={form.description}
+            onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
+            fullWidth
+            multiline
+            rows={3}
+            placeholder="Optional description for this tag"
+            helperText="Describe when to use this tag"
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                borderRadius: 2,
+              },
+            }}
+          />
 
-  <Autocomplete
-    freeSolo
-    options={allCategories}
-    value={form.category}
-    onChange={(_, newValue) => setForm(prev => ({ ...prev, category: newValue || "" }))}
-    renderInput={(params) => (
-      <TextField {...params} label="Category" placeholder="e.g., Priority, Type, Department" helperText="Optional category to group related tags" />
-    )}
-  />
+          {/* Category */}
+          <Autocomplete
+            freeSolo
+            options={allCategories}
+            value={form.category}
+            onChange={(_, newValue) => setForm(prev => ({ ...prev, category: newValue || "" }))}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Category"
+                placeholder="e.g., Priority, Type, Department"
+                helperText="Optional category to group related tags"
+                InputProps={{
+                  ...params.InputProps,
+                  startAdornment: (
+                    <>
+                      <CategoryIcon sx={{ mr: 1, color: "text.secondary" }} />
+                      {params.InputProps.startAdornment}
+                    </>
+                  ),
+                }}
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: 2,
+                  },
+                }}
+              />
+            )}
+          />
 
           {/* Color Picker */}
           <Box>
-            <Typography variant="subtitle2" gutterBottom>
-              Tag Color
-            </Typography>
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              {PREDEFINED_COLORS.map((color) => (
-                <Box
-                  key={color}
-                  sx={{
-                    width: 32,
-                    height: 32,
-                    backgroundColor: color,
-                    borderRadius: 1,
-                    cursor: "pointer",
-                    border: form.color === color ? "3px solid #000" : "1px solid #ccc",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-      onClick={() => setForm(prev => ({ ...prev, color }))}
-                >
-                  {form.color === color && <ColorIcon sx={{ color: "white", fontSize: 16 }} />}
-                </Box>
-              ))}
+            <Stack direction="row" alignItems="center" spacing={1} mb={2}>
+              <PaletteIcon sx={{ color: "text.secondary" }} />
+              <Typography variant="subtitle1" fontWeight={600}>
+                Tag Color
+              </Typography>
+              <Button
+                size="small"
+                onClick={() => setShowCustomColor(!showCustomColor)}
+                sx={{ ml: "auto", borderRadius: 2 }}
+              >
+                {showCustomColor ? "Presets" : "Custom"}
+              </Button>
             </Stack>
-            
-           <TextField
-    label="Custom Color"
-    value={form.color}
-    onChange={(e) => setForm(prev => ({ ...prev, color: e.target.value }))}
-    type="color"
-    size="small"
-    sx={{ mt: 1, width: 100 }}
-  />
+
+            {showCustomColor ? (
+              <Stack direction="row" spacing={2} alignItems="center">
+                <TextField
+                  label="Hex Color"
+                  value={form.color}
+                  onChange={(e) => setForm(prev => ({ ...prev, color: e.target.value }))}
+                  size="small"
+                  placeholder="#000000"
+                  sx={{ flexGrow: 1 }}
+                />
+                <input
+                  type="color"
+                  value={form.color}
+                  onChange={(e) => setForm(prev => ({ ...prev, color: e.target.value }))}
+                  style={{
+                    width: 60,
+                    height: 40,
+                    border: `2px solid ${theme.palette.divider}`,
+                    borderRadius: 8,
+                    cursor: "pointer",
+                  }}
+                />
+              </Stack>
+            ) : (
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(56px, 1fr))",
+                  gap: 1.5,
+                }}
+              >
+                {PREDEFINED_COLORS.map((color) => (
+                  <Box
+                    key={color.value}
+                    onClick={() => setForm(prev => ({ ...prev, color: color.value }))}
+                    sx={{
+                      position: "relative",
+                      width: "100%",
+                      paddingBottom: "100%",
+                      backgroundColor: color.value,
+                      borderRadius: 2,
+                      cursor: "pointer",
+                      border: 3,
+                      borderColor: form.color === color.value ? "primary.main" : "transparent",
+                      transition: "all 0.2s",
+                      "&:hover": {
+                        transform: "scale(1.1)",
+                        boxShadow: 4,
+                      },
+                    }}
+                  >
+                    {form.color === color.value && (
+                      <Box
+                        sx={{
+                          position: "absolute",
+                          top: "50%",
+                          left: "50%",
+                          transform: "translate(-50%, -50%)",
+                          bgcolor: "white",
+                          borderRadius: "50%",
+                          width: 24,
+                          height: 24,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          boxShadow: 2,
+                        }}
+                      >
+                        <CheckIcon sx={{ fontSize: 16, color: color.value }} />
+                      </Box>
+                    )}
+                  </Box>
+                ))}
+              </Box>
+            )}
           </Box>
 
           {/* Preview */}
-          <Box>
-            <Typography variant="subtitle2" gutterBottom>
+          <Box
+            sx={{
+              p: 3,
+              borderRadius: 3,
+              border: 2,
+              borderColor: "divider",
+              bgcolor: alpha(theme.palette.background.default, 0.5),
+            }}
+          >
+            <Typography variant="subtitle2" fontWeight={600} gutterBottom>
               Preview
             </Typography>
-            <Chip
-              label={form.name || "Tag Name"}
-              sx={{
-                backgroundColor: `${form.color}20`,
-                borderColor: form.color,
-                color: form.color,
-              }}
-              variant="outlined"
-              icon={<ColorIcon sx={{ color: form.color }} />}
-            />
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <Chip
+                label={form.name || "Tag Name"}
+                icon={<LabelIcon />}
+                sx={{
+                  height: 32,
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  bgcolor: `${form.color}20`,
+                  color: form.color,
+                  border: 2,
+                  borderColor: `${form.color}40`,
+                  "& .MuiChip-icon": {
+                    color: form.color,
+                  },
+                }}
+              />
+              <Chip
+                label={form.name || "Tag Name"}
+                icon={<ColorIcon />}
+                sx={{
+                  height: 32,
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  bgcolor: form.color,
+                  color: "white",
+                  "& .MuiChip-icon": {
+                    color: "white",
+                  },
+                }}
+              />
+              <Chip
+                label={form.name || "Tag Name"}
+                variant="outlined"
+                icon={<LabelIcon />}
+                sx={{
+                  height: 32,
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  borderColor: form.color,
+                  color: form.color,
+                  borderWidth: 2,
+                  "& .MuiChip-icon": {
+                    color: form.color,
+                  },
+                }}
+              />
+            </Stack>
           </Box>
         </Stack>
       </DialogContent>
 
-      <DialogActions>
-        <Button onClick={onClose} disabled={saving}>
+      <Divider />
+
+      <DialogActions sx={{ p: 2.5 }}>
+        <Button 
+          onClick={onClose} 
+          disabled={saving}
+          sx={{ borderRadius: 2, px: 3 }}
+        >
           Cancel
         </Button>
         <Button
           onClick={handleSubmit}
           variant="contained"
           disabled={saving || !canSave}
+          sx={{
+            borderRadius: 2,
+            px: 3,
+            boxShadow: 2,
+            "&:hover": { boxShadow: 4 },
+          }}
         >
-          {saving ? "Saving..." : tag ? "Update" : "Create"}
+          {saving ? "Saving..." : tag ? "Update Tag" : "Create Tag"}
         </Button>
       </DialogActions>
     </Dialog>

@@ -49,7 +49,62 @@ export const TagProvider = ({ children }) => {
     
     return created;
   }, []);
+ const getStats = useCallback(async (orgId) => {
+    return TagModel.getStats(orgId);
+  }, []);
 
+  const bulkCreate = useCallback(async (tags, skipExisting = true) => {
+    const created = await TagModel.bulkCreate(tags, skipExisting);
+    setTags(prev => [...created, ...prev]);
+    
+    // Update org cache
+    if (tags[0]?.orgId) {
+      const orgId = tags[0].orgId;
+      setTagsByOrg(prev => ({
+        ...prev,
+        [orgId]: [...created, ...(prev[orgId] || [])]
+      }));
+    }
+    
+    return created;
+  }, []);
+
+  const bulkDelete = useCallback(async (tagIds, orgId, force = false) => {
+    const result = await TagModel.bulkDelete(tagIds, orgId, force);
+    setTags(prev => prev.filter(t => !tagIds.includes(t.tagId)));
+    
+    // Update org cache
+    if (orgId) {
+      setTagsByOrg(prev => ({
+        ...prev,
+        [orgId]: (prev[orgId] || []).filter(t => !tagIds.includes(t.tagId))
+      }));
+    }
+    
+    return result;
+  }, []);
+
+  const merge = useCallback(async (sourceTagIds, targetTagId, orgId, deleteSource = true) => {
+    const result = await TagModel.merge(sourceTagIds, targetTagId, orgId, deleteSource);
+    
+    // Refresh tags
+    if (orgId) {
+      await list({ orgId });
+    }
+    
+    return result;
+  }, [list]);
+
+  const cleanupUnused = useCallback(async (orgId, olderThanDays = 30) => {
+    const result = await TagModel.cleanupUnused(orgId, olderThanDays);
+    
+    // Refresh tags
+    if (orgId) {
+      await list({ orgId });
+    }
+    
+    return result;
+  }, [list]);
   const update = useCallback(async (tagId, patch) => {
     const updated = await TagModel.update(tagId, patch);
     setTags(prev => prev.map(t => t.tagId === tagId ? updated : t));
@@ -106,6 +161,11 @@ export const TagProvider = ({ children }) => {
     get,
     create,
     update,
+    getStats,
+    bulkCreate,
+    bulkDelete,
+    merge,
+    cleanupUnused,
     remove,
     getCategories,
     count,
