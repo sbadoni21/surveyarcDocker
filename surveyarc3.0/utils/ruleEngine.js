@@ -39,13 +39,51 @@ export function evaluateRule(rule, answers) {
     return Number.isFinite(n) ? n : null;
   };
 
+  const isNpsPromoter = (s) => s >= 9 && s <= 10;
+  const isNpsPassive = (s) => s >= 7 && s <= 8;
+  const isNpsDetractor = (s) => s >= 0 && s <= 6;
+
   const evalOne = (cond) => {
     const lhs = answers?.[cond.questionId];
-    const op = cond.operator || "equals";
+    const op = (cond.operator || "equals").toLowerCase();
 
+    // NPS operators
+    if (op.startsWith("nps_")) {
+      const score = toNum(lhs);
+      if (score == null) return false;
+
+      switch (op) {
+        case "nps_is_promoter":
+          return isNpsPromoter(score);
+        case "nps_is_passive":
+          return isNpsPassive(score);
+        case "nps_is_detractor":
+          return isNpsDetractor(score);
+        case "nps_gte": {
+          const v = toNum(cond.value);
+          return v != null && score >= v;
+        }
+        case "nps_lte": {
+          const v = toNum(cond.value);
+          return v != null && score <= v;
+        }
+        case "nps_between": {
+          let min = toNum(cond.min);
+          let max = toNum(cond.max);
+          if (min == null || max == null) return false;
+          if (min > max) [min, max] = [max, min];
+          return score >= min && score <= max;
+        }
+        default:
+          return false;
+      }
+    }
+
+    // String comparisons
     if (op === "equals") return norm(lhs) === norm(cond.value);
     if (op === "not_equals") return norm(lhs) !== norm(cond.value);
 
+    // Numeric comparisons
     const a = toNum(lhs);
     const b = toNum(cond.value);
     if (a == null || b == null) return false;
@@ -59,14 +97,16 @@ export function evaluateRule(rule, answers) {
   for (let i = 0; i < rule.conditions.length; i++) {
     const c = rule.conditions[i];
     const pass = evalOne(c);
-    if (i === 0) acc = pass;
-    else {
+    if (i === 0) {
+      acc = pass;
+    } else {
       const logic = (c.conditionLogic || "AND").toUpperCase();
       acc = logic === "OR" ? acc || pass : acc && pass;
     }
   }
   return !!acc;
 }
+
 
 export const fetchRulesForSurvey = async (orgId, surveyId) => {
   const ref = collection(db, `organizations/${orgId}/surveys/${surveyId}/rules`);

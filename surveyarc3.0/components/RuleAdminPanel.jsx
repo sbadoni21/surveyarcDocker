@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import {
   evaluateRule,
-  fetchRulesForSurvey,   // keep using your ruleEngine helper; make it call the Postgres API under the hood
+  fetchRulesForSurvey, // keep using your ruleEngine helper; make it call the Postgres API under the hood
   getNextBlockFromRules,
   getNextTargetFromRules,
 } from "@/utils/ruleEngine";
@@ -107,7 +107,9 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
         const ao = a?.order ?? 0;
         const bo = b?.order ?? 0;
         if (ao !== bo) return ao - bo;
-        return String(a?.title || a?.id).localeCompare(String(b?.title || b?.id));
+        return String(a?.title || a?.id).localeCompare(
+          String(b?.title || b?.id)
+        );
       });
     });
 
@@ -131,8 +133,12 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
         base.targetQuestionId = act.targetQuestionId || "";
       }
       if (act.type === "goto_question") base.questionId = act.questionId || "";
-      if (act.type === "skip_block") base.blockIds = Array.isArray(act.blockIds) ? act.blockIds : [];
-      if (act.type === "skip_questions") base.questionIds = Array.isArray(act.questionIds) ? act.questionIds : [];
+      if (act.type === "skip_block")
+        base.blockIds = Array.isArray(act.blockIds) ? act.blockIds : [];
+      if (act.type === "skip_questions")
+        base.questionIds = Array.isArray(act.questionIds)
+          ? act.questionIds
+          : [];
       if (act.type === "show_message") base.message = act.message || "";
       return base;
     });
@@ -175,13 +181,16 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
     });
 
     const inBlock = allRules.filter(
-      (r) => r.enabled !== false && r.blockId === (currentBlockId || blockOrder[0])
+      (r) =>
+        r.enabled !== false && r.blockId === (currentBlockId || blockOrder[0])
     );
     console.group("Rule Inspector");
     inBlock.forEach((r) => {
       const passed = evaluateRule(r, testAnswers);
       console.log(
-        `Rule: ${r.name || r.ruleId} (priority ${r.priority}) -> ${passed ? "MATCH" : "no match"}`
+        `Rule: ${r.name || r.ruleId} (priority ${r.priority}) -> ${
+          passed ? "MATCH" : "no match"
+        }`
       );
       console.table(
         (r.conditions || []).map((c) => ({
@@ -201,13 +210,16 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
       return;
     }
     if (target.type === "block") {
-      alert(`Next: Block → ${blocksById[target.blockId]?.title || target.blockId}`);
+      alert(
+        `Next: Block → ${blocksById[target.blockId]?.title || target.blockId}`
+      );
       return;
     }
     if (target.type === "question") {
       const qList = questionsByBlock[target.blockId] || [];
       const qTitle =
-        qList.find((q) => q.id === target.questionId)?.title || target.questionId;
+        qList.find((q) => q.id === target.questionId)?.title ||
+        target.questionId;
       const bTitle = blocksById[target.blockId]?.title || target.blockId;
       alert(`Next: ${bTitle} → ${qTitle}`);
     }
@@ -268,6 +280,7 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
   }, [currentBlockId, questionsByBlock]);
 
   // ----- UI helpers -----
+  // inside RuleAdminPanel
   const getOperatorsForType = (type) => {
     const base = [
       { label: "Equals", value: "equals" },
@@ -279,18 +292,46 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
         { label: "Less Than", value: "less_than" }
       );
     }
+    if (type === "nps") {
+      return [
+        { label: "Is Promoter (9–10)", value: "nps_is_promoter" },
+        { label: "Is Passive (6–8)", value: "nps_is_passive" },
+        { label: "Is Detractor (0–5)", value: "nps_is_detractor" },
+        { label: "Equals", value: "equals" },
+        { label: "Not Equals", value: "not_equals" },
+        { label: "≥ (at least)", value: "nps_gte" },
+        { label: "≤ (at most)", value: "nps_lte" },
+        { label: "Between (inclusive)", value: "nps_between" }, // needs min/max
+      ];
+    }
     return base;
   };
 
   const summarizeRule = (rule) => {
     const conds = (rule.conditions || []).map((c, i) => {
-      const q =
+      const qTitle =
         questionOptions.find((qq) => qq.id === c.questionId)?.title ||
         c.questionId ||
         "—";
       const chain = i > 0 ? ` ${c.conditionLogic || "AND"} ` : "";
-      return `${chain}[${q}] ${c.operator} "${c.value}"`;
+
+      // NPS friendly text
+      if (questionsById[c.questionId]?.type === "nps") {
+        if (c.operator === "nps_is_promoter")
+          return `${chain}[${qTitle}] is Promoter (9–10)`;
+        if (c.operator === "nps_is_passive")
+          return `${chain}[${qTitle}] is Passive (7–8)`;
+        if (c.operator === "nps_is_detractor")
+          return `${chain}[${qTitle}] is Detractor (0–6)`;
+        if (c.operator === "nps_between")
+          return `${chain}[${qTitle}] between ${c.min}–${c.max}`;
+        if (c.operator === "nps_gte") return `${chain}[${qTitle}] ≥ ${c.value}`;
+        if (c.operator === "nps_lte") return `${chain}[${qTitle}] ≤ ${c.value}`;
+      }
+      // default
+      return `${chain}[${qTitle}] ${c.operator} "${c.value}"`;
     });
+
     const acts = (rule.actions || [])
       .map((a) => {
         if (a.type === "goto_block") {
@@ -301,9 +342,12 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
           const bt = blocksById[a.targetBlockId]?.title || a.targetBlockId;
           return `→ Go to ${bt} ▶︎ ${a.targetQuestionId || "(first)"}`;
         }
-        if (a.type === "goto_question") return `→ Go to question: ${a.questionId}`;
+        if (a.type === "goto_question")
+          return `→ Go to question: ${a.questionId}`;
         if (a.type === "skip_block") {
-          const names = (a.blockIds || []).map((id) => blocksById[id]?.title || id);
+          const names = (a.blockIds || []).map(
+            (id) => blocksById[id]?.title || id
+          );
           return `⤼ Skip blocks: ${names.join(", ") || "—"}`;
         }
         if (a.type === "skip_questions") {
@@ -460,7 +504,10 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                 {orphanRules.map((r) => (
                   <li key={r.ruleId}>
                     {r.name || r.ruleId} —{" "}
-                    <button className="underline" onClick={() => setEditingRule(r)}>
+                    <button
+                      className="underline"
+                      onClick={() => setEditingRule(r)}
+                    >
                       assign to a block
                     </button>
                   </li>
@@ -512,7 +559,9 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
             <details className="rounded border p-3 text-sm w-full">
               <summary className="cursor-pointer flex items-center gap-2 text-slate-700">
                 <Filter className="h-4 w-4" /> Test Answers{" "}
-                <span className="text-xs text-slate-500">(values used by conditions)</span>
+                <span className="text-xs text-slate-500">
+                  (values used by conditions)
+                </span>
               </summary>
 
               <div className="mt-3 grid sm:grid-cols-1 gap-3">
@@ -602,7 +651,9 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
 
               <div className="grid sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-500">Applies to Block</label>
+                  <label className="text-xs text-slate-500">
+                    Applies to Block
+                  </label>
                   <select
                     className="w-full border p-2 rounded"
                     value={editingRule.blockId}
@@ -637,6 +688,7 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                     type="number"
                     className="w-full border p-2 rounded"
                     value={editingRule.priority}
+                    onWheel={(e) => e.target.blur()}
                     onChange={(e) =>
                       setEditingRule({
                         ...editingRule,
@@ -652,7 +704,10 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                   type="checkbox"
                   checked={editingRule.enabled !== false}
                   onChange={(e) =>
-                    setEditingRule({ ...editingRule, enabled: e.target.checked })
+                    setEditingRule({
+                      ...editingRule,
+                      enabled: e.target.checked,
+                    })
                   }
                 />
                 Enabled
@@ -663,8 +718,22 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                 <h4 className="text-md font-medium">Conditions (If)</h4>
                 {editingRule.conditions.map((cond, index) => {
                   const allQs = questionsByBlock[editingRule.blockId] || [];
-                  const selectedQ = allQs.find((q) => q.id === cond.questionId) || null;
-
+                  const selectedQ =
+                    allQs.find((q) => q.id === cond.questionId) || null;
+                  if (selectedQ?.type === "nps") {
+                    if (
+                      cond.value !== "" &&
+                      (cond.value < 0 || cond.value > 10)
+                    ) {
+                      // clamp
+                      const copy = [...editingRule.conditions];
+                      copy[index].value = Math.max(
+                        0,
+                        Math.min(10, Number(cond.value))
+                      );
+                      setEditingRule({ ...editingRule, conditions: copy });
+                    }
+                  }
                   return (
                     <div
                       key={index}
@@ -712,7 +781,88 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                             ))}
                           </select>
 
-                          {selectedQ.options?.length ? (
+                          {/* NPS special inputs */}
+                          {selectedQ?.type === "nps" ? (
+                            <>
+                              {[
+                                "nps_is_promoter",
+                                "nps_is_passive",
+                                "nps_is_detractor",
+                              ].includes(cond.operator) ? (
+                                // no value needed
+                                <span className="text-xs text-slate-500 px-2 py-1 rounded bg-slate-50 border">
+                                  No value required
+                                </span>
+                              ) : cond.operator === "nps_between" ? (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={10}
+                                    className="border rounded p-1 w-20"
+                                    placeholder="Min"
+                                    value={cond.min ?? ""}
+                                    onWheel={(e) => e.target.blur()}
+                                    onChange={(e) => {
+                                      const copy = [...editingRule.conditions];
+                                      copy[index].min =
+                                        e.target.value === ""
+                                          ? ""
+                                          : Number(e.target.value);
+                                      setEditingRule({
+                                        ...editingRule,
+                                        conditions: copy,
+                                      });
+                                    }}
+                                  />
+                                  <span className="text-slate-500">to</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={10}
+                                    className="border rounded p-1 w-20"
+                                    placeholder="Max"
+                                    value={cond.max ?? ""}
+                                    onWheel={(e) => e.target.blur()}
+                                    onChange={(e) => {
+                                      const copy = [...editingRule.conditions];
+                                      copy[index].max =
+                                        e.target.value === ""
+                                          ? ""
+                                          : Number(e.target.value);
+                                      setEditingRule({
+                                        ...editingRule,
+                                        conditions: copy,
+                                      });
+                                    }}
+                                  />
+                                </div>
+                              ) : (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={10}
+                                  className="border rounded p-1 w-20"
+                                  placeholder="0–10"
+                                  value={cond.value}
+                                  onWheel={(e) => e.target.blur()}
+                                  onChange={(e) => {
+                                    const val =
+                                      e.target.value === ""
+                                        ? ""
+                                        : Number(e.target.value);
+                                    const copy = [...editingRule.conditions];
+                                    copy[index].value = val;
+                                    setEditingRule({
+                                      ...editingRule,
+                                      conditions: copy,
+                                    });
+                                  }}
+                                />
+                              )}
+                            </>
+                          ) : selectedQ.options?.length ? (
+                            // (keep your existing select for options questions)
                             <select
                               className="border p-2 rounded"
                               value={cond.value}
@@ -734,8 +884,10 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                             </select>
                           ) : (
                             <input
-                              className="border p-2 rounded"
-                              placeholder="Enter value"
+                              type={
+                                selectedQ.type === "number" ? "number" : "text"
+                              }
+                              className="border rounded p-1"
                               value={cond.value}
                               onChange={(e) => {
                                 const copy = [...editingRule.conditions];
@@ -773,7 +925,10 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                         onClick={() =>
                           setEditingRule((r) => ({
                             ...r,
-                            conditions: [...r.conditions, { ...emptyCondition }],
+                            conditions: [
+                              ...r.conditions,
+                              { ...emptyCondition },
+                            ],
                           }))
                         }
                       >
@@ -786,7 +941,9 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                           onClick={() =>
                             setEditingRule((r) => ({
                               ...r,
-                              conditions: r.conditions.filter((_, i) => i !== index),
+                              conditions: r.conditions.filter(
+                                (_, i) => i !== index
+                              ),
                             }))
                           }
                         >
@@ -816,10 +973,16 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                       }}
                     >
                       <option value="goto_block">Go To Block</option>
-                      <option value="goto_block_question">Go To Block → Question</option>
-                      <option value="goto_question">Go To Question (this block)</option>
+                      <option value="goto_block_question">
+                        Go To Block → Question
+                      </option>
+                      <option value="goto_question">
+                        Go To Question (this block)
+                      </option>
                       <option value="skip_block">Skip Blocks</option>
-                      <option value="skip_questions">Skip Questions (this block)</option>
+                      <option value="skip_questions">
+                        Skip Questions (this block)
+                      </option>
                       <option value="show_message">Show Message</option>
                       <option value="end">End Survey</option>
                     </select>
@@ -874,11 +1037,13 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                           disabled={!act.targetBlockId}
                         >
                           <option value="">Select Question</option>
-                          {(questionsByBlock[act.targetBlockId] || []).map((q) => (
-                            <option key={q.id} value={q.id}>
-                              {q.title}
-                            </option>
-                          ))}
+                          {(questionsByBlock[act.targetBlockId] || []).map(
+                            (q) => (
+                              <option key={q.id} value={q.id}>
+                                {q.title}
+                              </option>
+                            )
+                          )}
                         </select>
                       </>
                     )}
@@ -894,11 +1059,13 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                         }}
                       >
                         <option value="">Select Question</option>
-                        {(questionsByBlock[editingRule.blockId] || []).map((q) => (
-                          <option key={q.id} value={q.id}>
-                            {q.title}
-                          </option>
-                        ))}
+                        {(questionsByBlock[editingRule.blockId] || []).map(
+                          (q) => (
+                            <option key={q.id} value={q.id}>
+                              {q.title}
+                            </option>
+                          )
+                        )}
                       </select>
                     )}
 
@@ -908,9 +1075,9 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                         className="border p-2 rounded"
                         value={Array.isArray(act.blockIds) ? act.blockIds : []}
                         onChange={(e) => {
-                          const selected = Array.from(e.target.selectedOptions).map(
-                            (opt) => opt.value
-                          );
+                          const selected = Array.from(
+                            e.target.selectedOptions
+                          ).map((opt) => opt.value);
                           const copy = [...editingRule.actions];
                           copy[index].blockIds = selected;
                           setEditingRule({ ...editingRule, actions: copy });
@@ -928,21 +1095,25 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                       <select
                         multiple
                         className="border p-2 rounded"
-                        value={Array.isArray(act.questionIds) ? act.questionIds : []}
+                        value={
+                          Array.isArray(act.questionIds) ? act.questionIds : []
+                        }
                         onChange={(e) => {
-                          const selected = Array.from(e.target.selectedOptions).map(
-                            (opt) => opt.value
-                          );
+                          const selected = Array.from(
+                            e.target.selectedOptions
+                          ).map((opt) => opt.value);
                           const copy = [...editingRule.actions];
                           copy[index].questionIds = selected;
                           setEditingRule({ ...editingRule, actions: copy });
                         }}
                       >
-                        {(questionsByBlock[editingRule.blockId] || []).map((q) => (
-                          <option key={q.id} value={q.id}>
-                            {q.title}
-                          </option>
-                        ))}
+                        {(questionsByBlock[editingRule.blockId] || []).map(
+                          (q) => (
+                            <option key={q.id} value={q.id}>
+                              {q.title}
+                            </option>
+                          )
+                        )}
                       </select>
                     )}
 

@@ -11,9 +11,9 @@ class RedisClient:
     
     def __init__(self):
         """Initialize Redis client with configuration from environment"""
-        self.host = os.getenv("REDIS_HOST", "localhost")
-        self.port = int(os.getenv("REDIS_PORT", "6379"))
-        self.password = os.getenv("REDIS_PASSWORD", None)
+        self.host = os.getenv("REDIS_HOST", "redis-17179.c89.us-east-1-3.ec2.redns.redis-cloud.com")
+        self.port = int(os.getenv("REDIS_PORT", "17179"))
+        self.password = os.getenv("REDIS_PASSWORD", "t2N5re4xZn773qSiI1kTlyGwwyv1eWtT")
         self.db = int(os.getenv("REDIS_DB", "0"))
         self.socket_timeout = float(os.getenv("REDIS_SOCKET_TIMEOUT", "5.0"))
         self.socket_connect_timeout = float(os.getenv("REDIS_SOCKET_CONNECT_TIMEOUT", "5.0"))
