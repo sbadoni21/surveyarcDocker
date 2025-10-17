@@ -8,6 +8,7 @@ import {
   useSensor,
   useSensors,
   DragOverlay,
+  useDroppable,
 } from "@dnd-kit/core";
 import {
   arrayMove,
@@ -242,57 +243,79 @@ const SortableBlock = ({
       blockIndex={blockIndex}
       totalBlocks={totalBlocks}
     >
-      <SortableContext
-        items={block.questionOrder || []}
-        strategy={verticalListSortingStrategy}
-      >
-        {(block.questionOrder || []).map((qid, index) => {
-          // if the ID is a page break, render special divider
-          if (qid.startsWith("PB-")) {
-            return (
-              <div key={qid} className="my-3 text-center relative group">
-                <div className="border-t border-dashed border-gray-400 dark:border-gray-600 mb-2" />
-                <div className="text-xs text-gray-500 uppercase tracking-wider">
-                  Page Break
+      <Droppable id={block.blockId}>
+        <SortableContext
+          items={block.questionOrder || []}
+          strategy={verticalListSortingStrategy}
+        >
+          {(block.questionOrder || []).map((qid, index) => {
+            // if the ID is a page break, render special divider
+            if (qid.startsWith("PB-")) {
+              return (
+                <div key={qid} className="my-3 text-center relative group">
+                  <div className="border-t border-dashed border-gray-400 dark:border-gray-600 mb-2" />
+                  <div className="text-xs text-gray-500 uppercase tracking-wider">
+                    Page Break
+                  </div>
+                  <button
+                    className="absolute top-1/2 right-2 -translate-y-1/2 text-red-500 text-xs opacity-0 group-hover:opacity-100 transition"
+                    onClick={() => handleRemovePageBreak(block.blockId, qid)}
+                  >
+                    ✕
+                  </button>
                 </div>
-                <button
-                  className="absolute top-1/2 right-2 -translate-y-1/2 text-red-500 text-xs opacity-0 group-hover:opacity-100 transition"
-                  onClick={() => handleRemovePageBreak(block.blockId, qid)}
-                >
-                  ✕
-                </button>
-              </div>
+              );
+            }
+
+            // normal question
+            const q = questions.find((qq) => qq.questionId === qid);
+            if (!q) return null;
+
+            return (
+              <React.Fragment key={q.questionId}>
+                <SortableItem
+                  q={q}
+                  index={index}
+                  onDelete={() => onDeleteQuestion(q.questionId)}
+                  onSelect={() => onSelectQuestion(q.questionId)}
+                  isDragging={activeId === q.questionId}
+                />
+
+                {/* --- Add Page Break button BELOW each question --- */}
+                <div className="text-center mt-2 mb-4">
+                  <button
+                    onClick={() => handleAddPageBreak(block.blockId, index)}
+                    className="text-xs text-blue-500 hover:underline"
+                  >
+                    + Add Page Break
+                  </button>
+                </div>
+              </React.Fragment>
             );
-          }
-
-          // normal question
-          const q = questions.find((qq) => qq.questionId === qid);
-          if (!q) return null;
-
-          return (
-            <React.Fragment key={q.questionId}>
-              <SortableItem
-                q={q}
-                index={index}
-                onDelete={() => onDeleteQuestion(q.questionId)}
-                onSelect={() => onSelectQuestion(q.questionId)}
-                isDragging={activeId === q.questionId}
-              />
-
-              {/* --- Add Page Break button BELOW each question --- */}
-              <div className="text-center mt-2 mb-4">
-                <button
-                  onClick={() => handleAddPageBreak(block.blockId, index)}
-                  className="text-xs text-blue-500 hover:underline"
-                >
-                  + Add Page Break
-                </button>
-              </div>
-            </React.Fragment>
-          );
-        })}
-      </SortableContext>
+          })}
+        </SortableContext>
+        {(!block.questionOrder || block.questionOrder.length === 0) && (
+          <div className="text-xs text-slate-400 py-2 text-center">
+            Drop questions here
+          </div>
+        )}
+      </Droppable>
     </BlockContainer>
+  );
+};
+
+// Add once near the top-level of this file
+const Droppable = ({ id, children }) => {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      className={isOver ? "ring-2 ring-blue-400 rounded-md" : ""}
+      // helps empty blocks accept drops
+      style={{ minHeight: 12 }}
+    >
+      {children}
+    </div>
   );
 };
 
@@ -414,6 +437,7 @@ const DraggableQuestionsList = ({
         ...b,
         questionOrder: (next[b.blockId] || []).map((q) => q.questionId),
       }));
+      setRenderBlocks(newBlocks);
       await persistBlocks(newBlocks);
       return;
     }
@@ -449,39 +473,84 @@ const DraggableQuestionsList = ({
     await persistBlocks(newBlocks);
   };
 
+  const handleDragOver = (evt) => {
+  const { active, over } = evt;
+  if (!over) return;
+
+  const activeId = active.id; // question id
+  const overId = over.id;     // could be question id or block id
+
+  const fromBlockId = findContainerOfQuestion(activeId);
+  const toBlockId = findContainerOfQuestion(overId) || overId; // if over a block container
+
+  if (!fromBlockId || !toBlockId || fromBlockId === toBlockId) return;
+
+  const fromArr = byBlock[fromBlockId] || [];
+  const toArr = byBlock[toBlockId] || [];
+
+  const moving = fromArr.find((q) => q.questionId === activeId);
+  if (!moving) return;
+
+  // where in target?
+  const overIdx =
+    toArr.findIndex((q) => q?.questionId === overId) // if over a question
+  const targetIndex = overIdx === -1 ? toArr.length : overIdx;
+
+  const next = {
+    ...byBlock,
+    [fromBlockId]: fromArr.filter((q) => q.questionId !== activeId),
+    [toBlockId]: [
+      ...toArr.slice(0, targetIndex),
+      moving,
+      ...toArr.slice(targetIndex),
+    ],
+  };
+
+  setByBlock(next);
+
+  // keep SortableContext `items` (questionOrder) in sync immediately
+  const newBlocks = renderBlocks.map((b) => ({
+    ...b,
+    questionOrder: (next[b.blockId] || []).map((q) => q.questionId),
+  }));
+  setRenderBlocks(newBlocks);
+};
+
+
   // --- Page Break Handlers ---
-const handleAddPageBreak = async (blockId, index) => {
-  const newBlocks = renderBlocks.map((b) => {
-    if (b.blockId !== blockId) return b;
-    const newOrder = [...(b.questionOrder || [])];
-    newOrder.splice(index + 1, 0, `PB-${Date.now()}`);
-    return { ...b, questionOrder: newOrder };
-  });
+  const handleAddPageBreak = async (blockId, index) => {
+    const newBlocks = renderBlocks.map((b) => {
+      if (b.blockId !== blockId) return b;
+      const newOrder = [...(b.questionOrder || [])];
+      newOrder.splice(index + 1, 0, `PB-${Date.now()}`);
+      return { ...b, questionOrder: newOrder };
+    });
 
-  setRenderBlocks(newBlocks);
-  onBlocksChange?.(newBlocks);
+    setRenderBlocks(newBlocks);
+    onBlocksChange?.(newBlocks);
 
-  // ✅ persist to DB
-  await persistBlocks(newBlocks);
-};
+    // ✅ persist to DB
+    await persistBlocks(newBlocks);
+  };
 
-const handleRemovePageBreak = async (blockId, breakId) => {
-  const newBlocks = renderBlocks.map((b) =>
-    b.blockId === blockId
-      ? {
-          ...b,
-          questionOrder: (b.questionOrder || []).filter((id) => id !== breakId),
-        }
-      : b
-  );
+  const handleRemovePageBreak = async (blockId, breakId) => {
+    const newBlocks = renderBlocks.map((b) =>
+      b.blockId === blockId
+        ? {
+            ...b,
+            questionOrder: (b.questionOrder || []).filter(
+              (id) => id !== breakId
+            ),
+          }
+        : b
+    );
 
-  setRenderBlocks(newBlocks);
-  onBlocksChange?.(newBlocks);
+    setRenderBlocks(newBlocks);
+    onBlocksChange?.(newBlocks);
 
-  // ✅ persist to DB
-  await persistBlocks(newBlocks);
-};
-
+    // ✅ persist to DB
+    await persistBlocks(newBlocks);
+  };
 
   const handleDeleteQuestion = async (questionId) => {
     const confirmDelete = window.confirm("Delete this question?");
@@ -629,7 +698,9 @@ const handleRemovePageBreak = async (blockId, breakId) => {
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
+        // collisionDetection={rectIntersection}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
         {renderBlocks.map((block) => (
