@@ -34,7 +34,6 @@ export async function GET(req) {
   const org_id = searchParams.get("org_id");
   if (!org_id) return Response.json({ status: "error", message: "org_id is required" }, { status: 400 });
   const res = await fetch(`${BASE}/contacts?org_id=${encodeURIComponent(org_id)}`, { signal: AbortSignal.timeout(30000) });
-  console.log(res)
   return forceDecryptResponse(res);
 }
 

@@ -1,3 +1,4 @@
+// components/tickets/TicketForm.jsx
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -22,6 +23,9 @@ import SupportTeamModel from "@/models/postGresModels/supportTeamModel";
 import TeamSelect from "./TeamMultiSelect";
 import AgentSelect from "./AgentMultiSelect";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
+import { useTicketTaxonomies } from "@/providers/postGresPorviders/TicketTaxonomyProvider";
+import BizCalendarModel from "@/models/postGresModels/bizCalendarModel";
+import BusinessCalendarPreview from "./BusinessCalendarPreview";
 
 const ReactQuill = dynamic(() => import("react-quill-new"), { ssr: false });
 
@@ -31,6 +35,142 @@ const formatMinutes = (minutes) => {
   if (minutes < 1440) return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
   return `${Math.floor(minutes / 1440)}d ${Math.floor((minutes % 1440) / 60)}h`;
 };
+
+/* ----------------------- calendar helpers (safe & normalized) ----------------------- */
+
+// normalize BE calendar -> FE shape we expect
+// BE: hours: [{weekday, start_min, end_min}], holidays: [{date_iso, name}]
+const normalizeCalendar = (raw) => {
+  if (!raw) return null;
+  const hours = Array.isArray(raw.hours)
+    ? raw.hours.map(h => ({
+        weekday: typeof h.weekday === "number" ? h.weekday : h.day,
+        startMin: typeof h.start_min === "number" ? h.start_min : (h.startMin ?? 0),
+        endMin: typeof h.end_min === "number" ? h.end_min : (h.endMin ?? 0),
+      }))
+    : [];
+  const holidays = Array.isArray(raw.holidays)
+    ? raw.holidays.map(h => ({ dateIso: h.date_iso ?? h.dateIso, name: h.name }))
+    : [];
+
+  return {
+    calendarId: raw.calendar_id ?? raw.calendarId ?? raw.id ?? null,
+    name: raw.name,
+    timezone: raw.timezone ?? "UTC",
+    hours,
+    holidays,
+  };
+};
+
+const isHoliday = (dateObj, calendar) => {
+  // dateObj treated in UTC for simplicity
+  const y = dateObj.getUTCFullYear();
+  const m = String(dateObj.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(dateObj.getUTCDate()).padStart(2, "0");
+  const iso = `${y}-${m}-${d}`;
+  return (calendar?.holidays || []).some(h => h.dateIso === iso);
+};
+
+// Return array of working windows for weekday Mon=0..Sun=6, each as [startMin,endMin]
+const windowsForWeekday = (weekday, calendar) => {
+  const rows = (calendar?.hours || []).filter(h => h.weekday === weekday);
+  return rows.sort((a, b) => a.startMin - b.startMin).map(r => [r.startMin, r.endMin]);
+};
+
+// Move a Date (UTC) to the next working start
+const moveToNextWorkingStart = (dt, calendar) => {
+  for (let i = 0; i < 14; i++) { // 2-week hard cap to avoid infinite loop
+    const weekday = (dt.getUTCDay() + 6) % 7; // JS: 0=Sun..6=Sat -> 0=Mon..6=Sun
+    if (!isHoliday(dt, calendar)) {
+      const minsFromMidnight = dt.getUTCHours() * 60 + dt.getUTCMinutes();
+      const windows = windowsForWeekday(weekday, calendar);
+      for (const [start] of windows) {
+        if (minsFromMidnight < start) {
+          dt.setUTCHours(0, 0, 0, 0);
+          dt = new Date(dt.getTime() + start * 60 * 1000);
+          return dt;
+        }
+      }
+      // If currently inside a window, return now
+      for (const [start, end] of windows) {
+        if (minsFromMidnight >= start && minsFromMidnight < end) return dt;
+      }
+    }
+    // jump to next day midnight UTC
+    dt = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate() + 1, 0, 0, 0));
+  }
+  return dt;
+};
+
+// Add minutes respecting calendar hours & holidays (UTC-based, guarded)
+const addBusinessMinutes = (startISO, minutes, calendar) => {
+  if (!minutes || minutes <= 0) return startISO;
+
+  // Fallback: if no hours configured, treat as 24x7
+  const hasAnyHours = Array.isArray(calendar?.hours) && calendar.hours.length > 0;
+  if (!hasAnyHours) return new Date(new Date(startISO).getTime() + minutes * 60000).toISOString();
+
+  let dt = new Date(startISO);
+  dt = moveToNextWorkingStart(dt, calendar);
+
+  let remaining = minutes;
+  let safety = 0; // safety hard cap to avoid infinite loops
+
+  while (remaining > 0) {
+    safety++;
+    if (safety > 20000) {
+      console.warn("[addBusinessMinutes] safety cap reached; falling back to 24x7");
+      return new Date(new Date(startISO).getTime() + minutes * 60000).toISOString();
+    }
+
+    const weekday = (dt.getUTCDay() + 6) % 7;
+    const windows = isHoliday(dt, calendar) ? [] : windowsForWeekday(weekday, calendar);
+
+    if (!windows.length) {
+      // move to next workday start
+      dt = moveToNextWorkingStart(new Date(Date.UTC(
+        dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate() + 1, 0, 0, 0
+      )), calendar);
+      continue;
+    }
+
+    const minsFromMidnight = dt.getUTCHours() * 60 + dt.getUTCMinutes();
+
+    let advancedToday = false;
+
+    for (const [start, end] of windows) {
+      let nowMins = dt.getUTCHours() * 60 + dt.getUTCMinutes();
+
+      if (nowMins < start) {
+        // jump forward to start
+        dt.setUTCHours(0, 0, 0, 0);
+        dt = new Date(dt.getTime() + start * 60 * 1000);
+        nowMins = start;
+      }
+
+      if (nowMins >= start && nowMins < end) {
+        const cap = end - nowMins;
+        const take = Math.min(cap, remaining);
+        dt = new Date(dt.getTime() + take * 60 * 1000);
+        remaining -= take;
+        advancedToday = true;
+        if (remaining === 0) break; // done today
+        // else try next window today
+      }
+    }
+
+    if (!advancedToday && remaining > 0) {
+      // move to next day
+      dt = moveToNextWorkingStart(new Date(Date.UTC(
+        dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate() + 1, 0, 0, 0
+      )), calendar);
+    }
+  }
+
+  return dt.toISOString();
+};
+
+/* ------------------------------------------------------------------------------------ */
 
 export default function TicketForm({
   open,
@@ -47,12 +187,14 @@ export default function TicketForm({
   const [stagedUploads, setStagedUploads] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [loadingTeamMembers, setLoadingTeamMembers] = useState(false);
+  const [teamCalendar, setTeamCalendar] = useState(null);
 
   // Providers
   const { slasByOrg, listSLAs } = useSLA();
   const { getCachedTags, list: listTags } = useTags();
   const { listCategories, listProducts } = useTicketCategories();
   const { getUsersByIds } = useUser();
+  const { listFeatures, listImpacts, listRootCauses } = useTicketTaxonomies();
 
   // Load data on mount
   useEffect(() => {
@@ -62,11 +204,19 @@ export default function TicketForm({
       listTags({ orgId }),
       listCategories(orgId),
       listProducts(orgId),
+      listFeatures(orgId),
+      listImpacts(orgId),
+      listRootCauses(orgId),
     ]).catch(console.error);
-  }, [orgId, listSLAs, listTags, listCategories, listProducts]);
+  }, [orgId, listSLAs, listTags, listCategories, listProducts, listFeatures, listImpacts, listRootCauses]);
 
   const [form, setForm] = useState(() => ({
     subject: initial?.subject || "",
+    featureId: initial?.featureId || "",
+    impactId: initial?.impactId || "",
+    rcaId: initial?.rcaId || "",
+    rcaNote: initial?.rcaNote || "",
+
     description: initial?.description || "",
     queueOwned: Boolean(!initial?.assigneeId && initial?.groupId),
     groupId: initial?.groupId || "",
@@ -84,15 +234,52 @@ export default function TicketForm({
     firstResponseDueAt: initial?.firstResponseDueAt || "",
     resolutionDueAt: initial?.resolutionDueAt || "",
     tagIds: Array.isArray(initial?.tags)
-      ? initial.tags
-          .map((t) => (typeof t === "string" ? t : t.tag_id ?? t.tagId))
-          .filter(Boolean)
+      ? initial.tags.map((t) => (typeof t === "string" ? t : t.tag_id ?? t.tagId)).filter(Boolean)
       : [],
     collaboratorIds: initial?.collaboratorIds || [],
   }));
 
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const isQueueOwned = form.queueOwned === true;
+
+  /* --------------------- ALWAYS fetch team’s BizCalendar by calendarId --------------------- */
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      setTeamCalendar(null);
+      if (!form.teamId) return;
+
+      try {
+        const team = await SupportTeamModel.get(form.teamId);
+
+        // Derive calendarId safely
+        const calId =
+          team?.calendarId ??
+          team?.calendar_id ??
+          team?.calendar?.calendarId ??
+          team?.calendar?.calendar_id ??
+          team?.teamCalendar?.calendarId ??
+          team?.teamCalendar?.calendar_id;
+
+        if (!calId) {
+          if (mounted) setTeamCalendar(null);
+          return;
+        }
+
+        const rawCal = await BizCalendarModel.get(calId);
+        const cal = normalizeCalendar(rawCal);
+        if (mounted) setTeamCalendar(cal);
+      } catch (e) {
+        console.error("Failed to load team/calendar:", e);
+        if (mounted) setTeamCalendar(null);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [form.teamId]);
 
   // Clear team and agent when group changes
   useEffect(() => {
@@ -118,33 +305,29 @@ export default function TicketForm({
         return;
       }
 
-      if (mounted) setLoadingTeamMembers(true);
-
+      setLoadingTeamMembers(true);
       try {
-        // Get team membership rows
         const members = await SupportTeamModel.listMembers(form.teamId);
-        const ids = (members || [])
-          .map((m) => m.user_id ?? m.userId ?? m.uid)
-          .filter(Boolean);
-
-        if (ids.length === 0) {
+        const ids = (members || []).map((m) => m.user_id ?? m.userId ?? m.uid).filter(Boolean);
+        if (!ids.length) {
           if (mounted) {
             setTeamMembers([]);
             setLoadingTeamMembers(false);
           }
           return;
         }
-
-        // Hydrate with user profiles
         const profiles = await getUsersByIds(ids);
-
-        // Normalize for AgentSelect
         const normalized = profiles.map((u) => ({
           userId: u.user_id ?? u.userId ?? u.uid,
-          displayName: u.display_name ?? u.displayName ?? u.full_name ?? u.name ?? u.email ?? (u.user_id ?? u.userId ?? u.uid),
+          displayName:
+            u.display_name ??
+            u.displayName ??
+            u.full_name ??
+            u.name ??
+            u.email ??
+            (u.user_id ?? u.userId ?? u.uid),
           email: u.email,
         }));
-
         if (mounted) {
           setTeamMembers(normalized);
           setLoadingTeamMembers(false);
@@ -174,8 +357,8 @@ export default function TicketForm({
   });
 
   const availableTagOptions = getCachedTags(orgId) || [];
-
   const selectedSLA = availableSLAOptions.find((s) => s.sla_id === form.slaId);
+
   const hasPriorityMap =
     selectedSLA?.rules?.priority_map && Object.keys(selectedSLA.rules.priority_map).length > 0;
   const hasSeverityMap =
@@ -194,42 +377,78 @@ export default function TicketForm({
 
   const firstResponseTime = selectedSLA?.first_response_minutes;
 
-  // Helper to calculate SLA due dates
-  const calculateDueDate = (minutes) => {
-    if (!minutes) return null;
-    const now = new Date();
-    const due = new Date(now.getTime() + minutes * 60000);
-    return due.toISOString();
-  };
+  /* -------------------- async, non-blocking SLA due date computation -------------------- */
+  const [computedDue, setComputedDue] = useState({
+    first: null,
+    resolution: null,
+    computing: false,
+    error: null,
+  });
 
-  // Calculate display dates for SLA targets
-  const calculatedFirstResponseDue = useMemo(() => {
-    if (!selectedSLA?.sla_id || !firstResponseTime) return null;
-    const dueDate = calculateDueDate(firstResponseTime);
-    console.log('First Response Due:', dueDate);
-    return dueDate;
-  }, [selectedSLA?.sla_id, firstResponseTime]);
-
-  const calculatedResolutionDue = useMemo(() => {
-    if (!selectedSLA?.sla_id || !currentResolutionTime) return null;
-    const dueDate = calculateDueDate(currentResolutionTime);
-    console.log('Resolution Due:', dueDate);
-    return dueDate;
-  }, [selectedSLA?.sla_id, currentResolutionTime]);
-
-  // Auto-fill form fields with calculated dates
   useEffect(() => {
-    if (calculatedFirstResponseDue) {
-      setForm((f) => ({ ...f, firstResponseDueAt: calculatedFirstResponseDue }));
+    let cancelled = false;
+
+    if (!selectedSLA?.sla_id) {
+      setComputedDue({ first: null, resolution: null, computing: false, error: null });
+      return;
     }
-    if (calculatedResolutionDue) {
-      setForm((f) => ({ 
-        ...f, 
-        resolutionDueAt: calculatedResolutionDue,
-        dueAt: calculatedResolutionDue // Also set main dueAt
+
+    const first = firstResponseTime;
+    const res = currentResolutionTime;
+
+    if (!first && !res) {
+      setComputedDue({ first: null, resolution: null, computing: false, error: null });
+      return;
+    }
+
+    setComputedDue((prev) => ({ ...prev, computing: true, error: null }));
+
+    const id = setTimeout(() => {
+      try {
+        const nowISO = new Date().toISOString();
+        const useBiz = Boolean(form.teamId && teamCalendar?.hours?.length);
+
+        // fast-path for absurdly large SLAs
+        const calc = (minutes) => {
+          if (!minutes) return null;
+          if (!useBiz) return new Date(Date.now() + minutes * 60000).toISOString();
+          if (minutes > 100000) return new Date(Date.now() + minutes * 60000).toISOString();
+          return addBusinessMinutes(nowISO, minutes, teamCalendar);
+        };
+
+        const next = {
+          first: first ? calc(first) : null,
+          resolution: res ? calc(res) : null,
+          computing: false,
+          error: null,
+        };
+
+        if (!cancelled) setComputedDue(next);
+      } catch (e) {
+        console.error("[SLA calc] failed:", e);
+        if (!cancelled) setComputedDue((prev) => ({ ...prev, computing: false, error: String(e?.message || e) }));
+      }
+    }, 0); // yield to paint
+
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
+  }, [selectedSLA?.sla_id, firstResponseTime, currentResolutionTime, form.teamId, teamCalendar]);
+
+  // Auto-fill form fields with computed due dates
+  useEffect(() => {
+    if (computedDue.first) {
+      setForm((f) => ({ ...f, firstResponseDueAt: computedDue.first }));
+    }
+    if (computedDue.resolution) {
+      setForm((f) => ({
+        ...f,
+        resolutionDueAt: computedDue.resolution,
+        dueAt: computedDue.resolution,
       }));
     }
-  }, [calculatedFirstResponseDue, calculatedResolutionDue]);
+  }, [computedDue.first, computedDue.resolution]);
 
   // Validation
   const validations = {
@@ -262,40 +481,29 @@ export default function TicketForm({
         subcategoryId: form.subcategoryId || null,
         productId: form.productId || null,
         slaId: safeSlaId,
-        sla_processing: safeSlaId ? {
-          sla_mode: form.slaMode,
-          calendar_id: selectedSLA?.calendar_id || null,
-          first_response_due_at: calculatedFirstResponseDue,
-          resolution_due_at: calculatedResolutionDue,
-        } : null,
-        dueAt: calculatedResolutionDue || (form.dueAt && form.dueAt.trim()) || null,
-        firstResponseDueAt: calculatedFirstResponseDue || null,
-        resolutionDueAt: calculatedResolutionDue || null,
+        featureId: form.featureId || null,
+        impactId: form.impactId || null,
+        rcaId: form.rcaId || null,
+        rcaNote: form.rcaNote || null,
+        sla_processing: safeSlaId
+          ? {
+              sla_mode: form.slaMode,
+              calendar_id:
+                teamCalendar?.calendarId ??
+                teamCalendar?.calendar_id ??
+                selectedSLA?.calendar_id ??
+                null,
+              first_response_due_at: computedDue.first || null,
+              resolution_due_at: computedDue.resolution || null,
+            }
+          : null,
+        dueAt: computedDue.resolution || (form.dueAt && form.dueAt.trim()) || null,
+        firstResponseDueAt: computedDue.first || null,
+        resolutionDueAt: computedDue.resolution || null,
         slaMode: form.slaMode,
         tags: form.tagIds?.length ? form.tagIds : undefined,
         collaboratorIds: form.collaboratorIds || [],
       };
-
-      console.log('=== SUBMITTING TICKET ===');
-      console.log('SLA ID:', safeSlaId);
-      console.log('Selected SLA Object:', selectedSLA);
-      console.log('SLA Mode:', form.slaMode);
-      console.log('Priority:', form.priority);
-      console.log('Severity:', form.severity);
-      console.log('First Response Time (minutes):', firstResponseTime);
-      console.log('Current Resolution Time (minutes):', currentResolutionTime);
-      console.log('Calculated First Response Due:', calculatedFirstResponseDue);
-      console.log('Calculated Resolution Due:', calculatedResolutionDue);
-      console.log('Has Priority Map:', hasPriorityMap);
-      console.log('Has Severity Map:', hasSeverityMap);
-      if (selectedSLA?.rules?.severity_map) {
-        console.log('Severity Map:', selectedSLA.rules.severity_map);
-      }
-      if (selectedSLA?.rules?.priority_map) {
-        console.log('Priority Map:', selectedSLA.rules.priority_map);
-      }
-      console.log('Full Payload:', JSON.stringify(payload, null, 2));
-      console.log('========================');
 
       const created = await onSubmit(payload);
       const ticketId = created?.ticketId ?? created?.ticket_id;
@@ -327,6 +535,10 @@ export default function TicketForm({
         teamId: "",
         agentId: "",
         assigneeId: "",
+        featureId: "",
+        impactId: "",
+        rcaId: "",
+        rcaNote: "",
         categoryId: "",
         subcategoryId: "",
         productId: "",
@@ -359,7 +571,6 @@ export default function TicketForm({
   ];
 
   const handleNext = () => {
-    console.log(form)
     if (activeStep < steps.length - 1) {
       setActiveStep((s) => s + 1);
     }
@@ -492,12 +703,12 @@ export default function TicketForm({
                     loading={loadingTeamMembers}
                     placeholder={form.teamId ? "Select an agent" : "Select a team first"}
                     helperText={
-                      loadingTeamMembers 
-                        ? "Loading team members..." 
+                      loadingTeamMembers
+                        ? "Loading team members..."
                         : form.teamId && teamMembers.length === 0
                         ? "No members found in this team"
-                        : form.teamId 
-                        ? undefined 
+                        : form.teamId
+                        ? undefined
                         : "Select a team first to see available members"
                     }
                   />
@@ -512,12 +723,8 @@ export default function TicketForm({
           <div className="bg-white border border-gray-200 rounded-lg p-6">
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-gray-700">
-                  Categorize the Issue
-                </h3>
-                <span className="text-xs text-gray-500">
-                  Select category, subcategory, and affected product
-                </span>
+                <h3 className="text-sm font-medium text-gray-700">Categorize the Issue</h3>
+                <span className="text-xs text-gray-500">Select category, subcategory, and affected product</span>
               </div>
 
               <CategorySelector
@@ -525,19 +732,25 @@ export default function TicketForm({
                 value={{
                   category: form.categoryId,
                   subcategory: form.subcategoryId,
-                  product: form.productId
+                  product: form.productId,
+                  featureId: form.featureId,
+                  impactId: form.impactId,
+                  rcaId: form.rcaId,
+                  rcaNote: form.rcaNote,
                 }}
                 onChange={(categoryId) => {
                   update("categoryId", categoryId);
-                  if (categoryId !== form.categoryId) {
-                    update("subcategoryId", "");
-                  }
+                  if (categoryId !== form.categoryId) update("subcategoryId", "");
                 }}
+                onFeatureChange={(featureId) => update("featureId", featureId)}
+                onImpactChange={(impactId) => update("impactId", impactId)}
+                onRCAChange={(rcaId) => update("rcaId", rcaId)}
+                onRCANoteChange={(note) => update("rcaNote", note)}
                 onSubcategoryChange={(subcategoryId) => update("subcategoryId", subcategoryId)}
                 onProductChange={(productId) => update("productId", productId)}
               />
 
-              {(form.categoryId || form.subcategoryId || form.productId) && (
+              {(form.categoryId || form.subcategoryId || form.productId || form.featureId || form.impactId || form.rcaId) && (
                 <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
                   <p className="text-xs font-medium text-gray-700 mb-2">Selected Classification:</p>
                   <div className="flex flex-wrap gap-2">
@@ -554,6 +767,21 @@ export default function TicketForm({
                     {form.productId && (
                       <span className="inline-flex items-center px-3 py-1 bg-purple-100 text-purple-800 text-sm font-medium rounded-full">
                         {form.productId}
+                      </span>
+                    )}
+                    {form.featureId && (
+                      <span className="inline-flex items-center px-3 py-1 bg-amber-100 text-amber-800 text-sm font-medium rounded-full">
+                        Feature: {form.featureId}
+                      </span>
+                    )}
+                    {form.impactId && (
+                      <span className="inline-flex items-center px-3 py-1 bg-pink-100 text-pink-800 text-sm font-medium rounded-full">
+                        Impact: {form.impactId}
+                      </span>
+                    )}
+                    {form.rcaId && (
+                      <span className="inline-flex items-center px-3 py-1 bg-slate-100 text-slate-800 text-sm font-medium rounded-full">
+                        RCA: {form.rcaId}
                       </span>
                     )}
                   </div>
@@ -604,8 +832,16 @@ export default function TicketForm({
                   )}
                 </div>
 
+                <div className="mt-4">
+                  {teamCalendar?.hours?.length ? (
+                    <BusinessCalendarPreview calendar={teamCalendar} />
+                  ) : (
+                    <div className="text-xs text-gray-500">No team calendar attached.</div>
+                  )}
+                </div>
+
                 {(hasPriorityMap || hasSeverityMap) && (
-                  <div className="space-y-2">
+                  <div className="space-y-2 mt-4">
                     <label className="block text-sm font-medium text-gray-700">Resolution Time Calculation</label>
                     <div className="flex space-x-4">
                       <label className="flex items-center">
@@ -705,49 +941,52 @@ export default function TicketForm({
               )}
             </div>
 
-            {selectedSLA && currentResolutionTime && (
-              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                <h4 className="text-sm font-medium text-green-900 mb-3">Active SLA Targets</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {firstResponseTime && (
-                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <div className="text-xs text-blue-600 font-medium">First Response</div>
-                      <div className="text-lg font-bold text-blue-700">
-                        {formatMinutes(firstResponseTime)}
-                      </div>
+            {selectedSLA && (
+              <div className="mt-2 flex flex-wrap gap-2 items-center">
+                {form.teamId && teamCalendar?.hours?.length ? (
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    Calendar applied • {teamCalendar.timezone || "UTC"}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700 border border-gray-200">
+                    No calendar • straight minutes
+                  </span>
+                )}
+                {computedDue.computing && (
+                  <span className="text-[11px] text-gray-500">calculating…</span>
+                )}
+                {computedDue.error && (
+                  <span className="text-[11px] text-red-600">SLA math error: {computedDue.error}</span>
+                )}
+              </div>
+            )}
+
+            {selectedSLA && (computedDue.first || computedDue.resolution) && (
+              <div className="p-4 bg-green-50 border border-green-200 rounded-lg mt-3">
+                <h4 className="text-sm font-medium text-green-900 mb-3">Calculated Due Dates</h4>
+                <div className="space-y-2 text-sm">
+                  {computedDue.first && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-700">First Response Due:</span>
+                      <span className="font-medium text-blue-700">
+                        {new Date(computedDue.first).toLocaleString()}
+                      </span>
                     </div>
                   )}
-                  <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                    <div className="text-xs text-orange-600 font-medium">Resolution Target</div>
-                    <div className="text-lg font-bold text-orange-700">
-                      {formatMinutes(currentResolutionTime)}
+                  {computedDue.resolution && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-700">Resolution Due:</span>
+                      <span className="font-medium text-orange-700">
+                        {new Date(computedDue.resolution).toLocaleString()}
+                      </span>
                     </div>
-                  </div>
+                  )}
                 </div>
-
-                {(calculatedFirstResponseDue || calculatedResolutionDue) && (
-                  <div className="mt-3 pt-3 border-t border-green-300">
-                    <h5 className="text-xs font-medium text-green-800 mb-2">Calculated Due Dates:</h5>
-                    <div className="space-y-2 text-sm">
-                      {calculatedFirstResponseDue && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-700">First Response Due:</span>
-                          <span className="font-medium text-blue-700">
-                            {new Date(calculatedFirstResponseDue).toLocaleString()}
-                          </span>
-                        </div>
-                      )}
-                      {calculatedResolutionDue && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-700">Resolution Due:</span>
-                          <span className="font-medium text-orange-700">
-                            {new Date(calculatedResolutionDue).toLocaleString()}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
+                <p className="mt-2 text-[11px] text-gray-500">
+                  {form.teamId && teamCalendar?.hours?.length
+                    ? "Due times account for team working hours and holidays."
+                    : "Due times are calculated in real elapsed minutes (24×7)."}
+                </p>
               </div>
             )}
 
@@ -788,9 +1027,7 @@ export default function TicketForm({
               orgId={orgId}
               ticketId={null}
               currentUserId={currentUserId}
-              onFilesUploaded={(uploaded) => {
-                setStagedUploads((prev) => [...prev, ...uploaded]);
-              }}
+              onFilesUploaded={(uploaded) => setStagedUploads((prev) => [...prev, ...uploaded])}
               maxFiles={10}
             />
             {stagedUploads.length > 0 && (
@@ -815,9 +1052,7 @@ export default function TicketForm({
                 label="Select tags"
                 placeholder="Search and select tags..."
               />
-              <p className="text-sm text-gray-500">
-                {availableTagOptions.length} tags available
-              </p>
+              <p className="text-sm text-gray-500">{availableTagOptions.length} tags available</p>
             </div>
 
             <div className="space-y-2">

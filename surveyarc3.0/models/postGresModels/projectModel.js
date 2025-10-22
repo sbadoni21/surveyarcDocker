@@ -92,7 +92,6 @@ async getAll(orgId) {
   },
 
   async update(orgId, projectId, patch) {
-    console.log(patch)
     const res = await fetch(`${BASE}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

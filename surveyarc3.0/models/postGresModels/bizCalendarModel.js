@@ -10,7 +10,7 @@ const safeJson = async (res) => {
 };
 
 const BizCalendarModel = {
-  async list({ orgId, active = true } = {}) {
+  async list({ orgId, active  } = {}) {
     const params = new URLSearchParams({ org_id: orgId });
     if (active !== undefined) params.set("active", String(active));
     const res = await fetch(`${BASE}?${params.toString()}`, { cache: "no-store" });
@@ -23,7 +23,6 @@ const BizCalendarModel = {
   },
 
   async create(payload) {
-    console.log(payload)
     const res = await fetch(BASE, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

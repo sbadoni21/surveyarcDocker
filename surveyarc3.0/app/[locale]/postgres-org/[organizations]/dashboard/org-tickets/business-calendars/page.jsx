@@ -237,7 +237,6 @@ export default function BusinessCalendarsPage() {
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default", pb: 4 }}>
       <Container maxWidth="2xl" sx={{ pt: 3 }}>
         <Stack spacing={3}>
-          {/* Header */}
           <Box
             sx={{
               background: `linear-gradient(135deg, ${alpha(
@@ -259,8 +258,8 @@ export default function BusinessCalendarsPage() {
               <Stack direction="row" alignItems="center" spacing={2}>
                 <Box
                   sx={{
-                    width: 56,
-                    height: 56,
+                    width: 90,
+                    height: 90,
                     borderRadius: 2,
                     display: "flex",
                     alignItems: "center",

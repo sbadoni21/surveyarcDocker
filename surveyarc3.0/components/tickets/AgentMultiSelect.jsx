@@ -24,7 +24,6 @@ export default function AgentSelect({
       label: option.displayName || option.display_name || option.name || option.email || option.userId || option.uid || option.user_id
     };
   });
-console.log(options)
   return (
     
     <div className="space-y-2">

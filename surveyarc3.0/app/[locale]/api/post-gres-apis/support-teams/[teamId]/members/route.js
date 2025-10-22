@@ -44,7 +44,6 @@ async function forceDecryptResponse(res) {
 
 export async function GET(req, { params }) {
   const { teamId } = await params;
-  console.log("Fetching members for team:", teamId);
   
   try {
     const res = await fetch(`${BASE}/support-teams/${encodeURIComponent(teamId)}/members`, {
@@ -64,7 +63,6 @@ export async function POST(req, { params }) {
   const { teamId } = await params;
   try {
     const raw = await req.json(); // { user_id, role?, proficiency?, weekly_capacity_minutes? }
-        console.log(raw)
 
     const payload = ENC ? await encryptPayload(raw) : raw;
 

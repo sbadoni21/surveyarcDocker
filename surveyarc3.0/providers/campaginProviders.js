@@ -17,7 +17,6 @@ export const CampaignProvider = ({ children }) => {
   const loadProjectCampaigns = async (projectId) => {
     if (!model) return [];
     const docs = await model.getByProject(projectId);
-    console.log(docs.toString)
     setCampaigns((prev) => {
       const next = { ...prev };
       docs.forEach((d) => {

@@ -130,6 +130,24 @@ class Ticket(Base):
     severity: Mapped[TicketSeverity] = mapped_column(ticket_severity_enum, default=TicketSeverity.sev4,  index=True, nullable=False)
 
     requester_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+        # ▶ ADD: fine-grained classification
+    feature_id:  Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("ticket_features.feature_id", ondelete="SET NULL"),
+        index=True, nullable=True
+    )
+    impact_id:   Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("ticket_impact_areas.impact_id", ondelete="SET NULL"),
+        index=True, nullable=True
+    )
+
+    # ▶ ADD: post-resolution root cause (Problem Management)
+    rca_id:      Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("ticket_root_cause_types.rca_id", ondelete="SET NULL"),
+        index=True, nullable=True
+    )
+    rca_note:    Mapped[Optional[str]] = mapped_column(Text, nullable=True)             # free text summary
+    rca_set_by:  Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
+    rca_set_at:  Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # SINGLE assignee per ticket
     assignee_id:  Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
@@ -172,6 +190,10 @@ class Ticket(Base):
     watchers = relationship("TicketWatcher", back_populates="ticket", cascade="all, delete-orphan")
     events   = relationship("TicketEvent", back_populates="ticket", cascade="all, delete-orphan")
     sla_status = relationship("TicketSLAStatus", uselist=False, back_populates="ticket", cascade="all, delete-orphan")
+    # ▶ ADD: ORM relationships (read-only; no cascade)
+    feature      = relationship("TicketFeature", viewonly=True)
+    impact_area  = relationship("TicketImpactArea", viewonly=True)
+    root_cause   = relationship("TicketRootCauseType", viewonly=True)
 
     category_id:    Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
     subcategory_id: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
@@ -181,6 +203,10 @@ class Ticket(Base):
         Index("ix_ticket_org_assignee", "org_id", "assignee_id"),
         Index("ix_ticket_org_team", "org_id", "team_id"),
         Index("ix_ticket_org_agent", "org_id", "agent_id"),
+        Index("ix_ticket_org_feature", "org_id", "feature_id"),
+        Index("ix_ticket_org_impact", "org_id", "impact_id"),
+        Index("ix_ticket_org_rca", "org_id", "rca_id"),
+
         UniqueConstraint("org_id", "number", name="uq_ticket_org_number"),
     )
 

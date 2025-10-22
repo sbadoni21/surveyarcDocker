@@ -90,7 +90,6 @@ const TicketCategoryModel = {
   },
 
   async createCategory(body) {
-    console.log(body)
     if (!body.name || !body.orgId) {
       throw new Error("Name and orgId are required");
     }

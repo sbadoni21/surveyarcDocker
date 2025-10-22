@@ -36,6 +36,9 @@ from ..models.tickets import (
     TicketPriority,
     TicketSeverity,
 )
+from ..models.ticket_taxonomies import TicketFeature, TicketImpactArea, TicketRootCauseType  # ▶ ADD
+from ..schemas.tickets import RootCauseSet  # ▶ ADD (if you added the schema)
+
 from ..schemas.tickets import WorklogCreate, WorklogOut
 from ..policies.tickets import can_view_ticket, can_edit_ticket
 from ..models.ticket_categories import TicketCategory, TicketSubcategory
@@ -52,6 +55,7 @@ from ..models.tickets import (
     AssignTeamBody,
     AssignAgentBody,
 )
+
 from ..schemas.tickets import (
     TicketCreate,
     TicketUpdate,
@@ -433,6 +437,11 @@ def list_tickets(
     limit: int = Query(50, ge=1, le=200),
     group_id: Optional[str] = Query(None),
     offset: int = Query(0, ge=0),
+        # ▶ ADD these:
+    product_id: Optional[str] = Query(None),
+    feature_id: Optional[str] = Query(None),
+    impact_id: Optional[str] = Query(None),
+    rca_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
     """
@@ -480,6 +489,15 @@ def list_tickets(
         stmt = stmt.where(Ticket.agent_id == agent_id)
     if group_id:
         stmt = stmt.where(Ticket.group_id == group_id)
+    if product_id:
+        stmt = stmt.where(Ticket.product_id == product_id)
+    if feature_id:
+        stmt = stmt.where(Ticket.feature_id == feature_id)
+    if impact_id:
+        stmt = stmt.where(Ticket.impact_id == impact_id)
+    if rca_id:
+        stmt = stmt.where(Ticket.rca_id == rca_id)
+
     if q:
         like = f"%{q.lower()}%"
         stmt = stmt.where(func.lower(Ticket.subject).like(like))
@@ -678,6 +696,37 @@ def delete_ticket(ticket_id: str, db: Session = Depends(get_db)):
 
     return None
 
+@router.post("/{ticket_id}/root-cause", response_model=TicketOut, status_code=200)
+def set_root_cause(ticket_id: str, payload: RootCauseSet, db: Session = Depends(get_db)):
+    """
+    Set/override Root Cause Type for a resolved/closed ticket.
+    Also stores who confirmed it and when.
+    """
+    t = db.get(Ticket, ticket_id)
+    if not t:
+        raise HTTPException(404, "Ticket not found")
+
+    # Validate RCA belongs to same org
+    rca = db.get(TicketRootCauseType, payload.rca_id)
+    if not rca or rca.org_id != t.org_id or not rca.active:
+        raise HTTPException(400, "Invalid or inactive root cause for this org")
+
+    t.rca_id = payload.rca_id
+    t.rca_note = payload.rca_note
+    t.rca_set_by = payload.confirmed_by
+    t.rca_set_at = payload.confirmed_at or datetime.utcnow()
+
+    # It’s common to require the ticket be resolved/closed; uncomment if you want to enforce:
+    # if t.status not in (TicketStatus.resolved, TicketStatus.closed):
+    #     raise HTTPException(409, "Root cause can only be set when ticket is resolved/closed")
+
+    db.commit()
+    db.refresh(t)
+
+    dto = TicketOut.model_validate(t, from_attributes=True)
+    RedisTicketService.cache_ticket(dto)
+    RedisTicketService.invalidate_org_lists_and_counts(t.org_id)
+    return dto
 
 # ---------------------------------------------------------------------
 # Counts

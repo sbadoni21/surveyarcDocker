@@ -43,7 +43,6 @@ const SLAModel = {
     return ok(r);
   },
   async pause(ticketId, payload = {}) {
-    console.log("sendig",ticketId)
     const r = await fetch(SLAEndpoints.ticket.pause(ticketId), {
       method: "POST",
       headers: { "Content-Type": "application/json" },

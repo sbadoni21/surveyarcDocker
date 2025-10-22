@@ -28,3 +28,4 @@ def init_models():
     from .support import SupportGroupMember, GroupMemberRole, ProficiencyLevel, SupportGroup, SupportTeam
     from .sla import SLA, SLADimension, SLAPauseWindow
     from .business_calendar import BusinessCalendar, BusinessCalendarHour, BusinessCalendarHoliday
+    from .ticket_taxonomies import TicketFeature, TicketImpactArea, TicketRootCauseType

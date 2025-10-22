@@ -119,7 +119,6 @@ const SupportTeamModel = {
     if (!body.name || !body.orgId || !body.groupId) {
       throw new Error("Name, orgId, and groupId are required");
     }
-    console.log(body)
     const payload = toApiFormat(body);
     const r = await fetch(BASE, { 
       method: "POST", 
@@ -153,15 +152,12 @@ const SupportTeamModel = {
 
   async listMembers(teamId) {
     if (!teamId) throw new Error("Team ID is required");
-    console.log("Fetching members for team:", teamId);
     const r = await fetch(`${BASE}/${encodeURIComponent(teamId)}/members`, { cache: "no-store" });
     const members = await json(r);
-    console.log(members)
     return Array.isArray(members) ? members.map(memberToCamel) : [];
   },
 
   async addMember(teamId, body) {
-    console.log(teamId, body)
     if (!teamId) throw new Error("Team ID is required");
     if (!body.user_id) throw new Error("User ID is required");
     

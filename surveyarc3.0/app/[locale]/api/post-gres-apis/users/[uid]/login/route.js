@@ -7,7 +7,6 @@ export async function POST(req, { params }) {
   const { uid } = await params;
   
   try {
-    console.log("Login request for uid:", uid);
     
     const res = await fetch(`${BASE}/users/${uid}/login`, {
       method: "POST",

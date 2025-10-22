@@ -76,7 +76,6 @@ const {
 useEffect(() => {
   if (!orgId || !projectId) return;
   getAllSurveys(orgId, projectId);
-  console.log(surveys)
 }, [orgId, projectId]);
 
 // count responses using API
@@ -192,7 +191,6 @@ const handleResponseCountClick = async (surveyId) => {
   const handleSubmit = async () => {
     if (!name.trim()) return alert("Please enter a survey name");
     if (!time.trim()) return alert("Please enter survey duration");
-    console.log("first")
     setLoading(true);
     try {
       if (isEditing && editSurveyId) {

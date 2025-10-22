@@ -31,11 +31,6 @@ export default function TeamStatsCard({
   const [calendar, setCalendar] = useState(team.calendar || null);
   const [loadingCalendar, setLoadingCalendar] = useState(false);
 
-  console.log("=== TeamStatsCard Render ===");
-  console.log("team:", team);
-  console.log("team.calendarId:", team.calendarId);
-  console.log("team.calendar:", team.calendar);
-  console.log("members:", members);
 
   // Fetch calendar if team has calendarId but no calendar object
   useEffect(() => {
@@ -52,9 +47,7 @@ export default function TeamStatsCard({
       if (team.calendarId && !calendar) {
         setLoadingCalendar(true);
         try {
-          console.log("Fetching calendar for calendarId:", team.calendarId);
           const calendarData = await BizCalendarModel.get(team.calendarId);
-          console.log("Fetched calendar data:", calendarData);
           
           if (mounted) {
             setCalendar(calendarData);
@@ -86,13 +79,6 @@ export default function TeamStatsCard({
   const activeMembers = members?.filter(m => m.active).length || 0;
   const totalHours = Math.round(totalCapacity / 60);
 
-  console.log("Calculated values:", {
-    totalCapacity,
-    activeMembers,
-    totalHours,
-    calendar
-  });
-
   // Validation helper functions
   const validateTeamConstraints = (members) => {
     const teamLeads = members ? members.filter(m => m.role === 'lead') : [];
@@ -102,7 +88,6 @@ export default function TeamStatsCard({
       teamLeadCount: teamLeads.length,
       memberCount: members ? members.length : 0
     };
-    console.log("Team constraints:", constraints);
     return constraints;
   };
 
@@ -154,7 +139,6 @@ export default function TeamStatsCard({
         <CalendarStatusChip
           calendar={calendar} 
           onClick={() => {
-            console.log("View calendar clicked for team:", team.name, "calendar:", calendar);
             if (calendar) {
               onViewCalendar(team);
             }
@@ -181,11 +165,9 @@ export default function TeamStatsCard({
         {Array.isArray(members) && members.length > 0 ? (
           <ul className="divide-y rounded border bg-white">
             {members.slice(0, 5).map((m) => {
-              console.log("Processing member:", m);
               
               const u = getUserDisplayInfo(m.userId);
           
-              console.log("User display info for", m.userId, ":", u);
               
               const roleBadge =
                 m.role === "lead"
@@ -207,7 +189,6 @@ export default function TeamStatsCard({
                     className="shrink-0 p-1 hover:bg-gray-100 rounded"
                     title="Edit member"
                     onClick={() => {
-                      console.log("Edit member clicked:", m);
                       onEditMember && onEditMember(m);
                     }}
                   >
@@ -217,7 +198,6 @@ export default function TeamStatsCard({
                     className="shrink-0 p-1 hover:bg-gray-100 rounded text-red-600"
                     title="Remove member"
                     onClick={() => {
-                      console.log("Remove member clicked:", m.user_id);
                       onRemoveMember && onRemoveMember(m.user_id);
                     }}
                   >
@@ -237,7 +217,6 @@ export default function TeamStatsCard({
 
       <button
         onClick={() => {
-          console.log("Add member clicked for team:", team.name);
           onAddMember();
         }}
         className="w-full text-xs text-blue-600 hover:text-blue-700 flex items-center justify-center gap-1 py-1 hover:bg-white rounded transition-colors"

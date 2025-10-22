@@ -38,14 +38,9 @@ export default function SLAPanel({ ticket, onTicketUpdated, busy, setBusy }) {
 
   // Load SLA data - only when ticket ID changes
   useEffect(() => {
-    console.log("[SLAPanel] Effect triggered:", { 
-      ticketId: ticket?.ticketId, 
-      hasSLA, 
-      currentTicketId: currentTicketId.current 
-    });
+
 
     if (!ticket?.ticketId || !hasSLA) {
-      console.log("[SLAPanel] No ticket or no SLA, clearing data");
       if (!hasSLA) {
         setFirstResponse(null);
         setResolution(null);
@@ -55,15 +50,12 @@ export default function SLAPanel({ ticket, onTicketUpdated, busy, setBusy }) {
 
     // Only fetch if ticket ID actually changed
     if (currentTicketId.current === ticket.ticketId) {
-      console.log("[SLAPanel] Same ticket ID, skipping fetch");
       return;
     }
 
-    console.log("[SLAPanel] Fetching timers for ticket:", ticket.ticketId);
     currentTicketId.current = ticket.ticketId;
 
     if (isLoadingRef.current) {
-      console.log("[SLAPanel] Already loading, skipping");
       return;
     }
     
@@ -72,7 +64,6 @@ export default function SLAPanel({ ticket, onTicketUpdated, busy, setBusy }) {
 
     SLAModel.getTimers(ticket.ticketId)
       .then((data) => {
-        console.log("[SLAPanel] Received timer data:", data);
         if (data) {
           // Transform flat structure to nested structure
           const firstResponseData = {
@@ -97,7 +88,6 @@ export default function SLAPanel({ ticket, onTicketUpdated, busy, setBusy }) {
             breached: data.breached_resolution,
           };
 
-          console.log("[SLAPanel] Transformed data:", { firstResponseData, resolutionData });
           setFirstResponse(firstResponseData);
           setResolution(resolutionData);
         }

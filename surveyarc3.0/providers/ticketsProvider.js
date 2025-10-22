@@ -39,6 +39,40 @@ export const TicketProvider = ({ children }) => {
     setSelectedTicket((prev) => (prev && prev.ticketId === ticketId ? updated : prev));
     return updated;
   }, []);
+// ...inside TicketProvider component, after assignAgent/getParticipants:
+
+const setFeature = useCallback(async (ticketId, featureId) => {
+  const updated = await TicketModel.update(ticketId, { featureId });
+  setTickets(prev => prev.map(t => (t.ticketId === ticketId ? updated : t)));
+  setSelectedTicket(prev => (prev && prev.ticketId === ticketId ? updated : prev));
+  return updated;
+}, []);
+
+const setImpactArea = useCallback(async (ticketId, impactId) => {
+  const updated = await TicketModel.update(ticketId, { impactId });
+  setTickets(prev => prev.map(t => (t.ticketId === ticketId ? updated : t)));
+  setSelectedTicket(prev => (prev && prev.ticketId === ticketId ? updated : prev));
+  return updated;
+}, []);
+
+const setRootCause = useCallback(async (ticketId, { rcaId, rcaNote } = {}) => {
+  const updated = await TicketModel.update(ticketId, { rcaId, rcaNote });
+  setTickets(prev => prev.map(t => (t.ticketId === ticketId ? updated : t)));
+  setSelectedTicket(prev => (prev && prev.ticketId === ticketId ? updated : prev));
+  return updated;
+}, []);
+
+// Optional: direct queue listing passthrough
+const listGroupQueue = useCallback(async (params) => {
+  setLoading(true);
+  try {
+    const arr = await TicketModel.listGroupQueue(params);
+    setTickets(arr);
+    return arr;
+  } finally {
+    setLoading(false);
+  }
+}, []);
 
   const remove = useCallback(async (ticketId) => {
     await TicketModel.remove(ticketId);
@@ -95,24 +129,23 @@ export const TicketProvider = ({ children }) => {
       assignAgent,
       getParticipants,
 
+  // 🔵 New taxonomy helpers
+  setFeature,
+  setImpactArea,
+  setRootCause,
+
+  // Optional queue helper
+  listGroupQueue,
+
       setSelectedTicket,
       setTickets,
     }),
     [
-      tickets,
-      selectedTicket,
-      loading,
-      list,
-      get,
-      create,
-      update,
-      remove,
-      count,
-      assignGroup,
-      assignTeam,
-      assignAgent,
-      getParticipants,
-    ]
+  tickets, selectedTicket, loading,
+  list, get, create, update, remove, count,
+  assignGroup, assignTeam, assignAgent, getParticipants,
+  setFeature, setImpactArea, setRootCause,
+  listGroupQueue]
   );
 
   return <TicketContext.Provider value={value}>{children}</TicketContext.Provider>;

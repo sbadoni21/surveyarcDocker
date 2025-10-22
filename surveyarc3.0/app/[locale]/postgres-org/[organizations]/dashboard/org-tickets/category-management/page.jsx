@@ -1,45 +1,61 @@
 // components/admin/CategoryManagement.jsx
 "use client";
 import { useState, useEffect } from "react";
-import { 
-  Plus, 
-  Edit2, 
-  Trash2, 
-  ChevronDown, 
+import {
+  Plus,
+  Edit2,
+  Trash2,
+  ChevronDown,
   ChevronRight,
   Layers,
   Package,
   Grid3x3,
   X,
   Loader2,
-  AlertCircle,
   CheckCircle2,
-  XCircle
+  XCircle,
+  Puzzle,
+  Briefcase,
+  AlertTriangle,
 } from "lucide-react";
 import TicketCategoryModel from "@/models/postGresModels/ticketCategoryModel";
+import TaxonomyModel from "@/models/postGresModels/ticketTaxonomyModel";
 import { usePathname } from "next/navigation";
 
 export default function CategoryManagement() {
   const path = usePathname();
-  const orgId = path.split('/')[3];
+  const orgId = path.split("/")[3];
   const [activeTab, setActiveTab] = useState("categories");
-  const [stats, setStats] = useState({ categories: 0, subcategories: 0, products: 0 });
-  
+  const [stats, setStats] = useState({
+    categories: 0,
+    subcategories: 0,
+    products: 0,
+    features: 0,
+    impacts: 0,
+    rootCauses: 0,
+  });
+
   useEffect(() => {
     loadStats();
   }, [orgId]);
 
   const loadStats = async () => {
     try {
-      const [cats, subs, prods] = await Promise.all([
+      const [cats, subs, prods, feats, imps, rcas] = await Promise.all([
         TicketCategoryModel.listCategories(orgId),
         TicketCategoryModel.listSubcategories({ orgId }),
-        TicketCategoryModel.listProducts(orgId)
+        TicketCategoryModel.listProducts(orgId),
+        TaxonomyModel.listFeatures(orgId),
+        TaxonomyModel.listImpacts(orgId),
+        TaxonomyModel.listRootCauses(orgId),
       ]);
       setStats({
         categories: cats.length,
         subcategories: subs.length,
-        products: prods.length
+        products: prods.length,
+        features: feats.length,
+        impacts: imps.length,
+        rootCauses: rcas.length,
       });
     } catch (error) {
       console.error("Failed to load stats:", error);
@@ -49,12 +65,15 @@ export default function CategoryManagement() {
   const tabs = [
     { id: "categories", label: "Categories", icon: Layers, count: stats.categories },
     { id: "subcategories", label: "Subcategories", icon: Grid3x3, count: stats.subcategories },
-    { id: "products", label: "Products", icon: Package, count: stats.products }
+    { id: "products", label: "Products", icon: Package, count: stats.products },
+    { id: "features", label: "Features / Functions", icon: Puzzle, count: stats.features },
+    { id: "impacts", label: "Impact Areas", icon: Briefcase, count: stats.impacts },
+    { id: "rootCauses", label: "Root Causes", icon: AlertTriangle, count: stats.rootCauses },
   ];
-  
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#1A1A1E]">
-      <div className=" mx-auto p-6 space-y-6">
+      <div className="mx-auto p-6 space-y-6">
         {/* Header */}
         <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-2xl p-6 border border-blue-100 dark:border-blue-800">
           <div className="flex items-center gap-4">
@@ -66,7 +85,7 @@ export default function CategoryManagement() {
                 Category Management
               </h1>
               <p className="text-gray-600 dark:text-gray-400 mt-1">
-                Organize tickets with categories, subcategories, and products
+                Organize tickets with categories, subcategories, products, features, impact areas, and root causes
               </p>
             </div>
           </div>
@@ -75,7 +94,7 @@ export default function CategoryManagement() {
         {/* Tabs */}
         <div className="bg-white dark:bg-[#242428] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
           <div className="border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#1A1A1E]">
-            <nav className="flex">
+            <nav className="flex overflow-x-auto">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -91,11 +110,13 @@ export default function CategoryManagement() {
                   >
                     <Icon className="w-5 h-5" />
                     <span>{tab.label}</span>
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                      isActive 
-                        ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400" 
-                        : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400"
-                    }`}>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                        isActive
+                          ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
+                          : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400"
+                      }`}
+                    >
                       {tab.count}
                     </span>
                   </button>
@@ -106,8 +127,11 @@ export default function CategoryManagement() {
 
           <div className="p-6">
             {activeTab === "categories" && <CategoriesTab orgId={orgId} onUpdate={loadStats} />}
-            {activeTab === "subcategories" && <SubcategoriesTab orgId={orgId} onUpdate={loadStats} />}
-            {activeTab === "products" && <ProductsTab orgId={orgId} onUpdate={loadStats} />}
+            {activeTab === "subcategories" && <SubcategoriesTab orgId={orgId} />}
+            {activeTab === "products" && <ProductsTab orgId={orgId} />}
+            {activeTab === "features" && <FeaturesTab orgId={orgId} onUpdate={loadStats} />}
+            {activeTab === "impacts" && <ImpactsTab orgId={orgId} onUpdate={loadStats} />}
+            {activeTab === "rootCauses" && <RootCausesTab orgId={orgId} onUpdate={loadStats} />}
           </div>
         </div>
       </div>
@@ -1156,6 +1180,680 @@ function ProductModal({ orgId, product, onClose, onSave }) {
               onClick={onClose}
               className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
             >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+function FeaturesTab({ orgId, onUpdate }) {
+  const [features, setFeatures] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [show, setShow] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [filterProduct, setFilterProduct] = useState("");
+
+  useEffect(() => {
+    loadAll();
+  }, [orgId]);
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [feats, prods] = await Promise.all([
+        TaxonomyModel.listFeatures(orgId),
+        TicketCategoryModel.listProducts(orgId),
+      ]);
+      setFeatures(feats);
+      setProducts(prods);
+      onUpdate?.();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm("Delete this feature?")) return;
+    await TaxonomyModel.deleteFeature(id);
+    loadAll();
+  };
+
+  const filtered = filterProduct
+    ? features.filter((f) => f.productId === filterProduct)
+    : features;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex gap-2">
+          <select
+            value={filterProduct}
+            onChange={(e) => setFilterProduct(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">All Products</option>
+            {products.map((p) => (
+              <option key={p.productId} value={p.productId}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          onClick={() => {
+            setEditing(null);
+            setShow(true);
+          }}
+          className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700"
+        >
+          <Plus className="h-4 w-4" />
+          Add Feature
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-10">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-10 text-gray-500">No features yet.</div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((f) => (
+            <div
+              key={f.featureId}
+              className="flex items-center justify-between p-4 bg-white dark:bg-[#242428] border border-gray-200 dark:border-gray-700 rounded-xl"
+            >
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{f.name}</span>
+                  {f.productId && (
+                    <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded">
+                      {products.find((p) => p.productId === f.productId)?.name || "Product"}
+                    </span>
+                  )}
+                  {f.code && (
+                    <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
+                      {f.code}
+                    </span>
+                  )}
+                  {f.active ? (
+                    <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">Active</span>
+                  ) : (
+                    <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded">Inactive</span>
+                  )}
+                </div>
+                {f.description && (
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{f.description}</p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setEditing(f);
+                    setShow(true);
+                  }}
+                  className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                >
+                  <Edit2 className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => handleDelete(f.featureId)}
+                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {show && (
+        <FeatureModal
+          orgId={orgId}
+          products={products}
+          feature={editing}
+          onClose={() => {
+            setShow(false);
+            setEditing(null);
+          }}
+          onSave={() => {
+            setShow(false);
+            setEditing(null);
+            loadAll();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function FeatureModal({ orgId, products, feature, onClose, onSave }) {
+  const [form, setForm] = useState({
+    name: feature?.name || "",
+    description: feature?.description || "",
+    code: feature?.code || "",
+    productId: feature?.productId || "",
+    displayOrder: feature?.displayOrder || 0,
+    active: feature?.active !== false,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      if (feature) {
+        await TaxonomyModel.updateFeature(feature.featureId, form);
+      } else {
+        await TaxonomyModel.createFeature({ ...form, orgId });
+      }
+      onSave();
+    } catch (e) {
+      alert("Failed to save feature: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-[#242428] rounded-2xl max-w-lg w-full border border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-xl font-bold">{feature ? "Edit Feature" : "New Feature"}</h3>
+          <button onClick={onClose} className="p-2">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form onSubmit={submit} className="p-5 space-y-4">
+          <div>
+            <label className="block text-sm font-semibold mb-1">Name *</label>
+            <input
+              required
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="w-full px-3 py-2 border-2 rounded-xl bg-gray-50 dark:bg-[#1A1A1E] border-gray-200 dark:border-gray-700"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1">Description</label>
+            <textarea
+              rows={3}
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              className="w-full px-3 py-2 border-2 rounded-xl bg-gray-50 dark:bg-[#1A1A1E] border-gray-200 dark:border-gray-700"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold mb-1">Code</label>
+              <input
+                value={form.code}
+                onChange={(e) => setForm({ ...form, code: e.target.value })}
+                placeholder="auth, billing, reports…"
+                className="w-full px-3 py-2 border-2 rounded-xl bg-gray-50 dark:bg-[#1A1A1E] border-gray-200 dark:border-gray-700"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Product</label>
+              <select
+                value={form.productId}
+                onChange={(e) => setForm({ ...form, productId: e.target.value })}
+                className="w-full px-3 py-2 border-2 rounded-xl bg-gray-50 dark:bg-[#1A1A1E] border-gray-200 dark:border-gray-700"
+              >
+                <option value="">None</option>
+                {products.map((p) => (
+                  <option key={p.productId} value={p.productId}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold mb-1">Display Order</label>
+              <input
+                type="number"
+                value={form.displayOrder}
+                onChange={(e) => setForm({ ...form, displayOrder: parseInt(e.target.value || "0") })}
+                className="w-full px-3 py-2 border-2 rounded-xl bg-gray-50 dark:bg-[#1A1A1E] border-gray-200 dark:border-gray-700"
+              />
+            </div>
+            {feature && (
+              <label className="flex items-center gap-2 pt-7">
+                <input
+                  type="checkbox"
+                  checked={form.active}
+                  onChange={(e) => setForm({ ...form, active: e.target.checked })}
+                />
+                Active
+              </label>
+            )}
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button
+              disabled={saving}
+              className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700"
+            >
+              {saving ? "Saving..." : "Save"}
+            </button>
+            <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl bg-gray-200">
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ============================= NEW: Impact Areas ============================= */
+
+function ImpactsTab({ orgId, onUpdate }) {
+  const [impacts, setImpacts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [show, setShow] = useState(false);
+  const [editing, setEditing] = useState(null);
+
+  useEffect(() => {
+    load();
+  }, [orgId]);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const arr = await TaxonomyModel.listImpacts(orgId);
+      setImpacts(arr);
+      onUpdate?.();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const delRow = async (id) => {
+    if (!confirm("Delete this impact area?")) return;
+    await TaxonomyModel.deleteImpact(id);
+    load();
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xl font-semibold">Impact Areas</h3>
+        <button
+          onClick={() => {
+            setEditing(null);
+            setShow(true);
+          }}
+          className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700"
+        >
+          <Plus className="h-4 w-4" />
+          Add Impact
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        </div>
+      ) : impacts.length === 0 ? (
+        <div className="text-center py-10 text-gray-500">No impact areas yet.</div>
+      ) : (
+        <div className="space-y-2">
+          {impacts.map((it) => (
+            <div
+              key={it.impactId}
+              className="flex items-center justify-between p-4 bg-white dark:bg-[#242428] border border-gray-200 dark:border-gray-700 rounded-xl"
+            >
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{it.name}</span>
+                  {it.active ? (
+                    <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">Active</span>
+                  ) : (
+                    <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded">Inactive</span>
+                  )}
+                </div>
+                {it.description && (
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{it.description}</p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setEditing(it);
+                    setShow(true);
+                  }}
+                  className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                >
+                  <Edit2 className="h-4 w-4" />
+                </button>
+                <button onClick={() => delRow(it.impactId)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {show && (
+        <ImpactModal
+          orgId={orgId}
+          impact={editing}
+          onClose={() => {
+            setShow(false);
+            setEditing(null);
+          }}
+          onSave={() => {
+            setShow(false);
+            setEditing(null);
+            load();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ImpactModal({ orgId, impact, onClose, onSave }) {
+  const [form, setForm] = useState({
+    name: impact?.name || "",
+    description: impact?.description || "",
+    displayOrder: impact?.displayOrder || 0,
+    active: impact?.active !== false,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      if (impact) await TaxonomyModel.updateImpact(impact.impactId, form);
+      else await TaxonomyModel.createImpact({ ...form, orgId });
+      onSave();
+    } catch (e) {
+      alert("Failed to save impact area: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-[#242428] rounded-2xl max-w-lg w-full border border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-xl font-bold">{impact ? "Edit Impact Area" : "New Impact Area"}</h3>
+          <button onClick={onClose} className="p-2">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form onSubmit={submit} className="p-5 space-y-4">
+          <div>
+            <label className="block text-sm font-semibold mb-1">Name *</label>
+            <input
+              required
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="w-full px-3 py-2 border-2 rounded-xl bg-gray-50 dark:bg-[#1A1A1E] border-gray-200 dark:border-gray-700"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1">Description</label>
+            <textarea
+              rows={3}
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              className="w-full px-3 py-2 border-2 rounded-xl bg-gray-50 dark:bg-[#1A1A1E] border-gray-200 dark:border-gray-700"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold mb-1">Display Order</label>
+              <input
+                type="number"
+                value={form.displayOrder}
+                onChange={(e) =>
+                  setForm({ ...form, displayOrder: parseInt(e.target.value || "0") })
+                }
+                className="w-full px-3 py-2 border-2 rounded-xl bg-gray-50 dark:bg-[#1A1A1E] border-gray-200 dark:border-gray-700"
+              />
+            </div>
+            {impact && (
+              <label className="flex items-center gap-2 pt-7">
+                <input
+                  type="checkbox"
+                  checked={form.active}
+                  onChange={(e) => setForm({ ...form, active: e.target.checked })}
+                />
+                Active
+              </label>
+            )}
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700">
+              {saving ? "Saving..." : "Save"}
+            </button>
+            <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl bg-gray-200">
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ============================= NEW: Root Causes ============================= */
+
+function RootCausesTab({ orgId, onUpdate }) {
+  const [rcas, setRcas] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [show, setShow] = useState(false);
+  const [editing, setEditing] = useState(null);
+
+  useEffect(() => {
+    load();
+  }, [orgId]);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const arr = await TaxonomyModel.listRootCauses(orgId);
+      setRcas(arr);
+      onUpdate?.();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const delRow = async (id) => {
+    if (!confirm("Delete this root cause type?")) return;
+    await TaxonomyModel.deleteRootCause(id);
+    load();
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xl font-semibold">Root Cause Types</h3>
+        <button
+          onClick={() => {
+            setEditing(null);
+            setShow(true);
+          }}
+          className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700"
+        >
+          <Plus className="h-4 w-4" />
+          Add Root Cause
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        </div>
+      ) : rcas.length === 0 ? (
+        <div className="text-center py-10 text-gray-500">No root cause types yet.</div>
+      ) : (
+        <div className="space-y-2">
+          {rcas.map((r) => (
+            <div
+              key={r.rcaId}
+              className="flex items-center justify-between p-4 bg-white dark:bg-[#242428] border border-gray-200 dark:border-gray-700 rounded-xl"
+            >
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{r.name}</span>
+                  {r.code && (
+                    <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
+                      {r.code}
+                    </span>
+                  )}
+                  {r.active ? (
+                    <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">Active</span>
+                  ) : (
+                    <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded">Inactive</span>
+                  )}
+                </div>
+                {r.description && (
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{r.description}</p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setEditing(r);
+                    setShow(true);
+                  }}
+                  className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                >
+                  <Edit2 className="h-4 w-4" />
+                </button>
+                <button onClick={() => delRow(r.rcaId)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {show && (
+        <RootCauseModal
+          orgId={orgId}
+          rca={editing}
+          onClose={() => {
+            setShow(false);
+            setEditing(null);
+          }}
+          onSave={() => {
+            setShow(false);
+            setEditing(null);
+            load();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function RootCauseModal({ orgId, rca, onClose, onSave }) {
+  const [form, setForm] = useState({
+    name: rca?.name || "",
+    description: rca?.description || "",
+    code: rca?.code || "",
+    displayOrder: rca?.displayOrder || 0,
+    active: rca?.active !== false,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      if (rca) await TaxonomyModel.updateRootCause(rca.rcaId, form);
+      else await TaxonomyModel.createRootCause({ ...form, orgId });
+      onSave();
+    } catch (e) {
+      alert("Failed to save root cause: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-[#242428] rounded-2xl max-w-lg w-full border border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-xl font-bold">{rca ? "Edit Root Cause" : "New Root Cause"}</h3>
+          <button onClick={onClose} className="p-2">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form onSubmit={submit} className="p-5 space-y-4">
+          <div>
+            <label className="block text-sm font-semibold mb-1">Name *</label>
+            <input
+              required
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="w-full px-3 py-2 border-2 rounded-xl bg-gray-50 dark:bg-[#1A1A1E] border-gray-200 dark:border-gray-700"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1">Description</label>
+            <textarea
+              rows={3}
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              className="w-full px-3 py-2 border-2 rounded-xl bg-gray-50 dark:bg-[#1A1A1E] border-gray-200 dark:border-gray-700"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold mb-1">Code</label>
+              <input
+                value={form.code}
+                onChange={(e) => setForm({ ...form, code: e.target.value })}
+                placeholder="incident, config, process, infra…"
+                className="w-full px-3 py-2 border-2 rounded-xl bg-gray-50 dark:bg-[#1A1A1E] border-gray-200 dark:border-gray-700"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Display Order</label>
+              <input
+                type="number"
+                value={form.displayOrder}
+                onChange={(e) =>
+                  setForm({ ...form, displayOrder: parseInt(e.target.value || "0") })
+                }
+                className="w-full px-3 py-2 border-2 rounded-xl bg-gray-50 dark:bg-[#1A1A1E] border-gray-200 dark:border-gray-700"
+              />
+            </div>
+          </div>
+          {rca && (
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={form.active}
+                onChange={(e) => setForm({ ...form, active: e.target.checked })}
+              />
+              Active
+            </label>
+          )}
+          <div className="flex gap-3 pt-2">
+            <button className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700">
+              {saving ? "Saving..." : "Save"}
+            </button>
+            <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl bg-gray-200">
               Cancel
             </button>
           </div>

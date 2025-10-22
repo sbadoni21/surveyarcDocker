@@ -52,7 +52,6 @@ export async function PATCH(req, { params }) {
 }
 
 export async function DELETE(req, { params }) {
-  console.log(params)
   const { teamId, userId } = await params;
   
   try {

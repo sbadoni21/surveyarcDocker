@@ -53,7 +53,6 @@ model: "llama-3.3-70b-versatile",
     });
 
 const result = await openaiRes.json();
-console.log("Gemini API raw response:", JSON.stringify(result, null, 2));
 
 // This is the line that might fail:
 const rawContent = result.choices?.[0]?.message?.content;
@@ -64,7 +63,6 @@ if (!rawContent) {
 
 const parsed = JSON.parse(rawContent); // only happens if content exists
 
-console.log(result);
     return NextResponse.json({ nodes: parsed.nodes || [], edges: parsed.edges || [] });
   } catch (error) {
     console.error('OpenAI API Error:', error);

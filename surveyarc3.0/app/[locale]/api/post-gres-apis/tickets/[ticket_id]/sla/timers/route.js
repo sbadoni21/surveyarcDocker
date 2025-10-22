@@ -14,7 +14,6 @@ async function forceDecrypt(res) {
 
 export async function GET(_req, { params }) {
   const { ticket_id } = await params;
-  console.log(ticket_id)
   const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticket_id)}/sla/timers`, {
     signal: AbortSignal.timeout(30000),
   });

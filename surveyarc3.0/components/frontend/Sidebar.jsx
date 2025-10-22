@@ -109,11 +109,10 @@ export default function Sidebar() {
   };
 
   // Only show Org Tickets if user has a valid role
-  const shouldShowOrgTickets = userRole && ['owner', 'admin', 'manager', 'team_lead', 'agent'].includes(userRole);
+  const shouldShowOrgTickets = userRole && ['owner', 'admin', 'manager', 'team_lead', 'agent','user'].includes(userRole);
 
   const menuItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "" },
-    { icon: Ticket, label: "Tickets", path: "tickets" },
     ...(shouldShowOrgTickets ? [{ icon: Building2, label: "Org Tickets", path: getOrgTicketsPath() }] : []),
     { icon: Users, label: "Team", path: "team" },
     { icon: FolderOpen, label: "Projects", path: "projects" },

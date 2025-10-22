@@ -81,18 +81,15 @@ export async function POST(req, { params }) {
     }
 
     const projectData = await getRes.json();
-    console.log("[Surveys POST] Current survey_ids:", projectData.survey_ids);
     
     // Ensure survey_ids is always an array
     const currentSurveyIds = Array.isArray(projectData.survey_ids) ? projectData.survey_ids : [];
     
     if (currentSurveyIds.includes(surveyId)) {
-      console.log("[Surveys POST] Survey already exists, returning project");
       return NextResponse.json(projectData);
     }
 
     const updatedSurveyIds = [...currentSurveyIds, surveyId];
-    console.log("[Surveys POST] Adding survey, new total:", updatedSurveyIds.length);
 
     // Update project
     const payload = ENC ? await encryptPayload({ survey_ids: updatedSurveyIds }) : { survey_ids: updatedSurveyIds };

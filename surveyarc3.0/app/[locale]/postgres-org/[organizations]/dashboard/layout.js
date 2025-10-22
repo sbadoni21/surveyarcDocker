@@ -7,6 +7,7 @@ import { SupportGroupProvider } from "@/providers/postGresPorviders/SupportGroup
 import { SupportTeamProvider } from "@/providers/postGresPorviders/SupportTeamProvider";
 import { TagProvider } from "@/providers/postGresPorviders/TagProvider";
 import { TicketCategoryProvider } from "@/providers/postGresPorviders/TicketCategoryProvider";
+import { TicketTaxonomyProvider } from "@/providers/postGresPorviders/TicketTaxonomyProvider";
 import { UserProvider } from "@/providers/postGresPorviders/UserProvider";
 import { SLAProvider } from "@/providers/slaProvider";
 import { TicketProvider } from "@/providers/ticketsProvider";
@@ -22,6 +23,7 @@ export default function Layout({ children }) {
         <TicketCategoryProvider>
       <OrganisationProvider>
         <UserProvider>
+          <TicketTaxonomyProvider>
               <TicketProvider>
                 <SupportGroupProvider>
                   <SupportTeamProvider>
@@ -50,6 +52,7 @@ export default function Layout({ children }) {
           </SupportTeamProvider>
           </SupportGroupProvider>
               </TicketProvider>
+          </TicketTaxonomyProvider>
 
         </UserProvider>
       </OrganisationProvider>

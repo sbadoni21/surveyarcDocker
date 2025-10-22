@@ -197,6 +197,15 @@ class TicketBase(BaseModel):
     # ---- DEPRECATED FIELDS (kept to accept old payloads; ignored) ----
     team_ids: List[str] = Field(default_factory=list, description="DEPRECATED: use team_id")
     agent_ids: List[str] = Field(default_factory=list, description="DEPRECATED: use agent_id")
+    # ▶ ADD: new classification fields
+    feature_id: Optional[str] = None
+    impact_id: Optional[str] = None
+
+    # ▶ ADD: RCA is usually set later, but keep nullable on create
+    rca_id: Optional[str] = None
+    rca_note: Optional[str] = None
+    rca_set_by: Optional[str] = None
+    rca_set_at: Optional[datetime] = None
 
     category_id: Optional[str] = None
     subcategory_id: Optional[str] = None
@@ -257,6 +266,12 @@ class TicketUpdate(BaseModel):
     # DEPRECATED: incoming old clients might still send these
     team_ids: Optional[List[str]] = Field(default=None, description="DEPRECATED: use team_id")
     agent_ids: Optional[List[str]] = Field(default=None, description="DEPRECATED: use agent_id")
+    feature_id: Optional[str] = None
+    impact_id: Optional[str] = None
+    rca_id: Optional[str] = None
+    rca_note: Optional[str] = None
+    rca_set_by: Optional[str] = None
+    rca_set_at: Optional[datetime] = None
 
     category_id: Optional[str] = None
     subcategory_id: Optional[str] = None
@@ -299,6 +314,12 @@ class TicketOut(TicketBase):
     # Deprecated fields kept for backward compatibility (always empty arrays)
     team_ids: List[str] = Field(default_factory=list, description="DEPRECATED: use team_id")
     agent_ids: List[str] = Field(default_factory=list, description="DEPRECATED: use agent_id")
+    feature_id: Optional[str] = None
+    impact_id: Optional[str] = None
+    rca_id: Optional[str] = None
+    rca_note: Optional[str] = None
+    rca_set_by: Optional[str] = None
+    rca_set_at: Optional[datetime] = None
 
     category_id: Optional[str] = None
     subcategory_id: Optional[str] = None
@@ -308,6 +329,11 @@ class TicketOut(TicketBase):
 
     model_config = {"from_attributes": True}
 
+class RootCauseSet(BaseModel):
+    rca_id: str
+    rca_note: Optional[str] = None
+    confirmed_by: str
+    confirmed_at: Optional[datetime] = None
 
 # ----------------------------- Comments -----------------------------
 

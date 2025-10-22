@@ -26,7 +26,6 @@ const safeParse = (t) => {
 
 async function forceDecryptResponse(res, label = "") {
   const text = await res.text();
-  console.log(`[${label}] raw text:`, text);
 
   const parsed = safeParse(text);
   if (!parsed.ok) {
@@ -35,12 +34,10 @@ async function forceDecryptResponse(res, label = "") {
   }
 
   const data = parsed.json;
-  console.log(`[${label}] parsed JSON:`, data);
 
   if (data && typeof data === "object" && !Array.isArray(data)) {
     if (looksEncrypted(data)) {
       try {
-        console.log(`[${label}] attempting decrypt (object)…`);
         const dec = await decryptGetResponse(data);
         return NextResponse.json(dec, { status: res.status });
       } catch (e) {
@@ -53,13 +50,11 @@ async function forceDecryptResponse(res, label = "") {
 
   if (Array.isArray(data)) {
     try {
-      console.log(`[${label}] array length=${data.length}, attempting per-item decrypt…`);
       const dec = await Promise.all(
         data.map(async (item, i) => {
           if (item && typeof item === "object" && looksEncrypted(item)) {
             try {
               const d = await decryptGetResponse(item);
-              console.log(`[${label}] decrypted item[${i}]`, d);
               return d;
             } catch (e) {
               console.warn(`[${label}] decrypt failed for item[${i}], returning raw`, e);
@@ -97,7 +92,6 @@ export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("project_id") || searchParams.get("projectId");
   
-  console.log("[GET /surveys] projectId:", projectId);
 
   try {
     const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
@@ -105,7 +99,6 @@ export async function GET(req) {
       signal: AbortSignal.timeout(30000),
     });
     
-    console.log("[GET /surveys] backend status:", res.status);
     return forceDecryptResponse(res, "GET /surveys");
   } catch (e) {
     console.error("[GET /surveys] error:", e);
@@ -119,13 +112,10 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     const raw = await req.json();
-    console.log("[POST /surveys] incoming body (camel):", raw);
 
     const snake = toSnakeCase(raw);
-    console.log("[POST /surveys] outgoing body (snake):", snake);
 
     const payload = ENC ? await encryptPayload(snake) : snake;
-    console.log("[POST /surveys] payload (maybe encrypted):", payload);
 
     const res = await fetch(`${BASE}/surveys/`, {
       method: "POST",
@@ -137,7 +127,6 @@ export async function POST(req) {
       signal: AbortSignal.timeout(30000),
     });
     
-    console.log("[POST /surveys] backend status:", res.status);
     return forceDecryptResponse(res, "POST /surveys");
   } catch (e) {
     console.error("[POST /surveys] error:", e);

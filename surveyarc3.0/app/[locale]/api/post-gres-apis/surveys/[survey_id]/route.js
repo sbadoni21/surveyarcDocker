@@ -15,7 +15,6 @@ const safeParse = (t) => { try { return { ok: true, json: JSON.parse(t) }; } cat
 
 async function forceDecryptResponse(res, label = "") {
   const text = await res.text();
-  console.log(`[${label}] raw text:`, text);
 
   const parsed = safeParse(text);
   if (!parsed.ok) {
@@ -24,13 +23,11 @@ async function forceDecryptResponse(res, label = "") {
   }
 
   const data = parsed.json;
-  console.log(`[${label}] parsed JSON:`, data);
 
   // Object envelope
   if (data && typeof data === "object" && !Array.isArray(data)) {
     if (looksEncrypted(data)) {
       try {
-        console.log(`[${label}] attempting decrypt (object)…`);
         const dec = await decryptGetResponse(data);
         return NextResponse.json(dec, { status: res.status });
       } catch (e) {
@@ -45,13 +42,11 @@ async function forceDecryptResponse(res, label = "") {
   // Array of possibly encrypted items
   if (Array.isArray(data)) {
     try {
-      console.log(`[${label}] array length=${data.length}, attempting per-item decrypt…`);
       const dec = await Promise.all(
         data.map(async (item, i) => {
           if (item && typeof item === "object" && looksEncrypted(item)) {
             try {
               const d = await decryptGetResponse(item);
-              console.log(`[${label}] ✅ decrypted item[${i}]`, d);
               return d;
             } catch (e) {
               console.warn(`[${label}] ❌ decrypt failed for item[${i}], returning raw`, e);
@@ -92,16 +87,13 @@ export async function GET(_req, { params }) {
 }
 
 export async function PATCH(req, { params }) {
-  const { survey_id } = params;
+  const { survey_id } = await params;
   try {
     const raw = await req.json();
-    console.log("[PATCH] incoming body (camel):", raw);
 
     const snake = toSnakeCasePatch(raw);
-    console.log("[PATCH] outgoing body (snake):", snake);
 
     const payload = ENC ? await encryptPayload(snake) : snake;
-    console.log("[PATCH] payload (maybe encrypted):", payload);
 
     const res = await fetch(`${BASE}/surveys/${encodeURIComponent(survey_id)}`, {
       method: "PATCH",
@@ -109,7 +101,6 @@ export async function PATCH(req, { params }) {
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30000),
     });
-    console.log("[PATCH] backend status:", res.status);
 
     return forceDecryptResponse(res, "PATCH /surveys/[id]");
   } catch (e) {
@@ -119,15 +110,13 @@ export async function PATCH(req, { params }) {
 }
 
 export async function DELETE(_req, { params }) {
-  const { survey_id } = params;
-  console.log("[DELETE] survey_id:", survey_id);
+  const { survey_id } = await params;
 
   try {
     const res = await fetch(`${BASE}/surveys/${encodeURIComponent(survey_id)}`, {
       method: "DELETE",
       signal: AbortSignal.timeout(30000),
     });
-    console.log("[DELETE] backend status:", res.status);
     return forceDecryptResponse(res, "DELETE /surveys/[id]");
   } catch (e) {
     console.error("[DELETE] ❌ error:", e);
