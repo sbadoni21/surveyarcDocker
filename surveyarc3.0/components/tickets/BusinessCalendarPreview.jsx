@@ -2,46 +2,101 @@
 import { Calendar, Clock, Flag } from "lucide-react";
 
 // calendar.hours: [{ weekday: 0..6 (Mon..Sun), startMin, endMin }]
-// calendar.holidays: [{ dateIso: 'YYYY-MM-DD', name }]
+// calendar.holidays: [{ dateIso: 'YYYY-MM-DD', name }]  // (date_iso works too; we normalize)
 // calendar.timezone, calendar.name, calendar.calendarId
 
 const WD_LABELS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
-function pad2(n){ return String(n).padStart(2,"0"); }
-function minsToHHMM(mins){ const h = Math.floor(mins/60), m = mins%60; return `${pad2(h)}:${pad2(m)}`; }
+const pad2 = (n) => String(n).padStart(2, "0");
+const minsToHHMM = (mins) => `${pad2(Math.floor(mins/60))}:${pad2(mins%60)}`;
 
-function buildWeekMap(calendar){
-  const map = Array.from({length:7},()=>[]);
-  (calendar?.hours || []).forEach(h=>{
-    const idx = Math.max(0, Math.min(6, h.weekday));
-    map[idx].push([h.startMin, h.endMin]);
+/** Normalize holidays to {dateIso, name} */
+function normalizeHolidays(holidays) {
+  if (!Array.isArray(holidays)) return [];
+  return holidays
+    .map(h => {
+      const dateIso = h?.dateIso ?? h?.date_iso;
+      if (!dateIso || !/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) return null;
+      return { dateIso, name: h?.name || "Holiday" };
+    })
+    .filter(Boolean);
+}
+
+/** Build array-of-arrays by weekday with [startMin, endMin] windows */
+function buildWeekMap(calendar) {
+  const map = Array.from({length: 7}, () => []);
+  (calendar?.hours || []).forEach(h => {
+    const idx = Math.max(0, Math.min(6, Number(h.weekday)));
+    const start = Number(h.startMin ?? h.start_min);
+    const end   = Number(h.endMin   ?? h.end_min);
+    if (Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end <= 1440 && start < end) {
+      map[idx].push([start, end]);
+    }
   });
-  // sort each day by start time
   map.forEach(list => list.sort((a,b)=>a[0]-b[0]));
   return map;
 }
 
-function isNowWorking(calendar){
-  if (!calendar?.hours?.length) return false;
-  const now = new Date();
-  // treat hours as in calendar.timezone, but we’ll show a logical approximation:
-  // map “today in that TZ” by using Intl.DateTimeFormat
-  const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: calendar.timezone ?? "UTC", hour12:false,
-    year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit"
-  });
-  const parts = Object.fromEntries(fmt.formatToParts(now).map(p=>[p.type,p.value]));
-  const weekdayJS = new Date(`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:00Z`).getUTCDay();
-  // our model uses Mon=0..Sun=6; JS uses Sun=0..Sat=6
-  const mon0 = (weekdayJS + 6) % 7;
+function getMinutesFromMidnight(date, timezone="UTC") {
+  try {
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: false
+    });
+    const parts = Object.fromEntries(fmt.formatToParts(date).map(p => [p.type, p.value]));
+    return parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
+  } catch {
+    return date.getUTCHours() * 60 + date.getUTCMinutes();
+  }
+}
 
-  const minutes = parseInt(parts.hour,10)*60 + parseInt(parts.minute,10);
-  const todays = (calendar.hours || []).filter(h=>h.weekday === mon0);
-  return todays.some(([s,e])=>{
-    // normalize shape if object
-    const start = Array.isArray(s) ? s[0] : (s.startMin ?? s[0] ?? s);
-    const end   = Array.isArray(e) ? e[1] : (e.endMin ?? e[1] ?? e);
-    return minutes >= (s.startMin ?? s[0] ?? s) && minutes < (e.endMin ?? e[1] ?? e);
-  });
+/** ISO weekday: Mon=0 .. Sun=6, in calendar TZ */
+function getISOWeekday(date, timezone="UTC") {
+  try {
+    const fmt = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "short" });
+    const name = fmt.format(date); // e.g., "Mon"
+    const map = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5, Sun:6 };
+    return map[name] ?? ((date.getUTCDay() + 6) % 7);
+  } catch {
+    return (date.getUTCDay() + 6) % 7;
+  }
+}
+
+function isTodayHoliday(date, calendar) {
+  const holidays = normalizeHolidays(calendar?.holidays);
+  if (!holidays.length) return false;
+
+  // Format date as YYYY-MM-DD in calendar TZ
+  let ymd;
+  try {
+    ymd = new Intl.DateTimeFormat("en-CA", {
+      timeZone: calendar?.timezone ?? "UTC", year: "numeric", month: "2-digit", day: "2-digit"
+    }).format(date); // "YYYY-MM-DD"
+  } catch {
+    const y = date.getUTCFullYear();
+    const m = pad2(date.getUTCMonth()+1);
+    const d = pad2(date.getUTCDate());
+    ymd = `${y}-${m}-${d}`;
+  }
+  return holidays.some(h => h.dateIso === ymd);
+}
+
+function isNowWorking(calendar) {
+  if (!calendar?.hours?.length) return false;
+  const tz = calendar.timezone ?? "UTC";
+  const now = new Date();
+
+  if (isTodayHoliday(now, calendar)) return false;
+
+  const weekday = getISOWeekday(now, tz);
+  const minutes = getMinutesFromMidnight(now, tz);
+
+  // check windows for this weekday using the object shape
+  const todays = (calendar.hours || [])
+    .filter(h => (h.weekday === weekday))
+    .map(h => [Number(h.startMin ?? h.start_min), Number(h.endMin ?? h.end_min)])
+    .filter(([s, e]) => Number.isFinite(s) && Number.isFinite(e));
+
+  return todays.some(([s,e]) => minutes >= s && minutes < e);
 }
 
 export default function BusinessCalendarPreview({ calendar }) {
@@ -56,13 +111,15 @@ export default function BusinessCalendarPreview({ calendar }) {
     );
   }
 
+  const tz = calendar.timezone ?? "UTC";
   const weekMap = buildWeekMap(calendar);
   const workingNow = isNowWorking(calendar);
+  const holidays = normalizeHolidays(calendar.holidays);
 
   // next 4 upcoming holidays (future only)
-  const upcoming = (calendar.holidays || [])
+  const upcoming = holidays
     .map(h => ({ ...h, ts: Date.parse(`${h.dateIso}T00:00:00Z`) }))
-    .filter(h => h.ts >= Date.now())
+    .filter(h => Number.isFinite(h.ts) && h.ts >= Date.now())
     .sort((a,b)=>a.ts-b.ts)
     .slice(0,4);
 
@@ -76,7 +133,7 @@ export default function BusinessCalendarPreview({ calendar }) {
               {calendar.name ?? "Team Business Calendar"}
             </div>
             <div className="text-gray-500">
-              TZ: {calendar.timezone ?? "UTC"} • ID: {calendar.calendarId}
+              TZ: {tz} • ID: {calendar.calendarId ?? calendar.calendar_id ?? "—"}
             </div>
           </div>
         </div>

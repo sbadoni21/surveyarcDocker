@@ -1,4 +1,6 @@
 import os
+import asyncio
+import threading
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.db import Base, engine
@@ -10,6 +12,9 @@ from app.models import init_models
 from app.core.redis_client import redis_client
 from app.utils.redis_utils import RedisHealthCheck, RedisProjectAnalytics, RedisKeyManager
 
+# Import outbox processor
+from app.services.outbox_processor import run_forever as run_outbox_processor
+
 # Import all models so SQLAlchemy knows about them
 init_models()
 
@@ -19,8 +24,9 @@ Base.metadata.create_all(bind=engine)
 from app.routes import (
     secure_crud, user, project, survey, questions, responses, tickets, webhook, answer,
     archive, audit_log, domains, integration, invite, invoice,
-    marketplace, metric, order, organisation, payment, pricing_plan, rule, contacts, support_groups, support_teams, support_routing,slas,business_calendars,tags, ticket_categories,
-    ticket_sla, ticket_taxonomies)
+    marketplace, metric, order, organisation, payment, pricing_plan, rule, contacts, 
+    support_groups, support_teams, support_routing, slas, business_calendars, tags, 
+    ticket_categories, ticket_sla, ticket_taxonomies)
 
 app = FastAPI(
     title="Survey & Ticket Management API",
@@ -32,11 +38,30 @@ app = FastAPI(
 ENABLE_ENCRYPTION = os.getenv("ENABLE_ENCRYPTION", "true").lower() == "true"
 ENCRYPTION_FALLBACK = os.getenv("ENCRYPTION_FALLBACK", "true").lower() == "true"
 REDIS_HEALTH_CHECK_INTERVAL = int(os.getenv("REDIS_HEALTH_CHECK_INTERVAL", "30"))  # seconds
+ENABLE_OUTBOX_PROCESSOR = os.getenv("ENABLE_OUTBOX_PROCESSOR", "true").lower() == "true"
+OUTBOX_POLL_INTERVAL = float(os.getenv("OUTBOX_POLL_INTERVAL", "2.0"))
+OUTBOX_BATCH_SIZE = int(os.getenv("OUTBOX_BATCH_SIZE", "25"))
+
+# Global variable to track outbox processor thread
+outbox_processor_thread = None
+
+def start_outbox_processor():
+    """Start the outbox processor in a separate thread"""
+    try:
+        print("🚀 Starting outbox processor thread...")
+        run_outbox_processor(
+            poll_interval=OUTBOX_POLL_INTERVAL,
+            batch=OUTBOX_BATCH_SIZE
+        )
+    except Exception as e:
+        print(f"❌ Outbox processor error: {e}")
 
 # Startup event to test connections
 @app.on_event("startup")
 async def startup_event():
     """Test database, Redis, and key server connections on startup"""
+    global outbox_processor_thread
+    
     print("🚀 Starting Survey & Ticket Management API with Redis Integration...")
     
     # Test Redis connection with detailed info
@@ -71,7 +96,6 @@ async def startup_event():
             timeout = httpx.Timeout(5.0, connect=3.0)
             async with httpx.AsyncClient(timeout=timeout) as client:
                 test_key_id = "startup_test"
-                # response = await client.get(f"http://key-server:8001/get-key/{test_key_id}")
                 response = await client.get(f"http://localhost:8001/get-key/{test_key_id}")
                 if response.status_code == 200:
                     print("✅ Key server connected successfully")
@@ -83,6 +107,23 @@ async def startup_event():
             print(f"⚠️  Warning: Key server connection failed: {e}")
             if not ENCRYPTION_FALLBACK:
                 print("❌ Encryption fallback disabled - API may fail")
+    
+    # Start outbox processor in background thread
+    if ENABLE_OUTBOX_PROCESSOR:
+        try:
+            outbox_processor_thread = threading.Thread(
+                target=start_outbox_processor,
+                daemon=True,
+                name="OutboxProcessor"
+            )
+            outbox_processor_thread.start()
+            print("✅ Outbox processor started successfully")
+            print(f"   - Poll Interval: {OUTBOX_POLL_INTERVAL}s")
+            print(f"   - Batch Size: {OUTBOX_BATCH_SIZE}")
+        except Exception as e:
+            print(f"❌ Failed to start outbox processor: {e}")
+    else:
+        print("ℹ️  Outbox processor disabled (set ENABLE_OUTBOX_PROCESSOR=true to enable)")
 
 # Shutdown event
 @app.on_event("shutdown")
@@ -92,10 +133,14 @@ async def shutdown_event():
     
     # Optional: Clean up Redis connections
     try:
-        # You could add cleanup operations here if needed
         print("✅ Redis cleanup completed")
     except Exception as e:
         print(f"⚠️ Warning: Redis cleanup failed: {e}")
+    
+    # Note: The outbox processor thread is a daemon thread, 
+    # so it will automatically terminate when the main process exits
+    if outbox_processor_thread and outbox_processor_thread.is_alive():
+        print("🛑 Outbox processor will terminate with main process")
 
 # Add middleware
 app.add_middleware(DecryptMiddleware)
@@ -113,7 +158,9 @@ def root():
     return {
         "message": "Survey & Ticket Management API is running",
         "redis_enabled": RedisHealthCheck.is_redis_available(),
-        "encryption_enabled": ENABLE_ENCRYPTION
+        "encryption_enabled": ENABLE_ENCRYPTION,
+        "outbox_processor_enabled": ENABLE_OUTBOX_PROCESSOR,
+        "outbox_processor_running": outbox_processor_thread.is_alive() if outbox_processor_thread else False
     }
 
 @app.get("/health")
@@ -124,7 +171,7 @@ def health_check():
     return {
         "status": "healthy",
         "timestamp": redis_info.get("server_time"),
-        "database": "connected",  # Assuming DB is working if app starts
+        "database": "connected",
         "redis": {
             "status": redis_info["status"],
             "version": redis_info.get("redis_version"),
@@ -136,6 +183,12 @@ def health_check():
             "enabled": ENABLE_ENCRYPTION,
             "fallback_enabled": ENCRYPTION_FALLBACK
         },
+        "outbox_processor": {
+            "enabled": ENABLE_OUTBOX_PROCESSOR,
+            "running": outbox_processor_thread.is_alive() if outbox_processor_thread else False,
+            "poll_interval": OUTBOX_POLL_INTERVAL,
+            "batch_size": OUTBOX_BATCH_SIZE
+        },
         "api": "Survey & Ticket Management API",
         "version": "1.0.0"
     }
@@ -144,6 +197,35 @@ def health_check():
 def redis_health_detailed():
     """Detailed Redis health check"""
     return RedisHealthCheck.get_redis_info()
+
+@app.get("/health/outbox")
+def outbox_health():
+    """Check outbox processor status"""
+    from app.db import SessionLocal
+    import sqlalchemy as sa
+    from app.models.outbox import Outbox
+    
+    try:
+        with SessionLocal() as session:
+            pending_count = session.execute(
+                sa.select(sa.func.count(Outbox.id)).where(Outbox.sent_at.is_(None))
+            ).scalar()
+            
+            sent_count = session.execute(
+                sa.select(sa.func.count(Outbox.id)).where(Outbox.sent_at.isnot(None))
+            ).scalar()
+            
+            return {
+                "status": "healthy",
+                "processor_enabled": ENABLE_OUTBOX_PROCESSOR,
+                "processor_running": outbox_processor_thread.is_alive() if outbox_processor_thread else False,
+                "pending_messages": pending_count,
+                "sent_messages": sent_count,
+                "poll_interval": OUTBOX_POLL_INTERVAL,
+                "batch_size": OUTBOX_BATCH_SIZE
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Outbox health check error: {str(e)}")
 
 @app.get("/redis/info")
 def redis_info():
@@ -242,7 +324,7 @@ app.include_router(organisation.router, tags=["Organisations"])
 app.include_router(payment.router, tags=["Payments"])
 app.include_router(pricing_plan.router, tags=["Pricing Plans"])
 app.include_router(user.router, tags=["Users"])
-app.include_router(project.router, tags=["Projects"])  # Updated with Redis integration
+app.include_router(project.router, tags=["Projects"])
 app.include_router(survey.router, tags=["Surveys"])
 app.include_router(questions.router, tags=["Questions"])
 app.include_router(responses.router, tags=["Responses"])
@@ -259,7 +341,6 @@ app.include_router(ticket_categories.router, tags=["Categories"])
 app.include_router(tags.router, tags=["Tags"])
 app.include_router(ticket_sla.router, tags=["Sla tickets"])
 app.include_router(ticket_taxonomies.router, tags=["Taxomony tickets"])
-
 
 # Add encryption middleware with configuration
 app.add_middleware(

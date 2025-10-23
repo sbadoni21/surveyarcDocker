@@ -17,7 +17,7 @@ Additions in this version:
 """
 
 from __future__ import annotations
-
+import json, sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload, joinedload
 from sqlalchemy import func, select, text  # <-- text is used for atomic counter SQL
@@ -38,6 +38,15 @@ from ..models.tickets import (
 )
 from ..models.ticket_taxonomies import TicketFeature, TicketImpactArea, TicketRootCauseType  # ▶ ADD
 from ..schemas.tickets import RootCauseSet  # ▶ ADD (if you added the schema)
+from ..services.sla_notify import (
+    compute_business_elapsed,
+    crossed_threshold,
+    enqueue_outbox,
+    lookup_user_email,
+    lookup_team_mailbox,
+    list_team_member_emails,
+    list_client_contact_emails,
+)
 
 from ..schemas.tickets import WorklogCreate, WorklogOut
 from ..policies.tickets import can_view_ticket, can_edit_ticket
@@ -99,6 +108,64 @@ WORD_TO_SEVERITY = {
 }
 
 
+
+def _resolve_recipients_basic(session, ticket: Ticket) -> dict[str, set[str]]:
+    """
+    Lightweight recipient set for "ticket.created".
+    (Requester + assignee/agent + team mailbox/members + watchers.)
+    """
+    emails = {"requester": set(), "assignee": set(), "team": set(), "watchers": set()}
+
+    # requester
+    emails["requester"] |= {lookup_user_email(session, ticket.requester_id)}
+
+    # assignee/agent
+    if ticket.assignee_id:
+        emails["assignee"] |= {lookup_user_email(session, ticket.assignee_id)}
+    if ticket.agent_id:
+        emails["assignee"] |= {lookup_user_email(session, ticket.agent_id)}
+
+    # team mailbox (prefer) or members
+    if ticket.team_id:
+        mbox = lookup_team_mailbox(session, ticket.team_id)
+        if mbox:
+            emails["team"].add(mbox)
+        else:
+            for m in list_team_member_emails(session, ticket.team_id):
+                if m: emails["team"].add(m)
+
+    # watchers
+    for w in (ticket.watchers or []):
+        emails["watchers"].add(lookup_user_email(session, w.user_id))
+
+    # strip empties
+    for k in list(emails.keys()):
+        emails[k] = {e for e in emails[k] if e}
+    return emails
+
+def on_ticket_created(session, ticket: Ticket):
+    """
+    Queue a 'ticket.created' notification into Outbox (idempotent via dedupe_key).
+    """
+    dedupe = f"ticket.created:{ticket.ticket_id}"
+    recips = _resolve_recipients_basic(session, ticket)
+
+    enqueue_outbox(session, "ticket.created", dedupe, {
+        "ticket_id": ticket.ticket_id,
+        "org_id": ticket.org_id,
+        "number": ticket.number,
+        "subject": ticket.subject,
+        "priority": ticket.priority.value if ticket.priority else None,
+        "severity": ticket.severity.value if ticket.severity else None,
+        "assignee_id": ticket.assignee_id,
+        "team_id": ticket.team_id,
+        # include SLA due times if already computed
+        "first_response_due_at": ticket.sla_status and ticket.sla_status.first_response_due_at and ticket.sla_status.first_response_due_at.isoformat(),
+        "resolution_due_at": ticket.sla_status and ticket.sla_status.resolution_due_at and ticket.sla_status.resolution_due_at.isoformat(),
+        "recipients": {k: list(v) for k, v in recips.items()},
+    })
+
+    
 def coerce_priority(v: str | None) -> TicketPriority | None:
     """Map free-text to TicketPriority enum if possible."""
     if not v:
@@ -425,6 +492,31 @@ def get_ticket(ticket_id: str, db: Session = Depends(get_db)):
     RedisTicketService.cache_ticket(dto)
     return dto
 
+def on_sla_assigned(session, ticket: Ticket, sla: SLA, status: TicketSLAStatus):
+    # build recipients
+    recips = resolve_recipients(session, ticket, sla)  # {assignee,set...}
+    dedupe = f"sla.assigned:{ticket.ticket_id}:{sla.sla_id}"
+    session.execute(
+      sa.text("""
+        INSERT INTO outbox(kind, dedupe_key, payload)
+        VALUES (:k, :d, :p)
+        ON CONFLICT (dedupe_key) DO NOTHING
+      """),
+      dict(
+        k="sla.assigned",
+        d=dedupe,
+        p=json.dumps({
+          "ticket_id": ticket.ticket_id,
+          "org_id": ticket.org_id,
+          "sla_id": sla.sla_id,
+          "subject": ticket.subject,
+          "first_response_due_at": status.first_response_due_at and status.first_response_due_at.isoformat(),
+          "resolution_due_at": status.resolution_due_at and status.resolution_due_at.isoformat(),
+          "calendar_id": status.calendar_id,
+          "recipients": { k:list(v) for k,v in recips.items() },   # <<< ADD
+        })
+      )
+    )
 
 @router.get("/", response_model=List[TicketOut])
 def list_tickets(
@@ -519,6 +611,54 @@ def list_tickets(
 
 
 # ---------------------------- CREATE ----------------------------
+def maybe_warn(session, ticket, sla, status, dim: str, target_min: int, fractions: list[float]):
+    now = datetime.utcnow()
+    elapsed = compute_business_elapsed(status, dim, now)
+    frac = elapsed / max(1, target_min)
+
+    for f in fractions:
+        if crossed_threshold(session, dim, ticket.ticket_id, f, frac):
+            key = f"sla.warn:{dim}:{ticket.ticket_id}:{f:.2f}"
+            enqueue_outbox(session, "sla.warn", key, {
+                "ticket_id": ticket.ticket_id,
+                "dimension": dim,
+                "fraction": f,
+                "target_minutes": target_min,
+                "due_at": getattr(status, f"{dim}_due_at") and getattr(status, f"{dim}_due_at").isoformat(),
+            })
+
+def resolve_recipients(session, ticket: Ticket, sla: SLA) -> dict[str, set[str]]:
+    emails = {"assignee": set(), "team": set(), "watchers": set(), "client_contacts": set(), "requester": set()}
+
+    # requester
+    emails["requester"] |= {lookup_user_email(session, ticket.requester_id)}
+
+    # assignee/agent
+    if ticket.assignee_id:
+        emails["assignee"] |= {lookup_user_email(session, ticket.assignee_id)}
+    if ticket.agent_id:
+        emails["assignee"] |= {lookup_user_email(session, ticket.agent_id)}
+
+    # watchers
+    for w in ticket.watchers:
+        emails["watchers"].add(lookup_user_email(session, w.user_id))
+
+    # team
+    if ticket.team_id:
+        mbox = lookup_team_mailbox(session, ticket.team_id)  # prefer mailbox
+        if mbox: emails["team"].add(mbox)
+        else:
+            for m in list_team_member_emails(session, ticket.team_id):
+                emails["team"].add(m)
+
+    # client contacts (if SLA is client scoped)
+    if sla.scope in ("custom","product") and "client_contact_list_id" in (sla.scope_ids or {}):
+        emails["client_contacts"] |= set(list_client_contact_emails(session, sla.scope_ids["client_contact_list_id"]))
+
+    # strip empties
+    for k in list(emails.keys()):
+        emails[k] = {e for e in emails[k] if e}
+    return emails
 
 @router.post("/", response_model=TicketOut, status_code=201)
 def create_ticket(payload: TicketCreate, db: Session = Depends(get_db)):
@@ -571,10 +711,18 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db)):
     _apply_category_defaults_on_create(db, t)
 
     # SLA status
+    # SLA status
     if t.sla_id:
         _create_sla_status_with_processing(db, t, payload.sla_processing)
     else:
         _ensure_sla_status_if_needed(db, t)
+
+    # >>> ADD: queue “SLA assigned” email
+    if t.sla_id and t.sla_status:
+        sla_obj = db.get(SLA, t.sla_id)
+        if sla_obj:
+            on_sla_assigned(db, t, sla_obj, t.sla_status)
+
 
     # Requester auto-watcher
     try:
@@ -607,6 +755,7 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db)):
     # Event + activity
     _create_ticket_creation_event(db, t, payload)
     t.last_activity_at = datetime.utcnow()
+    on_ticket_created(db, t)
 
     db.commit()
     db.refresh(t)
@@ -633,11 +782,16 @@ def update_ticket(ticket_id: str, payload: TicketUpdate, db: Session = Depends(g
     old_team_id = t.team_id
     old_agent_id = t.agent_id
     old_status = t.status
+    old_sla_id = t.sla_id  # <<< ADD
+
 
     data = payload.model_dump(exclude_unset=True, exclude={"tags"})
     for k, v in data.items():
         setattr(t, k, v)
-
+    if t.sla_id and t.sla_id != old_sla_id and t.sla_status:
+        sla_obj = db.get(SLA, t.sla_id)
+        if sla_obj:
+            on_sla_assigned(db, t, sla_obj, t.sla_status)
     if payload.tags is not None:
         if not payload.tags:
             t.tags = []
@@ -902,6 +1056,17 @@ def create_comment(ticket_id: str, payload: CommentCreate, db: Session = Depends
         else:
             if payload.body and ("needs info" in payload.body.lower() or payload.body.strip().endswith("?")):
                 sla_service.pause_sla(db, t, SLADimension.resolution, reason="awaiting_customer_info")
+                
+    if t.sla_id and t.sla_status:
+        sla_obj = db.get(SLA, t.sla_id)
+        if sla_obj:
+            # quick warn checks (don’t replace the periodic job)
+            maybe_warn(db, t, sla_obj, t.sla_status, "first_response",
+                       target_min=sla_obj.first_response_minutes or 1,
+                       fractions=[0.5, 0.9])
+            maybe_warn(db, t, sla_obj, t.sla_status, "resolution",
+                       target_min=sla_obj.resolution_minutes or 1,
+                       fractions=[0.5, 0.9])
 
     t.last_activity_at = datetime.utcnow()
     db.commit()

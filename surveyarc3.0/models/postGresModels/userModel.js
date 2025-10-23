@@ -15,7 +15,7 @@ const UserModel = {
    * Create a new user
    * POST /users/
    */
-  async create({ uid, email, displayName, role = "member", orgIds = [], status = "active", metaData = {} }) {
+  async create({ uid, email, displayName, role = "user", orgIds = [], status = "active", metaData = {} }) {
     const body = {
       uid,
       email,

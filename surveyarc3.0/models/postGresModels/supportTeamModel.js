@@ -111,6 +111,7 @@ const SupportTeamModel = {
 
   async get(teamId) {
     if (!teamId) throw new Error("Team ID is required");
+    console.log(teamId);
     const r = await fetch(`${BASE}/${encodeURIComponent(teamId)}`, { cache: "no-store" });
     return toCamel(await json(r));
   },

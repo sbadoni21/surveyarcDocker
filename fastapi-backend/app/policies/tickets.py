@@ -136,7 +136,7 @@ def can_reassign_ticket(
         return t
     
     # Team leads can reassign tickets on their team
-    if role == "team_lead" and _is_team_member(db, t.team_id, uid):
+    if role == "lead" and _is_team_member(db, t.team_id, uid):
         return t
 
     raise HTTPException(403, "Forbidden")

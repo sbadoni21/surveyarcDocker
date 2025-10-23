@@ -35,7 +35,7 @@ def ensure_user_in_user_stub_tub(db: Session, user_id: str) -> None:
 
 def invalidate_group_caches(group_id: str, org_id: str | None) -> None:
     try:
-        RedisSupportService.invalidate_group(group_id=group_id, org_id=org_id)
+        RedisSupportService.invalidate_group_caches(group_id=group_id, org_id=org_id)
     except Exception:
         pass
 
@@ -110,7 +110,6 @@ def add_group_member(group_id: str, body: GroupMemberAdd, db: Session = Depends(
     if not g:
         raise HTTPException(status_code=404, detail="Group not found")
 
-    # ensure FK in user_stub_tub (no undefined 'exists' anymore)
     ensure_user_in_user_stub_tub(db, body.user_id)
 
     existing = db.query(SupportGroupMember).filter_by(group_id=group_id, user_id=body.user_id).first()

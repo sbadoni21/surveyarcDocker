@@ -1,4 +1,4 @@
-// components/tickets/TicketForm.jsx
+// components/tickets/TicketForm.jsx - CORRECTED VERSION
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -36,134 +36,287 @@ const formatMinutes = (minutes) => {
   return `${Math.floor(minutes / 1440)}d ${Math.floor((minutes % 1440) / 60)}h`;
 };
 
-/* ----------------------- calendar helpers (safe & normalized) ----------------------- */
+/* ----------------------- CORRECTED CALENDAR HELPERS ----------------------- */
 
-// normalize BE calendar -> FE shape we expect
-// BE: hours: [{weekday, start_min, end_min}], holidays: [{date_iso, name}]
+/**
+ * Normalize backend calendar to frontend shape
+ * BE: hours: [{weekday, start_min, end_min}], holidays: [{date_iso, name}]
+ * Weekday: 0=Monday, 1=Tuesday, ..., 6=Sunday (ISO 8601 standard)
+ */
 const normalizeCalendar = (raw) => {
   if (!raw) return null;
+  
   const hours = Array.isArray(raw.hours)
-    ? raw.hours.map(h => ({
-        weekday: typeof h.weekday === "number" ? h.weekday : h.day,
-        startMin: typeof h.start_min === "number" ? h.start_min : (h.startMin ?? 0),
-        endMin: typeof h.end_min === "number" ? h.end_min : (h.endMin ?? 0),
-      }))
+    ? raw.hours.map(h => {
+        const weekday = typeof h.weekday === "number" ? h.weekday : h.day;
+        const startMin = typeof h.start_min === "number" ? h.start_min : (h.startMin ?? 0);
+        const endMin = typeof h.end_min === "number" ? h.end_min : (h.endMin ?? 0);
+        
+        // Validate ranges
+        if (weekday < 0 || weekday > 6) {
+          console.warn(`Invalid weekday: ${weekday}`);
+          return null;
+        }
+        if (startMin < 0 || startMin >= 1440 || endMin < 0 || endMin > 1440) {
+          console.warn(`Invalid time range: ${startMin}-${endMin}`);
+          return null;
+        }
+        if (startMin >= endMin) {
+          console.warn(`Invalid time range: start ${startMin} >= end ${endMin}`);
+          return null;
+        }
+        
+        return { weekday, startMin, endMin };
+      }).filter(Boolean)
     : [];
+  
   const holidays = Array.isArray(raw.holidays)
-    ? raw.holidays.map(h => ({ dateIso: h.date_iso ?? h.dateIso, name: h.name }))
+    ? raw.holidays.map(h => {
+        const dateIso = h.date_iso ?? h.dateIso;
+        if (!dateIso || !/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) {
+          console.warn(`Invalid holiday date: ${dateIso}`);
+          return null;
+        }
+        return { dateIso, name: h.name || 'Holiday' };
+      }).filter(Boolean)
     : [];
 
   return {
     calendarId: raw.calendar_id ?? raw.calendarId ?? raw.id ?? null,
-    name: raw.name,
-    timezone: raw.timezone ?? "UTC",
+    name: raw.name || 'Unnamed Calendar',
+    timezone: raw.timezone || "UTC",
     hours,
     holidays,
   };
 };
 
-const isHoliday = (dateObj, calendar) => {
-  // dateObj treated in UTC for simplicity
-  const y = dateObj.getUTCFullYear();
-  const m = String(dateObj.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(dateObj.getUTCDate()).padStart(2, "0");
-  const iso = `${y}-${m}-${d}`;
-  return (calendar?.holidays || []).some(h => h.dateIso === iso);
+/**
+ * Convert Date object to YYYY-MM-DD in calendar's timezone
+ */
+const dateToISOString = (date, timezone) => {
+  try {
+    // Use Intl.DateTimeFormat for proper timezone conversion
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    return formatter.format(date); // Returns YYYY-MM-DD
+  } catch (e) {
+    console.warn(`Timezone ${timezone} not supported, falling back to UTC`);
+    const y = date.getUTCFullYear();
+    const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(date.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
 };
 
-// Return array of working windows for weekday Mon=0..Sun=6, each as [startMin,endMin]
+/**
+ * Check if a date is a holiday in the calendar's timezone
+ */
+const isHoliday = (date, calendar) => {
+  if (!calendar?.holidays?.length) return false;
+  const dateStr = dateToISOString(date, calendar.timezone);
+  return calendar.holidays.some(h => h.dateIso === dateStr);
+};
+
+/**
+ * Get working windows for a weekday
+ * Weekday: 0=Monday, 1=Tuesday, ..., 6=Sunday
+ */
 const windowsForWeekday = (weekday, calendar) => {
-  const rows = (calendar?.hours || []).filter(h => h.weekday === weekday);
-  return rows.sort((a, b) => a.startMin - b.startMin).map(r => [r.startMin, r.endMin]);
+  if (!calendar?.hours) return [];
+  
+  const rows = calendar.hours.filter(h => h.weekday === weekday);
+  return rows
+    .sort((a, b) => a.startMin - b.startMin)
+    .map(r => [r.startMin, r.endMin]);
 };
 
-// Move a Date (UTC) to the next working start
+/**
+ * Get ISO weekday from Date (0=Monday, 1=Tuesday, ..., 6=Sunday)
+ */
+const getISOWeekday = (date, timezone) => {
+  try {
+    // Get day of week in calendar's timezone
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      weekday: 'short'
+    });
+    const dayName = formatter.format(date);
+    const dayMap = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
+    return dayMap[dayName] ?? ((date.getUTCDay() + 6) % 7);
+  } catch (e) {
+    // Fallback to UTC
+    return (date.getUTCDay() + 6) % 7;
+  }
+};
+
+/**
+ * Get minutes from midnight in calendar's timezone
+ */
+const getMinutesFromMidnight = (date, timezone) => {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    const parts = formatter.formatToParts(date);
+    const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
+    const minute = parseInt(parts.find(p => p.type === 'minute')?.value || '0');
+    return hour * 60 + minute;
+  } catch (e) {
+    // Fallback to UTC
+    return date.getUTCHours() * 60 + date.getUTCMinutes();
+  }
+};
+
+/**
+ * Move date to start of next day in calendar's timezone
+ */
+const moveToNextDay = (date, timezone) => {
+  try {
+    // Add 24 hours and truncate to midnight
+    const next = new Date(date.getTime() + 24 * 60 * 60 * 1000);
+    const dateStr = dateToISOString(next, timezone);
+    return new Date(`${dateStr}T00:00:00Z`);
+  } catch (e) {
+    // Fallback: simple day increment
+    return new Date(Date.UTC(
+      date.getUTCFullYear(),
+      date.getUTCMonth(),
+      date.getUTCDate() + 1,
+      0, 0, 0, 0
+    ));
+  }
+};
+
+/**
+ * Move a Date to the next working start time
+ */
 const moveToNextWorkingStart = (dt, calendar) => {
-  for (let i = 0; i < 14; i++) { // 2-week hard cap to avoid infinite loop
-    const weekday = (dt.getUTCDay() + 6) % 7; // JS: 0=Sun..6=Sat -> 0=Mon..6=Sun
+  const maxIterations = 365; // Max 1 year of searching
+  
+  for (let i = 0; i < maxIterations; i++) {
+    const weekday = getISOWeekday(dt, calendar.timezone);
+    
     if (!isHoliday(dt, calendar)) {
-      const minsFromMidnight = dt.getUTCHours() * 60 + dt.getUTCMinutes();
       const windows = windowsForWeekday(weekday, calendar);
-      for (const [start] of windows) {
+      
+      if (windows.length === 0) {
+        // No working hours this day, move to next day
+        dt = moveToNextDay(dt, calendar.timezone);
+        continue;
+      }
+      
+      const minsFromMidnight = getMinutesFromMidnight(dt, calendar.timezone);
+      
+      // Check if we need to jump to first window
+      const firstWindowStart = windows[0][0];
+      if (minsFromMidnight < firstWindowStart) {
+        // Jump to start of first window
+        const dateStr = dateToISOString(dt, calendar.timezone);
+        dt = new Date(`${dateStr}T00:00:00Z`);
+        dt = new Date(dt.getTime() + firstWindowStart * 60 * 1000);
+        return dt;
+      }
+      
+      // Check if we're currently inside a working window
+      for (const [start, end] of windows) {
+        if (minsFromMidnight >= start && minsFromMidnight < end) {
+          return dt; // Already in working hours
+        }
         if (minsFromMidnight < start) {
-          dt.setUTCHours(0, 0, 0, 0);
+          // Jump to this window start
+          const dateStr = dateToISOString(dt, calendar.timezone);
+          dt = new Date(`${dateStr}T00:00:00Z`);
           dt = new Date(dt.getTime() + start * 60 * 1000);
           return dt;
         }
       }
-      // If currently inside a window, return now
-      for (const [start, end] of windows) {
-        if (minsFromMidnight >= start && minsFromMidnight < end) return dt;
-      }
     }
-    // jump to next day midnight UTC
-    dt = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate() + 1, 0, 0, 0));
+    
+    // Move to next day midnight
+    dt = moveToNextDay(dt, calendar.timezone);
   }
+  
+  console.error('[moveToNextWorkingStart] Max iterations reached');
   return dt;
 };
 
-// Add minutes respecting calendar hours & holidays (UTC-based, guarded)
+/**
+ * Add business minutes respecting calendar hours & holidays
+ */
 const addBusinessMinutes = (startISO, minutes, calendar) => {
   if (!minutes || minutes <= 0) return startISO;
 
   // Fallback: if no hours configured, treat as 24x7
   const hasAnyHours = Array.isArray(calendar?.hours) && calendar.hours.length > 0;
-  if (!hasAnyHours) return new Date(new Date(startISO).getTime() + minutes * 60000).toISOString();
+  if (!hasAnyHours) {
+    return new Date(new Date(startISO).getTime() + minutes * 60000).toISOString();
+  }
+
+  // Fast path for very large SLAs (> 1 year) - fallback to simple calculation
+  if (minutes > 525600) { // 365 days
+    console.warn('[addBusinessMinutes] SLA > 1 year, using simple calculation');
+    return new Date(new Date(startISO).getTime() + minutes * 60000).toISOString();
+  }
 
   let dt = new Date(startISO);
   dt = moveToNextWorkingStart(dt, calendar);
 
   let remaining = minutes;
-  let safety = 0; // safety hard cap to avoid infinite loops
+  const maxIterations = Math.ceil(minutes / 60) * 2 + 1000; // Dynamic based on minutes
+  let iterations = 0;
 
   while (remaining > 0) {
-    safety++;
-    if (safety > 20000) {
-      console.warn("[addBusinessMinutes] safety cap reached; falling back to 24x7");
+    iterations++;
+    if (iterations > maxIterations) {
+      console.error('[addBusinessMinutes] Max iterations reached, falling back to 24x7');
       return new Date(new Date(startISO).getTime() + minutes * 60000).toISOString();
     }
 
-    const weekday = (dt.getUTCDay() + 6) % 7;
+    const weekday = getISOWeekday(dt, calendar.timezone);
     const windows = isHoliday(dt, calendar) ? [] : windowsForWeekday(weekday, calendar);
 
     if (!windows.length) {
-      // move to next workday start
-      dt = moveToNextWorkingStart(new Date(Date.UTC(
-        dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate() + 1, 0, 0, 0
-      )), calendar);
+      // No working hours today, move to next day
+      dt = moveToNextWorkingStart(moveToNextDay(dt, calendar.timezone), calendar);
       continue;
     }
 
-    const minsFromMidnight = dt.getUTCHours() * 60 + dt.getUTCMinutes();
-
+    const minsFromMidnight = getMinutesFromMidnight(dt, calendar.timezone);
     let advancedToday = false;
 
     for (const [start, end] of windows) {
-      let nowMins = dt.getUTCHours() * 60 + dt.getUTCMinutes();
+      let nowMins = getMinutesFromMidnight(dt, calendar.timezone);
 
+      // If before window start, jump to start
       if (nowMins < start) {
-        // jump forward to start
-        dt.setUTCHours(0, 0, 0, 0);
+        const dateStr = dateToISOString(dt, calendar.timezone);
+        dt = new Date(`${dateStr}T00:00:00Z`);
         dt = new Date(dt.getTime() + start * 60 * 1000);
         nowMins = start;
       }
 
+      // If within window, consume time
       if (nowMins >= start && nowMins < end) {
-        const cap = end - nowMins;
-        const take = Math.min(cap, remaining);
-        dt = new Date(dt.getTime() + take * 60 * 1000);
-        remaining -= take;
+        const availableInWindow = end - nowMins;
+        const toConsume = Math.min(availableInWindow, remaining);
+        dt = new Date(dt.getTime() + toConsume * 60 * 1000);
+        remaining -= toConsume;
         advancedToday = true;
-        if (remaining === 0) break; // done today
-        // else try next window today
+        
+        if (remaining === 0) break; // Done!
       }
     }
 
+    // If we didn't advance, move to next day
     if (!advancedToday && remaining > 0) {
-      // move to next day
-      dt = moveToNextWorkingStart(new Date(Date.UTC(
-        dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate() + 1, 0, 0, 0
-      )), calendar);
+      dt = moveToNextWorkingStart(moveToNextDay(dt, calendar.timezone), calendar);
     }
   }
 
@@ -188,6 +341,7 @@ export default function TicketForm({
   const [teamMembers, setTeamMembers] = useState([]);
   const [loadingTeamMembers, setLoadingTeamMembers] = useState(false);
   const [teamCalendar, setTeamCalendar] = useState(null);
+  const [calendarError, setCalendarError] = useState(null);
 
   // Providers
   const { slasByOrg, listSLAs } = useSLA();
@@ -216,7 +370,6 @@ export default function TicketForm({
     impactId: initial?.impactId || "",
     rcaId: initial?.rcaId || "",
     rcaNote: initial?.rcaNote || "",
-
     description: initial?.description || "",
     queueOwned: Boolean(!initial?.assigneeId && initial?.groupId),
     groupId: initial?.groupId || "",
@@ -242,42 +395,58 @@ export default function TicketForm({
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const isQueueOwned = form.queueOwned === true;
 
-  /* --------------------- ALWAYS fetch team’s BizCalendar by calendarId --------------------- */
+  /* --------------------- Fetch team's BizCalendar with proper error handling --------------------- */
   useEffect(() => {
     let mounted = true;
+    let abortController = new AbortController();
 
     (async () => {
       setTeamCalendar(null);
+      setCalendarError(null);
+      
       if (!form.teamId) return;
 
       try {
         const team = await SupportTeamModel.get(form.teamId);
 
-        // Derive calendarId safely
         const calId =
-          team?.calendarId ??
-          team?.calendar_id ??
-          team?.calendar?.calendarId ??
-          team?.calendar?.calendar_id ??
-          team?.teamCalendar?.calendarId ??
-          team?.teamCalendar?.calendar_id;
+          team?.calendarId 
 
         if (!calId) {
-          if (mounted) setTeamCalendar(null);
+          if (mounted) {
+            setTeamCalendar(null);
+            setCalendarError('No calendar configured for this team');
+          }
           return;
         }
 
         const rawCal = await BizCalendarModel.get(calId);
         const cal = normalizeCalendar(rawCal);
-        if (mounted) setTeamCalendar(cal);
+        
+        if (!cal) {
+          throw new Error('Invalid calendar data');
+        }
+        
+        if (cal.hours.length === 0) {
+          console.warn('Calendar has no working hours defined');
+        }
+        
+        if (mounted && !abortController.signal.aborted) {
+          setTeamCalendar(cal);
+          setCalendarError(null);
+        }
       } catch (e) {
         console.error("Failed to load team/calendar:", e);
-        if (mounted) setTeamCalendar(null);
+        if (mounted && !abortController.signal.aborted) {
+          setTeamCalendar(null);
+          setCalendarError(e.message || 'Failed to load calendar');
+        }
       }
     })();
 
     return () => {
       mounted = false;
+      abortController.abort();
     };
   }, [form.teamId]);
 
@@ -296,6 +465,8 @@ export default function TicketForm({
   // Fetch team members when teamId changes
   useEffect(() => {
     let mounted = true;
+    let abortController = new AbortController();
+    
     (async () => {
       if (!form.teamId) {
         if (mounted) {
@@ -309,13 +480,15 @@ export default function TicketForm({
       try {
         const members = await SupportTeamModel.listMembers(form.teamId);
         const ids = (members || []).map((m) => m.user_id ?? m.userId ?? m.uid).filter(Boolean);
+        
         if (!ids.length) {
-          if (mounted) {
+          if (mounted && !abortController.signal.aborted) {
             setTeamMembers([]);
             setLoadingTeamMembers(false);
           }
           return;
         }
+        
         const profiles = await getUsersByIds(ids);
         const normalized = profiles.map((u) => ({
           userId: u.user_id ?? u.userId ?? u.uid,
@@ -328,20 +501,23 @@ export default function TicketForm({
             (u.user_id ?? u.userId ?? u.uid),
           email: u.email,
         }));
-        if (mounted) {
+        
+        if (mounted && !abortController.signal.aborted) {
           setTeamMembers(normalized);
           setLoadingTeamMembers(false);
         }
       } catch (err) {
         console.error("Failed to fetch team members:", err);
-        if (mounted) {
+        if (mounted && !abortController.signal.aborted) {
           setTeamMembers([]);
           setLoadingTeamMembers(false);
         }
       }
     })();
+    
     return () => {
       mounted = false;
+      abortController.abort();
     };
   }, [form.teamId, getUsersByIds]);
 
@@ -377,7 +553,7 @@ export default function TicketForm({
 
   const firstResponseTime = selectedSLA?.first_response_minutes;
 
-  /* -------------------- async, non-blocking SLA due date computation -------------------- */
+  /* -------------------- Async SLA due date computation with debouncing -------------------- */
   const [computedDue, setComputedDue] = useState({
     first: null,
     resolution: null,
@@ -387,6 +563,7 @@ export default function TicketForm({
 
   useEffect(() => {
     let cancelled = false;
+    let timeoutId = null;
 
     if (!selectedSLA?.sla_id) {
       setComputedDue({ first: null, resolution: null, computing: false, error: null });
@@ -403,16 +580,15 @@ export default function TicketForm({
 
     setComputedDue((prev) => ({ ...prev, computing: true, error: null }));
 
-    const id = setTimeout(() => {
+    // Debounce calculation by 300ms
+    timeoutId = setTimeout(() => {
       try {
         const nowISO = new Date().toISOString();
         const useBiz = Boolean(form.teamId && teamCalendar?.hours?.length);
 
-        // fast-path for absurdly large SLAs
         const calc = (minutes) => {
           if (!minutes) return null;
           if (!useBiz) return new Date(Date.now() + minutes * 60000).toISOString();
-          if (minutes > 100000) return new Date(Date.now() + minutes * 60000).toISOString();
           return addBusinessMinutes(nowISO, minutes, teamCalendar);
         };
 
@@ -425,14 +601,20 @@ export default function TicketForm({
 
         if (!cancelled) setComputedDue(next);
       } catch (e) {
-        console.error("[SLA calc] failed:", e);
-        if (!cancelled) setComputedDue((prev) => ({ ...prev, computing: false, error: String(e?.message || e) }));
+        console.error('[SLA calc] failed:', e);
+        if (!cancelled) {
+          setComputedDue((prev) => ({ 
+            ...prev, 
+            computing: false, 
+            error: String(e?.message || e) 
+          }));
+        }
       }
-    }, 0); // yield to paint
+    }, 300); // 300ms debounce
 
     return () => {
       cancelled = true;
-      clearTimeout(id);
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, [selectedSLA?.sla_id, firstResponseTime, currentResolutionTime, form.teamId, teamCalendar]);
 
@@ -456,6 +638,7 @@ export default function TicketForm({
     assignment: !isQueueOwned || (isQueueOwned && form.groupId.trim().length > 0),
     sla: !selectedSLA || (selectedSLA && (hasPriorityMap || hasSeverityMap || true)),
   };
+  
   const stepValidation = [validations.basic, validations.assignment, true, true, true, true];
   const canProceed = (step) => stepValidation[step];
   const canSubmit = Object.values(validations).every(Boolean);
@@ -504,7 +687,7 @@ export default function TicketForm({
         tags: form.tagIds?.length ? form.tagIds : undefined,
         collaboratorIds: form.collaboratorIds || [],
       };
-
+      console.log("Submitting ticket payload:", payload);
       const created = await onSubmit(payload);
       const ticketId = created?.ticketId ?? created?.ticket_id;
 
@@ -571,6 +754,7 @@ export default function TicketForm({
   ];
 
   const handleNext = () => {
+    console.log("Moving to next step", form);
     if (activeStep < steps.length - 1) {
       setActiveStep((s) => s + 1);
     }
@@ -586,10 +770,10 @@ export default function TicketForm({
     switch (step) {
       case 0:
         return (
-          <div className="bg-white border border-gray-200 rounded-lg p-6">
+          <div className="bg-white dark:bg-[#242428]  border border-gray-200 rounded-lg p-6">
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm dark:text-white font-medium text-gray-700">
                   Subject <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -628,7 +812,7 @@ export default function TicketForm({
                     formats={[
                       "header",
                       "bold", "italic", "underline", "strike",
-                      "list", "bullet",
+                      "list",
                       "color", "background",
                       "align",
                       "link", "code-block",
@@ -713,6 +897,15 @@ export default function TicketForm({
                     }
                   />
                 </div>
+                
+                {calendarError && (
+                  <div className="flex items-center space-x-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <AlertCircle className="h-5 w-5 text-yellow-600" />
+                    <span className="text-sm text-yellow-800">
+                      Calendar issue: {calendarError}
+                    </span>
+                  </div>
+                )}
               </div>
             ) : null}
           </div>
@@ -836,7 +1029,9 @@ export default function TicketForm({
                   {teamCalendar?.hours?.length ? (
                     <BusinessCalendarPreview calendar={teamCalendar} />
                   ) : (
-                    <div className="text-xs text-gray-500">No team calendar attached.</div>
+                    <div className="text-xs text-gray-500">
+                      {calendarError ? `Calendar error: ${calendarError}` : 'No team calendar attached (24×7 calculation)'}
+                    </div>
                   )}
                 </div>
 
@@ -953,7 +1148,10 @@ export default function TicketForm({
                   </span>
                 )}
                 {computedDue.computing && (
-                  <span className="text-[11px] text-gray-500">calculating…</span>
+                  <span className="text-[11px] text-gray-500 flex items-center gap-1">
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                    calculating…
+                  </span>
                 )}
                 {computedDue.error && (
                   <span className="text-[11px] text-red-600">SLA math error: {computedDue.error}</span>
@@ -961,7 +1159,7 @@ export default function TicketForm({
               </div>
             )}
 
-            {selectedSLA && (computedDue.first || computedDue.resolution) && (
+            {selectedSLA && (computedDue.first || computedDue.resolution) && !computedDue.computing && (
               <div className="p-4 bg-green-50 border border-green-200 rounded-lg mt-3">
                 <h4 className="text-sm font-medium text-green-900 mb-3">Calculated Due Dates</h4>
                 <div className="space-y-2 text-sm">
@@ -984,7 +1182,7 @@ export default function TicketForm({
                 </div>
                 <p className="mt-2 text-[11px] text-gray-500">
                   {form.teamId && teamCalendar?.hours?.length
-                    ? "Due times account for team working hours and holidays."
+                    ? `Due times account for team working hours (${teamCalendar.timezone}) and holidays.`
                     : "Due times are calculated in real elapsed minutes (24×7)."}
                 </p>
               </div>
@@ -1073,117 +1271,145 @@ export default function TicketForm({
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[95vh] overflow-hidden flex flex-col">
-        <div className="border-b border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-gray-900">{title}</h2>
-            <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg">
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-          <div className="mt-4">
-            <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
-              <span>Step {activeStep + 1} of {steps.length}</span>
-              <span>{Math.round(((activeStep + 1) / steps.length) * 100)}% Complete</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${((activeStep + 1) / steps.length) * 100}%` }}
-              />
-            </div>
-          </div>
+ return (
+  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div className="bg-white dark:bg-[#242428] rounded-2xl max-w-6xl w-full max-h-[95vh] overflow-hidden flex flex-col shadow-2xl border border-gray-200 dark:border-gray-700">
+      {/* Header */}
+      <div className="border-b border-gray-200 dark:border-gray-700 p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">{title}</h2>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 dark:text-gray-300 dark:hover:text-white rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
-          <div className="w-80 border-r border-gray-200 bg-gray-50 p-4 overflow-y-auto">
-            <h3 className="text-sm font-medium text-gray-700 mb-4">Form Steps</h3>
-            <div className="space-y-2">
-              {steps.map((s, i) => {
-                const Icon = s.icon;
-                const isActive = i === activeStep;
-                const canAccess = i <= activeStep;
-                const ok = stepValidation[i];
-                return (
-                  <button
-                    key={s.label}
-                    onClick={() => canAccess && setActiveStep(i)}
-                    disabled={!canAccess}
-                    className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                      isActive
-                        ? "bg-blue-50 border-blue-200 text-blue-900"
-                        : canAccess
-                        ? "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-                        : "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
-                    }`}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className={`p-1 rounded ${isActive ? "bg-blue-100" : ok ? "bg-green-100" : "bg-gray-100"}`}>
-                        {ok && i < activeStep ? (
-                          <CheckCircle className="h-4 w-4 text-green-600" />
-                        ) : (
-                          <Icon className={`h-4 w-4 ${isActive ? "text-blue-600" : ok ? "text-green-600" : "text-gray-400"}`} />
-                        )}
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium">{s.label}</div>
-                        <div className="text-xs text-gray-500">{s.description}</div>
-                      </div>
+        <div className="mt-4">
+          <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 mb-2">
+            <span>Step {activeStep + 1} of {steps.length}</span>
+            <span>{Math.round(((activeStep + 1) / steps.length) * 100)}% Complete</span>
+          </div>
+          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+            <div
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${((activeStep + 1) / steps.length) * 100}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <div className="w-80 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#1A1A1E] p-4 overflow-y-auto">
+          <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-4">Form Steps</h3>
+          <div className="space-y-2">
+            {steps.map((s, i) => {
+              const Icon = s.icon;
+              const isActive = i === activeStep;
+              const canAccess = i <= activeStep;
+              const ok = stepValidation[i];
+              return (
+                <button
+                  key={s.label}
+                  onClick={() => canAccess && setActiveStep(i)}
+                  disabled={!canAccess}
+                  className={`w-full text-left p-3 rounded-xl border transition-colors ${
+                    isActive
+                      ? "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900/50 text-blue-900 dark:text-blue-200"
+                      : canAccess
+                      ? "bg-white dark:bg-[#242428] border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/60"
+                      : "bg-gray-100 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <div
+                      className={`p-1 rounded ${
+                        isActive
+                          ? "bg-blue-100 dark:bg-blue-900/40"
+                          : ok
+                          ? "bg-green-100 dark:bg-green-900/30"
+                          : "bg-gray-100 dark:bg-gray-800"
+                      }`}
+                    >
+                      {ok && i < activeStep ? (
+                        <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+                      ) : (
+                        <Icon
+                          className={`h-4 w-4 ${
+                            isActive
+                              ? "text-blue-600 dark:text-blue-400"
+                              : ok
+                              ? "text-green-600 dark:text-green-400"
+                              : "text-gray-400 dark:text-gray-500"
+                          }`}
+                        />
+                      )}
                     </div>
-                  </button>
-                );
-              })}
-            </div>
+                    <div>
+                      <div className="text-sm font-medium">{s.label}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{s.description}</div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
-
-          <div className="flex-1 p-6 overflow-y-auto">{renderStepContent(activeStep)}</div>
         </div>
 
-        <div className="border-t border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-gray-600">
-              {canSubmit ? "Ready to create ticket!" : "Complete required fields to continue"}
-              {stagedUploads.length > 0 && (
-                <span className="ml-2 text-blue-600">
-                  • {stagedUploads.length} staged file{stagedUploads.length === 1 ? "" : "s"} will be attached
-                </span>
-              )}
-            </div>
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={handleBack}
-                disabled={activeStep === 0}
-                className="px-4 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                <span>Back</span>
-              </button>
+        {/* Body */}
+        <div className="flex-1 p-6 overflow-y-auto">
+          {renderStepContent(activeStep)}
+        </div>
+      </div>
 
-              {activeStep < steps.length - 1 ? (
-                <button
-                  onClick={handleNext}
-                  disabled={!canProceed(activeStep)}
-                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-                >
-                  <span>Next</span>
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              ) : (
-                <button
-                  onClick={handleSubmit}
-                  disabled={saving || !canSubmit}
-                  className="px-6 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 min-w-[120px]"
-                >
-                  {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  <span>{saving ? "Creating..." : "Create Ticket"}</span>
-                </button>
-              )}
-            </div>
+      {/* Footer */}
+      <div className="border-t border-gray-200 dark:border-gray-700 p-6">
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-gray-600 dark:text-gray-300">
+            {canSubmit ? "Ready to create ticket!" : "Complete required fields to continue"}
+            {stagedUploads.length > 0 && (
+              <span className="ml-2 text-blue-600 dark:text-blue-400">
+                • {stagedUploads.length} staged file{stagedUploads.length === 1 ? "" : "s"} will be attached
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={handleBack}
+              disabled={activeStep === 0}
+              className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              <span>Back</span>
+            </button>
+
+            {activeStep < steps.length - 1 ? (
+              <button
+                onClick={handleNext}
+                disabled={!canProceed(activeStep)}
+                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors"
+              >
+                <span>Next</span>
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            ) : (
+              <button
+                onClick={handleSubmit}
+                disabled={saving || !canSubmit}
+                className="px-6 py-2 text-sm bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 min-w-[120px] transition-colors"
+              >
+                {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                <span>{saving ? "Creating..." : "Create Ticket"}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
     </div>
-  );
+  </div>
+);
+
 }

@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 const BASE = "http://localhost:8000";
 
 export async function POST(req, { params }) {
-  const { uid } = params;
+  const { uid } = await params;
   
   try {
     const body = await req.json();

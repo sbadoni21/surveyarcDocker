@@ -300,7 +300,6 @@ export default function SupportGroupsPage() {
       } else {
         const newGroup = await SupportGroupModel.create(groupData);
         showNotification("Group created successfully", "success");
-        // Initialize empty teams and members for new group
         if (newGroup?.groupId) {
           setTeams((prev) => ({ ...prev, [newGroup.groupId]: [] }));
           setGroupMembers((prev) => ({ ...prev, [newGroup.groupId]: [] }));

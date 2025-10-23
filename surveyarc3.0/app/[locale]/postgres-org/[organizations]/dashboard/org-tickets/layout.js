@@ -27,10 +27,10 @@ export default function OrgTicketsLayout({ children }) {
   // All available tabs with role permissions
   const allTabs = [
     { name: 'Business Calendars', path: 'business-calendars', roles: ['owner', 'admin', 'manager'] },
+    { name: 'Tickets', path: 'tickets', roles: ['owner', 'admin', 'manager','user', 'team_lead'] },
     { name: 'Category Management', path: 'category-management', roles: ['owner', 'admin', 'manager'] },
     { name: 'My Group Tickets', path: 'my-group-tickets', roles: ['owner', 'admin', 'manager', 'team_lead'] },
     { name: 'Routing', path: 'routing', roles: ['owner', 'admin', 'manager'] },
-    { name: 'Tickets', path: 'tickets', roles: ['owner', 'admin', 'manager','user', 'team_lead'] },
     { name: 'SLA', path: 'sla', roles: ['owner', 'admin'] },
     { name: 'Support Groups', path: 'support-groups', roles: ['owner', 'admin'] },
     { name: 'Tags', path: 'tags', roles: ['owner', 'admin', 'manager'] },

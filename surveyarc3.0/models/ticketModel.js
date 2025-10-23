@@ -112,7 +112,6 @@ async create(data) {
   const payloadRaw = {
     org_id: data.orgId,
     project_id: data.projectId ?? null,
-
     requester_id: data.requesterId,
     assignee_id: data.assigneeId ?? null,
     subject: data.subject,
@@ -128,8 +127,6 @@ async create(data) {
     category_id: data.categoryId ?? null,
     subcategory_id: data.subcategoryId ?? null,
     product_id: data.productId ?? null,
-
-    // 🔵 NEW taxonomy ids
     feature_id: data.featureId ?? null,
     impact_id: data.impactId ?? null,
     rca_id: data.rcaId ?? null,
@@ -155,8 +152,14 @@ async create(data) {
   };
 
   const payload = omitNullish(payloadRaw);
-  // ...
-}
+    const res = await fetch(`${BASE}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+    const t = await json(res);
+    return toCamel(t);}
 ,
 
   async update(ticketId, patch) {

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from turtle import st
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -20,6 +21,63 @@ UTC = timezone.utc
 def now_utc() -> datetime:
     return datetime.now(tz=UTC)
 
+# ---- local helpers: recipients + outbox (no circular import) ----
+from ..services.sla_notify import (
+    enqueue_outbox,
+    lookup_user_email,
+    lookup_team_mailbox,
+    list_team_member_emails,
+    list_client_contact_emails,
+)
+
+def _resolve_recipients(session: Session, ticket: Ticket, sla: SLA) -> dict[str, set[str]]:
+    emails = {"assignee": set(), "team": set(), "watchers": set(), "client_contacts": set(), "requester": set()}
+
+    # requester
+    emails["requester"] |= {lookup_user_email(session, ticket.requester_id)}
+
+    # assignee/agent
+    if ticket.assignee_id:
+        emails["assignee"] |= {lookup_user_email(session, ticket.assignee_id)}
+    if ticket.agent_id:
+        emails["assignee"] |= {lookup_user_email(session, ticket.agent_id)}
+
+    # watchers
+    for w in (ticket.watchers or []):
+        emails["watchers"].add(lookup_user_email(session, w.user_id))
+
+    # team
+    if ticket.team_id:
+        mbox = lookup_team_mailbox(session, ticket.team_id)
+        if mbox:
+            emails["team"].add(mbox)
+        else:
+            for m in list_team_member_emails(session, ticket.team_id):
+                if m:
+                    emails["team"].add(m)
+
+    # client contacts (if SLA is client scoped)
+    if sla and sla.scope in ("custom", "product") and "client_contact_list_id" in (sla.scope_ids or {}):
+        emails["client_contacts"] |= set(
+            list_client_contact_emails(session, sla.scope_ids["client_contact_list_id"])
+        )
+
+    # strip empties
+    for k in list(emails.keys()):
+        emails[k] = {e for e in emails[k] if e}
+    return emails
+
+def _enqueue_breach(session: Session, ticket: Ticket, sla: SLA, status: TicketSLAStatus, dim: str) -> None:
+    key = f"sla.breach:{dim}:{ticket.ticket_id}"
+    recips = _resolve_recipients(session, ticket, sla)
+    enqueue_outbox(session, "sla.breach", key, {
+        "ticket_id": ticket.ticket_id,
+        "org_id": ticket.org_id,
+        "sla_id": sla.sla_id if sla else None,
+        "dimension": dim,
+        "due_at": getattr(status, f"{dim}_due_at") and getattr(status, f"{dim}_due_at").isoformat(),
+        "recipients": {k: list(v) for k, v in recips.items()},
+    })
 
 # --------------------------------------------------------------------
 # Helpers (wall-clock, no business-calendar)
@@ -110,15 +168,37 @@ def _recompute_due(db: Session, status: TicketSLAStatus, sla: SLA) -> None:
         return
 
     # First Response target
+    # First Response target (set once if not satisfied)
     if sla.first_response_minutes and not status.first_response_due_at and not status.breached_first_response:
         status.first_response_due_at = _minutes_to_due(n, sla.first_response_minutes)
+    # already late? mark + enqueue (if not completed)
+    if (
+        status.first_response_due_at
+        and not status.breached_first_response
+        and status.first_response_completed_at is None
+        and n > status.first_response_due_at
+    ):
+        status.breached_first_response = True
+        # need the ticket for recipients
+        t = db.get(Ticket, status.ticket_id)
+        if t and t.sla_id:
+            _enqueue_breach(db, t, sla, status, "first_response")
 
-    # Resolution target
     if sla.resolution_minutes and not status.breached_resolution:
-        # Allow recomputation to keep it simple (e.g., if SLA minutes change)
         status.resolution_due_at = _minutes_to_due(n, sla.resolution_minutes)
     elif not sla.resolution_minutes:
         status.resolution_due_at = None
+    # already late? mark + enqueue (if not completed)
+    if (
+        status.resolution_due_at
+        and not status.breached_resolution
+        and status.resolution_completed_at is None
+        and n > status.resolution_due_at
+    ):
+        status.breached_resolution = True
+        t = db.get(Ticket, status.ticket_id)
+        if t and t.sla_id:
+            _enqueue_breach(db, t, sla, status, "resolution")
 
 
 # --------------------------------------------------------------------
@@ -216,6 +296,10 @@ def mark_first_response_done(db: Session, ticket: Ticket) -> None:
 
     if st.first_response_due_at and ticket.first_response_at > st.first_response_due_at:
         st.breached_first_response = True
+        # enqueue breach notification immediately
+        sla = db.get(SLA, ticket.sla_id) if ticket.sla_id else None
+        if sla:
+           _enqueue_breach(db, ticket, sla, st, "first_response")
 
     # stop first-response timer
     st.first_response_due_at = None
@@ -242,6 +326,10 @@ def mark_resolved(db: Session, ticket: Ticket) -> None:
 
     if st.resolution_due_at and ticket.resolved_at > st.resolution_due_at:
         st.breached_resolution = True
+        # enqueue breach notification immediately
+        sla = db.get(SLA, ticket.sla_id) if ticket.sla_id else None
+        if sla:
+            _enqueue_breach(db, ticket, sla, st, "resolution")
 
     st.resolution_due_at = None
 
@@ -256,7 +344,7 @@ def ensure_started(st: TicketSLAStatus) -> None:
     """
     Initialize SLA clocks when a ticket is created/binds to an SLA.
     (We keep fields for compatibility with more advanced engines, but
-     here they’re used as simple "started at" markers.)
+     here theyre used as simple "started at" markers.)
     """
     n = now_utc()
     if not st.first_response_started_at:

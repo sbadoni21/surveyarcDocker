@@ -1,7 +1,17 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Box, Stack, Tab, Tabs, TextField, IconButton, ToggleButton, ToggleButtonGroup } from "@mui/material";
+import { useEffect, useState, useMemo } from "react";
+import {
+  Box,
+  Stack,
+  Tab,
+  Tabs,
+  TextField,
+  IconButton,
+  ToggleButton,
+  ToggleButtonGroup
+} from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
+import { alpha } from "@mui/material/styles";
 import AssigneeSelect from "./AssigneeSelect";
 import GroupSelect from "./GroupSelect";
 
@@ -16,7 +26,6 @@ const STATUS_TABS = [
   { key: "canceled", label: "Canceled" },
 ];
 
-// view modes: all, mine (assignee_id=me), group (group_id), collab (/collaborating)
 export default function TicketFilters({ orgId, state, onChange, showAssignee = true, currentUserId }) {
   const [q, setQ] = useState(state.q || "");
   const [mode, setMode] = useState(state.mode || "all"); // "all" | "mine" | "group" | "collab"
@@ -24,14 +33,63 @@ export default function TicketFilters({ orgId, state, onChange, showAssignee = t
   useEffect(() => { setQ(state.q || ""); }, [state.q]);
   useEffect(() => { if (state.mode && state.mode !== mode) setMode(state.mode); /* eslint-disable-next-line */ }, [state.mode]);
 
+  // theme-aware styles for Tabs + ToggleButtons
+  const tabsSx = useMemo(() => ({
+    minHeight: 40,
+    "& .MuiTab-root": {
+      minHeight: 40,
+      textTransform: "none",
+      fontWeight: 600,
+      color: "text.secondary",
+    },
+    "& .MuiTab-root.Mui-selected": {
+      color: "text.primary",
+    },
+    "& .MuiTabs-indicator": {
+      height: 3,
+      borderRadius: 3,
+      backgroundColor: "primary.main",
+    },
+  }), []);
+
+  const tbgSx = (theme) => ({
+    "& .MuiToggleButton-root": {
+      textTransform: "none",
+      fontWeight: 600,
+      borderColor: "divider",
+      color: "text.secondary",
+      bgcolor: "background.paper",
+      "&:hover": {
+        backgroundColor: alpha(theme.palette.primary.main, theme.palette.action.hoverOpacity),
+      },
+    },
+    "& .MuiToggleButton-root.Mui-selected": {
+      color: theme.palette.primary.contrastText,
+      backgroundColor: theme.palette.primary.main,
+      borderColor: alpha(theme.palette.primary.main, 0.6),
+      "&:hover": {
+        backgroundColor: alpha(theme.palette.primary.main, 0.9),
+      },
+    },
+  });
+
   return (
     <Stack spacing={1}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between">
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        sx={{
+          px: { xs: 0, sm: 0 },
+          bgcolor: "transparent",
+        }}
+      >
         <Tabs
           value={state.status ?? ""}
           onChange={(_, val) => onChange({ ...state, status: val || undefined })}
           variant="scrollable"
           scrollButtons="auto"
+          sx={tabsSx}
         >
           {STATUS_TABS.map((t) => <Tab key={t.key} value={t.key} label={t.label} />)}
         </Tabs>
@@ -39,6 +97,7 @@ export default function TicketFilters({ orgId, state, onChange, showAssignee = t
         <ToggleButtonGroup
           value={mode}
           exclusive
+          color="primary"
           onChange={(_, val) => {
             if (!val) return;
             setMode(val);
@@ -58,6 +117,7 @@ export default function TicketFilters({ orgId, state, onChange, showAssignee = t
             onChange(patch);
           }}
           size="small"
+          sx={tbgSx}
         >
           <ToggleButton value="all">All</ToggleButton>
           <ToggleButton value="mine">My tickets</ToggleButton>
@@ -74,11 +134,33 @@ export default function TicketFilters({ orgId, state, onChange, showAssignee = t
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") onChange({ ...state, q: q || undefined }); }}
-          InputProps={{ endAdornment: <IconButton onClick={() => onChange({ ...state, q: q || undefined })}><SearchIcon /></IconButton> }}
+          InputProps={{
+            endAdornment: (
+              <IconButton
+                onClick={() => onChange({ ...state, q: q || undefined })}
+                size="small"
+              >
+                <SearchIcon fontSize="small" />
+              </IconButton>
+            ),
+          }}
+          sx={(theme) => ({
+            "& .MuiOutlinedInput-root": {
+              borderRadius: 2,
+              backgroundColor: "background.paper",
+            },
+            "& .MuiInputBase-input::placeholder": {
+              opacity: 0.8,
+            },
+            // subtle focus ring that works in dark mode too
+            "& .MuiOutlinedInput-root.Mui-focused fieldset": {
+              borderColor: alpha(theme.palette.primary.main, 0.8),
+              borderWidth: 2,
+            },
+          })}
         />
 
-        {/* Assignee filter visible only in All/My modes */}
-        {showAssignee && (mode === "all" || mode === "mine") && (
+        {(showAssignee && (mode === "all" || mode === "mine")) && (
           <Box minWidth={240}>
             <AssigneeSelect
               orgId={orgId}
@@ -89,7 +171,6 @@ export default function TicketFilters({ orgId, state, onChange, showAssignee = t
           </Box>
         )}
 
-        {/* Group select visible in Group mode */}
         {mode === "group" && (
           <Box minWidth={220}>
             <GroupSelect

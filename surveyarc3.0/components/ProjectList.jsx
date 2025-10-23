@@ -666,7 +666,7 @@ export default function ProjectsList({
               value={newMemberRole}
               onChange={(e) => setNewMemberRole(e.target.value)}
               fullWidth
-              displayEmpty
+              displayempty
             >
               <MenuItem value="contributor">Contributor</MenuItem>
               <MenuItem value="editor">Editor</MenuItem>

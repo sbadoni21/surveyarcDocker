@@ -146,8 +146,6 @@ export default function TicketsPage() {
         onSubmit={async (payload) => {
           const created = await create(payload);
           setCreateOpen(false);
-          // Navigate to the newly created ticket
-          router.push(`/app/org/${orgId}/tickets/${created.ticketId}`);
           const r = await count({ orgId, status: created.status });
           setCounts((c) => ({ ...c, [created.status]: r.count ?? (c[created.status] ?? 0) + 1 }));
         }}

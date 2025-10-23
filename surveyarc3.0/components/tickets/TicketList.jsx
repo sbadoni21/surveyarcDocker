@@ -1,7 +1,22 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
- Box, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Chip, Typography, LinearProgress, Stack, Tooltip, TableSortLabel,TextField, InputAdornment
+  Box,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  Chip,
+  Typography,
+  LinearProgress,
+  Stack,
+  Tooltip,
+  TableSortLabel,
+  TextField,
+  InputAdornment,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import FlagIcon from "@mui/icons-material/Flag";
@@ -10,21 +25,74 @@ import GroupIcon from "@mui/icons-material/Group";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import WarningIcon from "@mui/icons-material/Warning";
 import { alpha } from "@mui/material/styles";
-const STATUS_COLORS = {
-  new: "#2196F3",
-  open: "#4CAF50",
-  pending: "#FF9800",
-  on_hold: "#9E9E9E",
-  resolved: "#8BC34A",
-  closed: "#607D8B",
-  canceled: "#F44336"
+
+/* ---------- Helpers: PG date parsing & formatting ---------- */
+// Parse "YYYY-MM-DD HH:MM:SS.mmmmmm+HH[:MM]" (or +HHMM or +HH)
+const pgToDate = (input) => {
+  if (!input) return null;
+  if (input instanceof Date) return input;
+  if (typeof input === "number") return new Date(input);
+
+  const s = String(input).trim();
+  const m = s.match(
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?([+-]\d{2})(?::?(\d{2}))?$/
+  );
+  if (!m) {
+    const d = new Date(s);
+    return isNaN(d) ? null : d;
+  }
+
+  const [, Y, Mo, D, H, Mi, S, frac = "0", offH, offM = "00"] = m;
+  const ms = Number((frac + "000").slice(0, 3));
+  const sign = offH.startsWith("-") ? -1 : 1;
+  const tzH = Math.abs(Number(offH));
+  const tzM = Number(offM);
+  const offsetMinutes = sign * (tzH * 60 + tzM);
+
+  const utcMs =
+    Date.UTC(Number(Y), Number(Mo) - 1, Number(D), Number(H), Number(Mi), Number(S), ms) -
+    offsetMinutes * 60_000;
+
+  return new Date(utcMs);
 };
 
-const PRIORITY_COLORS = {
-  low: "#4CAF50",
-  normal: "#2196F3",
-  high: "#FF9800",
-  urgent: "#F44336"
+const formatDate = (value, opts = {}) => {
+  const d = pgToDate(value);
+  if (!d || isNaN(d)) return "-";
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    ...opts,
+  }).format(d);
+};
+
+/* ---------- Color mappers that respect light/dark theme ---------- */
+const getStatusColor = (theme, status) => {
+  const t = theme.palette;
+  const map = {
+    new: t.info.main,
+    open: t.success.main,
+    pending: t.warning.main,
+    on_hold: t.grey[500],
+    resolved: t.success.light || t.success.main,
+    closed: t.grey[600],
+    canceled: t.error.main,
+  };
+  return map[status] || t.info.main;
+};
+
+const getPriorityColor = (theme, priority) => {
+  const t = theme.palette;
+  const map = {
+    low: t.success.main,
+    normal: t.info.main,
+    high: t.warning.main,
+    urgent: t.error.main,
+  };
+  return map[priority] || t.info.main;
 };
 
 export default function TicketList({ tickets, loading, onSelect, selectedTicket }) {
@@ -37,93 +105,43 @@ export default function TicketList({ tickets, loading, onSelect, selectedTicket 
     setOrder(isAsc ? "desc" : "asc");
     setOrderBy(property);
   };
-// Parse "YYYY-MM-DD HH:MM:SS.mmmmmm+HH[:MM]" (or +HHMM or +HH)
-const pgToDate = (input) => {
-  if (!input) return null;
-  if (input instanceof Date) return input;
-  if (typeof input === "number") return new Date(input);
 
-  const s = String(input).trim();
+  const sortedTickets = useMemo(() => {
+    const arr = [...(tickets || [])];
+    return arr.sort((a, b) => {
+      let aVal = a[orderBy];
+      let bVal = b[orderBy];
 
-  // 2025-10-03 08:13:58.399259+00
-  const m = s.match(
-    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?([+-]\d{2})(?::?(\d{2}))?$/
-  );
-  if (!m) {
-    // fallback: try ISO or return Invalid Date for visibility
-    const d = new Date(s);
-    return isNaN(d) ? null : d;
-  }
+      // Handle dates
+      if (orderBy === "createdAt" || orderBy === "updated_at") {
+        aVal = pgToDate(aVal)?.getTime() ?? 0;
+        bVal = pgToDate(bVal)?.getTime() ?? 0;
+      }
 
-  const [
-    , Y, Mo, D, H, Mi, S, frac = "0", offH, offM = "00"
-  ] = m;
+      // Handle strings
+      if (typeof aVal === "string") {
+        aVal = aVal.toLowerCase();
+        bVal = (bVal || "").toLowerCase();
+      }
 
-  // milliseconds from microseconds (pad right, then take 3)
-  const ms = Number((frac + "000").slice(0, 3));
+      if (order === "asc") return aVal > bVal ? 1 : -1;
+      return aVal < bVal ? 1 : -1;
+    });
+  }, [tickets, order, orderBy]);
 
-  // timezone offset in minutes (note: Date.UTC expects UTC, so we subtract offset)
-  const sign = offH.startsWith("-") ? -1 : 1;
-  const tzH = Math.abs(Number(offH));
-  const tzM = Number(offM);
-  const offsetMinutes = sign * (tzH * 60 + tzM);
-
-  const utcMs = Date.UTC(
-    Number(Y), Number(Mo) - 1, Number(D),
-    Number(H), Number(Mi), Number(S), ms
-  ) - offsetMinutes * 60_000;
-
-  return new Date(utcMs);
-};
-
-const formatDate = (value, opts={}) => {
-  const d = pgToDate(value);
-  if (!d || isNaN(d)) return "-";
-  return new Intl.DateTimeFormat(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    ...opts
-  }).format(d);
-};
-
-
-  const sortedTickets = [...(tickets || [])].sort((a, b) => {
-    let aVal = a[orderBy];
-    let bVal = b[orderBy];
-
-    // Handle dates
-if (orderBy === "createdAt" || orderBy === "updated_at") {
-  aVal = pgToDate(aVal)?.getTime() ?? 0;
-  bVal = pgToDate(bVal)?.getTime() ?? 0;
-}
-
-
-    // Handle strings
-    if (typeof aVal === "string") {
-      aVal = aVal.toLowerCase();
-      bVal = (bVal || "").toLowerCase();
-    }
-
-    if (order === "asc") {
-      return aVal > bVal ? 1 : -1;
-    }
-    return aVal < bVal ? 1 : -1;
-  });
-
-  const filteredTickets = sortedTickets.filter((ticket) => {
-    if (!searchTerm) return true;
+  const filteredTickets = useMemo(() => {
+    if (!searchTerm) return sortedTickets;
     const term = searchTerm.toLowerCase();
-    return (
-      ticket.subject?.toLowerCase().includes(term) ||
-      ticket.number?.toString().includes(term) ||
-      ticket.ticketId?.toLowerCase().includes(term) ||
-      ticket.description?.toLowerCase().includes(term) ||
-      ticket.assigneeName?.toLowerCase().includes(term)
-    );
-  });
+    return sortedTickets.filter((ticket) => {
+      return (
+        ticket.subject?.toLowerCase().includes(term) ||
+        ticket.number?.toString().includes(term) ||
+        ticket.ticketId?.toLowerCase().includes(term) ||
+        ticket.description?.toLowerCase().includes(term) ||
+        ticket.assigneeName?.toLowerCase().includes(term)
+      );
+    });
+  }, [sortedTickets, searchTerm]);
 
   const queueOwned = (ticket) => !ticket.assigneeId && !!ticket.groupId;
 
@@ -145,11 +163,19 @@ if (orderBy === "createdAt" || orderBy === "updated_at") {
   }
 
   return (
-    <Paper variant="outlined" sx={{ borderRadius: 2, overflow: "hidden", height: "100%" }}>
+    <Paper
+      variant="outlined"
+      sx={{
+        borderRadius: 2,
+        overflow: "hidden",
+        height: "100%",
+        bgcolor: "background.paper",
+      }}
+    >
       {loading && <LinearProgress />}
-      
+
       {/* Search bar */}
-      <Box sx={{ p: 2, borderBottom: "1px solid", borderColor: "divider" }}>
+      <Box sx={{ p: 2, borderBottom: 1, borderColor: "divider", bgcolor: "background.paper" }}>
         <TextField
           fullWidth
           size="small"
@@ -165,8 +191,9 @@ if (orderBy === "createdAt" || orderBy === "updated_at") {
           }}
           sx={{
             "& .MuiOutlinedInput-root": {
-              borderRadius: 2
-            }
+              borderRadius: 2,
+              bgcolor: "background.default",
+            },
           }}
         />
       </Box>
@@ -225,35 +252,40 @@ if (orderBy === "createdAt" || orderBy === "updated_at") {
               </TableCell>
             </TableRow>
           </TableHead>
+
           <TableBody>
             {filteredTickets.map((ticket) => {
               const isSelected = selectedTicket?.ticketId === ticket.ticketId;
               const hasSLABreach = ticket.sla_status?.breached_resolution;
-              
+
               return (
                 <TableRow
                   key={ticket.ticketId}
                   hover
                   selected={isSelected}
                   onClick={() => onSelect?.(ticket)}
-                  sx={{
+                  sx={(theme) => ({
                     cursor: "pointer",
-                    bgcolor: isSelected ? alpha("#1976d2", 0.08) : "transparent",
+                    // Use MUI action opacities for consistent light/dark behavior
+                    bgcolor: isSelected
+                      ? alpha(theme.palette.primary.main, theme.palette.action.selectedOpacity + 0.06)
+                      : "transparent",
                     "&:hover": {
-                      bgcolor: isSelected 
-                        ? alpha("#1976d2", 0.12) 
-                        : alpha("#1976d2", 0.04)
+                      bgcolor: isSelected
+                        ? alpha(theme.palette.primary.main, theme.palette.action.selectedOpacity + theme.palette.action.hoverOpacity)
+                        : alpha(theme.palette.primary.main, theme.palette.action.hoverOpacity),
                     },
                     "& td": {
                       borderBottom: "1px solid",
-                      borderColor: "divider"
-                    }
-                  }}
+                      borderColor: "divider",
+                      bgcolor: "background.paper",
+                    },
+                  })}
                 >
                   <TableCell>
                     <Stack direction="row" alignItems="center" spacing={0.5}>
-                      <Typography 
-                        variant="body2" 
+                      <Typography
+                        variant="body2"
                         fontWeight={isSelected ? 600 : 500}
                         fontFamily="monospace"
                       >
@@ -261,12 +293,7 @@ if (orderBy === "createdAt" || orderBy === "updated_at") {
                       </Typography>
                       {hasSLABreach && (
                         <Tooltip title="SLA Breached">
-                          <WarningIcon 
-                            sx={{ 
-                              fontSize: 16, 
-                              color: "error.main" 
-                            }} 
-                          />
+                          <WarningIcon sx={{ fontSize: 16, color: "error.main" }} />
                         </Tooltip>
                       )}
                     </Stack>
@@ -274,8 +301,8 @@ if (orderBy === "createdAt" || orderBy === "updated_at") {
 
                   <TableCell>
                     <Stack spacing={0.5}>
-                      <Typography 
-                        variant="body2" 
+                      <Typography
+                        variant="body2"
                         fontWeight={isSelected ? 600 : 400}
                         sx={{
                           overflow: "hidden",
@@ -283,11 +310,12 @@ if (orderBy === "createdAt" || orderBy === "updated_at") {
                           display: "-webkit-box",
                           WebkitLineClamp: 2,
                           WebkitBoxOrient: "vertical",
-                          lineHeight: 1.3
+                          lineHeight: 1.3,
                         }}
                       >
                         {ticket.subject}
                       </Typography>
+
                       {ticket.tags && ticket.tags.length > 0 && (
                         <Stack direction="row" spacing={0.5} flexWrap="wrap" gap={0.5}>
                           {ticket.tags.slice(0, 2).map((tag) => (
@@ -298,7 +326,7 @@ if (orderBy === "createdAt" || orderBy === "updated_at") {
                               sx={{
                                 height: 18,
                                 fontSize: "0.65rem",
-                                "& .MuiChip-label": { px: 0.75 }
+                                "& .MuiChip-label": { px: 0.75 },
                               }}
                             />
                           ))}
@@ -309,7 +337,7 @@ if (orderBy === "createdAt" || orderBy === "updated_at") {
                               sx={{
                                 height: 18,
                                 fontSize: "0.65rem",
-                                "& .MuiChip-label": { px: 0.75 }
+                                "& .MuiChip-label": { px: 0.75 },
                               }}
                             />
                           )}
@@ -322,13 +350,16 @@ if (orderBy === "createdAt" || orderBy === "updated_at") {
                     <Chip
                       label={ticket.status?.toUpperCase() || "OPEN"}
                       size="small"
-                      sx={{
-                        bgcolor: alpha(STATUS_COLORS[ticket.status] || STATUS_COLORS.open, 0.1),
-                        color: STATUS_COLORS[ticket.status] || STATUS_COLORS.open,
-                        fontWeight: 600,
-                        fontSize: "0.7rem",
-                        height: 24,
-                        borderRadius: 1.5
+                      sx={(theme) => {
+                        const color = getStatusColor(theme, ticket.status);
+                        return {
+                          bgcolor: alpha(color, 0.12),
+                          color,
+                          fontWeight: 600,
+                          fontSize: "0.7rem",
+                          height: 24,
+                          borderRadius: 1.5,
+                        };
                       }}
                     />
                   </TableCell>
@@ -338,16 +369,17 @@ if (orderBy === "createdAt" || orderBy === "updated_at") {
                       icon={<FlagIcon sx={{ fontSize: 14 }} />}
                       label={ticket.priority?.toUpperCase() || "NORMAL"}
                       size="small"
-                      sx={{
-                        bgcolor: alpha(PRIORITY_COLORS[ticket.priority] || PRIORITY_COLORS.normal, 0.1),
-                        color: PRIORITY_COLORS[ticket.priority] || PRIORITY_COLORS.normal,
-                        fontWeight: 600,
-                        fontSize: "0.7rem",
-                        height: 24,
-                        borderRadius: 1.5,
-                        "& .MuiChip-icon": {
-                          color: "inherit"
-                        }
+                      sx={(theme) => {
+                        const color = getPriorityColor(theme, ticket.priority);
+                        return {
+                          bgcolor: alpha(color, 0.12),
+                          color,
+                          fontWeight: 600,
+                          fontSize: "0.7rem",
+                          height: 24,
+                          borderRadius: 1.5,
+                          "& .MuiChip-icon": { color: "inherit" },
+                        };
                       }}
                     />
                   </TableCell>
@@ -363,7 +395,7 @@ if (orderBy === "createdAt" || orderBy === "updated_at") {
                           sx={{
                             fontSize: "0.7rem",
                             height: 24,
-                            borderRadius: 1.5
+                            borderRadius: 1.5,
                           }}
                         />
                       </Tooltip>
@@ -380,7 +412,7 @@ if (orderBy === "createdAt" || orderBy === "updated_at") {
                           sx={{
                             fontSize: "0.7rem",
                             height: 24,
-                            borderRadius: 1.5
+                            borderRadius: 1.5,
                           }}
                         />
                       </Tooltip>
@@ -390,18 +422,17 @@ if (orderBy === "createdAt" || orderBy === "updated_at") {
                       </Typography>
                     )}
                   </TableCell>
-<TableCell>
-  <Tooltip title={formatDate(ticket.createdAt, { second: "2-digit" })}>
-    <Stack direction="row" spacing={0.5} alignItems="center">
-      <AccessTimeIcon sx={{ fontSize: 14, color: "text.secondary" }} />
-      <Typography variant="caption" color="text.secondary">
-        {formatDate(ticket.createdAt, { hour: undefined, minute: undefined })}
-      </Typography>
-    </Stack>
-  </Tooltip>
-</TableCell>
 
-
+                  <TableCell>
+                    <Tooltip title={formatDate(ticket.createdAt, { second: "2-digit" })}>
+                      <Stack direction="row" spacing={0.5} alignItems="center">
+                        <AccessTimeIcon sx={{ fontSize: 14, color: "text.secondary" }} />
+                        <Typography variant="caption" color="text.secondary">
+                          {formatDate(ticket.createdAt, { hour: undefined, minute: undefined })}
+                        </Typography>
+                      </Stack>
+                    </Tooltip>
+                  </TableCell>
                 </TableRow>
               );
             })}
@@ -410,13 +441,13 @@ if (orderBy === "createdAt" || orderBy === "updated_at") {
       </TableContainer>
 
       {/* Results summary */}
-      <Box 
-        sx={{ 
-          p: 1.5, 
-          borderTop: "1px solid", 
+      <Box
+        sx={(theme) => ({
+          p: 1.5,
+          borderTop: 1,
           borderColor: "divider",
-          bgcolor: alpha("#1976d2", 0.02)
-        }}
+          bgcolor: alpha(theme.palette.primary.main, 0.02),
+        })}
       >
         <Typography variant="caption" color="text.secondary">
           Showing {filteredTickets.length} of {tickets.length} tickets
