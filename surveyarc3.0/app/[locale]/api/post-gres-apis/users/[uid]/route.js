@@ -43,7 +43,7 @@ export async function GET(req, { params }) {
 }
 
 export async function PATCH(req, { params }) {
-  const { uid } = params;
+  const { uid } = await params;
   
   try {
     const body = await req.json();
@@ -69,7 +69,7 @@ export async function PATCH(req, { params }) {
 }
 
 export async function DELETE(req, { params }) {
-  const { uid } = params;
+  const { uid } = await params;
   
   try {
     const res = await fetch(`${BASE}/users/${uid}`, {

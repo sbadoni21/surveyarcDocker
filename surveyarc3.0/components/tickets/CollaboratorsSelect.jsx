@@ -56,7 +56,7 @@ export default function CollaboratorsSelect({
           select
           value=""
           onChange={(e) => { const id = e.target.value; if (id) toggle(id); }}
-          displayempty
+          displayEmpty
           SelectProps={{ renderValue: () => "Add collaborator…" }}
         >
           <MenuItem value=""><em>— Select user —</em></MenuItem>

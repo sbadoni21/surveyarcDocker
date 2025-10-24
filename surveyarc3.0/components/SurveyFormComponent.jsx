@@ -37,14 +37,7 @@ export default function SurveyFormComponent({
               disabled={loading}
             />
 
-            {/* Input: Survey Duration */}
-            <input
-              className="w-full px-4 py-2 mb-4 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-800 dark:text-gray-100"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              placeholder="Enter survey duration (e.g. 10 min)"
-              disabled={loading}
-            />
+        
 
             {/* Button Container */}
             <div className="flex gap-3">

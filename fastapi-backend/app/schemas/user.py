@@ -1,11 +1,12 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
+from ..models.user import OrgRole
 
 class UserBase(BaseModel):
     email: str
     display_name: str = Field(..., alias="displayName")
-    role: str = Field("user", alias="role")
+    role: OrgRole = OrgRole.member
     org_ids: List[str] = Field(default=[], alias="orgId")
 
     class Config:
@@ -17,7 +18,7 @@ class UserCreate(UserBase):
     uid: str
     status: str = "active"
     meta_data: dict = Field(default={}, alias="metadata")
-
+    
     class Config:
         orm_mode = True
         populate_by_name = True
@@ -25,7 +26,7 @@ class UserCreate(UserBase):
 
 class UserUpdate(BaseModel):
     display_name: Optional[str] = Field(None, alias="displayName")
-    role: Optional[str] = None
+    role: Optional[OrgRole] = None
     status: Optional[str] = None
     org_ids: Optional[List[str]] = Field(None, alias="orgId")
     meta_data: Optional[dict] = Field(None, alias="metadata")

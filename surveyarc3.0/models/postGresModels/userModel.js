@@ -15,7 +15,7 @@ const UserModel = {
    * Create a new user
    * POST /users/
    */
-  async create({ uid, email, displayName, role = "user", orgIds = [], status = "active", metaData = {} }) {
+  async create({ uid, email, displayName, role = "member", orgIds = [], status = "active", metaData = {} }) {
     const body = {
       uid,
       email,
@@ -53,7 +53,7 @@ const UserModel = {
    * PATCH /users/{uid}
    */
   async update(uid, data) {
-    const res = await fetch(`${BASE}/org/${encodeURIComponent(uid)}`, {
+    const res = await fetch(`${BASE}/${encodeURIComponent(uid)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
