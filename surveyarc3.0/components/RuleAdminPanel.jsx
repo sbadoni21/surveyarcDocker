@@ -18,6 +18,11 @@ import {
 } from "@/utils/ruleEngine";
 import { useParams } from "next/navigation";
 import { useRule } from "@/providers/rulePProvider";
+import TicketForm from "./tickets/TicketForm";
+import { useTags } from "@/providers/postGresPorviders/TagProvider";
+import { useTickets } from "@/providers/ticketsProvider";
+import { useUser } from "@/providers/postGresPorviders/UserProvider";
+import RaiseTicketForm from "./tickets/RaiseTicketForm";
 
 const emptyCondition = {
   questionId: "",
@@ -35,6 +40,11 @@ const emptyAction = {
   blockIds: [],
   questionIds: [],
   message: "",
+
+  subjectTemplate: "",
+  priority: "normal", // TicketForm defaults to normal
+  groupId: "",
+  tagsCsv: "",
 };
 
 function makeEmptyRule(surveyId, blockId) {
@@ -49,11 +59,31 @@ function makeEmptyRule(surveyId, blockId) {
   };
 }
 
+const csvToArray = (s) =>
+  (s || "")
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+// map tag names (from CSV) -> tagIds that TicketForm expects
+const namesToTagIds = (names, availableTags) => {
+  if (!Array.isArray(names) || !Array.isArray(availableTags)) return [];
+  const byName = new Map(
+    availableTags.map((t) => [
+      (t.name ?? t.tag_name ?? t.label)?.toLowerCase(),
+      t.tag_id ?? t.tagId ?? t.id,
+    ])
+  );
+  return names.map((n) => byName.get(String(n).toLowerCase())).filter(Boolean);
+};
+
 export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
   const params = useParams();
   const orgId = params.organizations;
   const surveyId = params.slug;
-
+  const { list: listTags, getCachedTags } = useTags();
+  const availableTags = getCachedTags(orgId);
+  const { uid: currentUserId } = useUser() || {};
   const { rules, getAllRules, saveRule, updateRule, deleteRule } = useRule();
 
   const [editingRule, setEditingRule] = useState(null);
@@ -63,6 +93,11 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
   const [testAnswers, setTestAnswers] = useState({});
   const [currentBlockId, setCurrentBlockId] = useState("");
   const [currentQuestionId, setCurrentQuestionId] = useState("");
+
+  // state
+  const [ticketOpen, setTicketOpen] = useState(false);
+  const [ticketInitial, setTicketInitial] = useState(null);
+  const [ticketActIndex, setTicketActIndex] = useState(null);
 
   // ----- Derived structures -----
   const blockOrder = useMemo(() => {
@@ -116,6 +151,13 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
     return m;
   }, [blocks, questionsById, questionOptions]);
 
+  useEffect(() => {
+    if (orgId) {
+      // Best-effort; ignore errors
+      listTags({ orgId }).catch(() => {});
+    }
+  }, [orgId, listTags]);
+
   // ----- Load rules from Postgres via provider -----
   const loadRules = async () => {
     const data = await getAllRules(surveyId);
@@ -140,6 +182,15 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
           ? act.questionIds
           : [];
       if (act.type === "show_message") base.message = act.message || "";
+      if (act.type === "raise_ticket") {
+        base.subjectTemplate = act.subjectTemplate || "";
+        base.priority = act.priority || "normal";
+        base.groupId = act.groupId || "";
+        base.tagsCsv = act.tagsCsv || "";
+        base.message = act.message || "";
+        base.slaId = act.slaId || "";
+        base.ticketData = Array.isArray(act.ticketData) ? act.ticketData : [];
+      }
       return base;
     });
 
@@ -355,6 +406,11 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
         }
         if (a.type === "show_message") return `💬 "${a.message}"`;
         if (a.type === "end") return "■ End survey";
+        if (a.type === "raise_ticket") {
+          const g = a.groupId ? `, group ${a.groupId}` : "";
+          const t = a.tagsCsv ? `, tags [${a.tagsCsv}]` : "";
+          return `🎫 Raise ticket (priority ${a.priority || "normal"}${g}${t})`;
+        }
         return a.type;
       })
       .join("  •  ");
@@ -380,6 +436,52 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
     [rules, blockOrder]
   );
 
+  const ruleHasRaise = (r) =>
+    Array.isArray(r?.actions) &&
+    r.actions.some((a) => a.type === "raise_ticket");
+
+  const openTicketFormFromRule = (rule) => {
+    const rt =
+      (rule.actions || []).find((a) => a.type === "raise_ticket") || {};
+
+    const subject =
+      (rt.subjectTemplate && rt.subjectTemplate.trim()) ||
+      `[Survey ${surveyId}] ${
+        rule.name || rule.ruleId || "New ticket"
+      } — Block ${rule.blockId}`;
+
+    // map CSV tag names -> tagIds that TicketForm expects
+    const tagIds = namesToTagIds(csvToArray(rt.tagsCsv), availableTags);
+
+    setTicketInitial({
+      subject,
+      description: rt.message || "",
+      priority: rt.priority || "normal",
+      groupId: rt.groupId || "",
+      // anything else you want to prefill can be added here:
+      // categoryId, productId, etc. if you derive them
+      tags: tagIds, // TicketForm reads tagIds from initial.tags
+    });
+    setTicketOpen(true);
+  };
+
+  const openTicketFormForAction = (act, index) => {
+    const tagIds = namesToTagIds(csvToArray(act.tagsCsv), availableTags);
+    setTicketInitial({
+      subject:
+        (act.subjectTemplate || "").trim() ||
+        `Ticket for rule ${editingRule?.name || editingRule?.ruleId || ""}`,
+      description: act.message || "",
+      priority: act.priority || "normal",
+      groupId: act.groupId || "",
+      // carry through anything you want prefilled
+      tagIds: act.tagIds || tagIds,
+      slaId: act.slaId || "",
+      severity: act.severity || "sev4",
+    });
+    setTicketActIndex(index);
+    setTicketOpen(true);
+  };
   // ----- Render -----
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-6">
@@ -454,6 +556,17 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                                     </div>
                                   </div>
                                   <div className="flex gap-2">
+                                    {ruleHasRaise(rule) && (
+                                      <button
+                                        className="px-2 py-1 text-xs bg-emerald-600 text-white rounded"
+                                        onClick={() =>
+                                          openTicketFormFromRule(rule)
+                                        }
+                                        title="Raise ticket"
+                                      >
+                                        🎫 Raise Ticket
+                                      </button>
+                                    )}
                                     <button
                                       className="px-2 py-1 text-xs bg-blue-500 text-white rounded"
                                       onClick={() => setEditingRule(rule)}
@@ -985,6 +1098,7 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                       </option>
                       <option value="show_message">Show Message</option>
                       <option value="end">End Survey</option>
+                      <option value="raise_ticket">Raise Ticket</option>
                     </select>
 
                     {act.type === "goto_block" && (
@@ -1130,6 +1244,18 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                       />
                     )}
 
+                    {act.type === "raise_ticket" && (
+                      <>
+                        <button
+                          type="button"
+                          className="px-2 py-1 text-xs bg-emerald-600 text-white rounded"
+                          onClick={() => openTicketFormForAction(act, index)}
+                        >
+                          Configure Ticket
+                        </button>
+                      </>
+                    )}
+
                     <button
                       className="px-2 py-1 text-xs bg-slate-200 rounded"
                       onClick={() =>
@@ -1156,6 +1282,51 @@ export default function RuleAdminPanel({ questionOptions = [], blocks = [] }) {
                   Add Action
                 </button>
               </div>
+
+              {/* single, global modal */}
+              <RaiseTicketForm
+                open={ticketOpen}
+                onClose={() => setTicketOpen(false)}
+                onSaveTemplate={(template) => {
+                  if (ticketActIndex == null) return;
+
+                  setEditingRule((prev) => {
+                    if (!prev) return prev;
+                    const actions = [...(prev.actions || [])];
+
+                    // Ensure the action object exists and is of type raise_ticket
+                    const current = {
+                      ...(actions[ticketActIndex] || { type: "raise_ticket" }),
+                    };
+
+                    // Store template inside ticketData array (as you requested)
+                    const ticketData = Array.isArray(current.ticketData)
+                      ? [...current.ticketData]
+                      : [];
+                    ticketData[0] = template; // store a single template; or push if you want multiple
+                    current.ticketData = ticketData;
+
+                    // Also mirror a few top-level action fields for quick reads (optional)
+                    current.subjectTemplate = template.subjectTemplate;
+                    current.priority = template.priority;
+                    current.groupId = template.groupId;
+                    current.message = template.message;
+                    current.slaId = template.slaId;
+
+                    actions[ticketActIndex] = current;
+
+                    return { ...prev, actions };
+                  });
+
+                  setTicketOpen(false);
+                  setTicketActIndex(null);
+                }}
+                initial={ticketInitial || {}}
+                title="New Ticket"
+                orgId={orgId}
+                requestorId={currentUserId}
+                currentUserId={currentUserId}
+              />
 
               <div className="flex gap-2 pt-2">
                 <button

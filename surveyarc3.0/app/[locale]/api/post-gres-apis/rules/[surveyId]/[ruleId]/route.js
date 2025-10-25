@@ -34,7 +34,7 @@ export async function GET(_req, { params }) {
 }
 
 export async function PATCH(req, { params }) {
-  const { surveyId, ruleId } = params;
+  const { surveyId, ruleId } = await params;
   try {
     const body = await req.json();
     const payload = ENC ? await encryptPayload(body) : body;

@@ -6,7 +6,7 @@ import { TbLayoutDistributeHorizontal, TbSettingsCog } from "react-icons/tb";
 export default function TopTabsNavbar({ activeTab, setActiveTab }) {
   const tabs = [
     { id: "questions", label: "Questions", icon: <Icon icon="ri:survey-line" width="20" height="20" /> },
-    { id: "rules", label: "Logic rules", icon: <TbSettingsCog className="w-5 h-5" /> },
+    // { id: "rules", label: "Logic rules", icon: <TbSettingsCog className="w-5 h-5" /> },
     { id: "flow", label: "Survey flow", icon: <TbSettingsCog className="w-5 h-5" /> },
     { id: "distribution", label: "Distribution", icon: <TbLayoutDistributeHorizontal width="20" height="20" /> },
     { id: "demo", label: "Demo survey", icon: <Icon icon="solar:play-linear" width="20" height="20" /> },
