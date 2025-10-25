@@ -45,7 +45,7 @@ async function forceDecryptResponse(res) {
 // GET /en/api/post-gres-apis/projects/:projectId/timeline?orgId=... (also accepts org_id)
 export async function GET(req, { params }) {
   try {
-    const { projectId } = params ?? {};
+    const { projectId } = await params ?? {};
     if (!projectId) {
       return NextResponse.json({ detail: "projectId is required in the path" }, { status: 400 });
     }

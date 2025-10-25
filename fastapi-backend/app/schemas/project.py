@@ -2,7 +2,7 @@ from pydantic import BaseModel,Field
 from typing import Optional, List, Literal, Dict, Any
 from datetime import datetime
 
-Role = Literal["owner", "admin", "manager", "contributor", "viewer"]
+Role = Literal["owner", "admin", "manager", "contributor", "viewer","editor"]
 MemberStatus = Literal["active", "invited", "removed", "left"]
 
 class Member(BaseModel):

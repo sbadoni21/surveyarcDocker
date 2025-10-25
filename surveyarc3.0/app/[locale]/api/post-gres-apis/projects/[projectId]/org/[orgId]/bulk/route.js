@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { BASE, jsonOrError } from "@/utils/categoryApiHelpers";
+import { BASE, forceDecryptResponse, jsonOrError } from "@/utils/categoryApiHelpers";
 
 // Body: { project_ids:[], op:"archive|unarchive|delete|set_priority|set_status", value? }
 export async function POST(req, { params }) {
@@ -12,6 +12,6 @@ export async function POST(req, { params }) {
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(30000), cache: "no-store",
   });
-  const { status, json } = await jsonOrError(res);
-  return NextResponse.json(json, { status });
+   return forceDecryptResponse(res);
+ 
 }

@@ -2,11 +2,14 @@
 
 import React, { useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { getCookie } from "cookies-next";
 import {
   IconButton, Menu, MenuItem, ListItemIcon, ListItemText,
   Divider, Tooltip, CircularProgress, MenuList, ListSubheader,
-  Box, Typography, Chip, alpha
+  Box, Typography, Chip
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
+
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import GroupIcon from "@mui/icons-material/Group";
@@ -21,19 +24,15 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import PauseCircleIcon from "@mui/icons-material/PauseCircle";
 import CancelIcon from "@mui/icons-material/Cancel";
 import BoltIcon from "@mui/icons-material/Bolt";
-import ArchiveIcon from "@mui/icons-material/Archive";
-import UnarchiveIcon from "@mui/icons-material/Unarchive";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ShareIcon from "@mui/icons-material/Share";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
-import { Stack } from "@mui/material";
-import { useProject } from "@/providers/postGresPorviders/projectProvider";
-import { getCookie } from "cookies-next";
 
-// Normalize id helper
+import { useProject } from "@/providers/postGresPorviders/projectProvider";
+
+// helpers
 const pidOf = (p) => p?.project_id || p?.projectId;
 
-// Status configuration for better organization
 const STATUS_OPTIONS = [
   { value: "planning", label: "Planning", icon: FlagIcon, color: "#9333ea" },
   { value: "in_progress", label: "In Progress", icon: BoltIcon, color: "#2563eb" },
@@ -47,17 +46,22 @@ export default function ProjectActionsMenu({
   orgId,
   canManage = true,
   canEnter = true,
-  onOpenMembers,
-  onEdit,
-  onOpenTimeline,
-  onDeleted,
   toast,
+
+  // callbacks
+  onOpenMembers,
+  onOpenTimeline,
+  onEdit,
+  onDeleted,
+  onStatusChanged,   // (status) => void
+  onRecomputed,      // () => void
+
+  // favorite managed by parent (keeps table + menu in sync)
+  isFavorite = false,
+  onToggleFavorite,  // () => Promise|void
 }) {
   const router = useRouter();
-  const {
-    setStatus, recomputeProgress,
-    listFavorites, addFavorite, removeFavorite,
-  } = useProject();
+  const { setStatus, recomputeProgress } = useProject();
 
   const pid = useMemo(() => pidOf(project), [project]);
   const openUrl = useMemo(() => {
@@ -67,43 +71,9 @@ export default function ProjectActionsMenu({
 
   const [anchorEl, setAnchorEl] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [favorite, setFavorite] = useState(null);
-  const isArchived = project?.is_archived || false;
 
   const handleOpen = (e) => setAnchorEl(e.currentTarget);
   const handleClose = () => setAnchorEl(null);
-
-  const initFavorite = useCallback(async () => {
-    if (favorite !== null) return;
-    try {
-      const userId = getCookie("currentUserId");
-      const favs = await listFavorites(userId);
-      const isFav = (favs?.items || []).some((x) => (x.project_id || x.projectId) === pid);
-      setFavorite(!!isFav);
-    } catch {
-      setFavorite(false);
-    }
-  }, [favorite, listFavorites, pid]);
-
-  const toggleFavorite = useCallback(async () => {
-    try {
-      setBusy(true);
-      const userId = getCookie("currentUserId");
-      if (favorite) {
-        await removeFavorite(userId, pid);
-        setFavorite(false);
-        toast?.("Removed from favorites", "success");
-      } else {
-        await addFavorite(userId, pid);
-        setFavorite(true);
-        toast?.("Added to favorites", "success");
-      }
-    } catch (e) {
-      toast?.(String(e?.message || e), "error");
-    } finally {
-      setBusy(false);
-    }
-  }, [favorite, addFavorite, removeFavorite, pid, toast]);
 
   const jump = useCallback(() => {
     handleClose();
@@ -115,6 +85,7 @@ export default function ProjectActionsMenu({
     try {
       setBusy(true);
       await setStatus(pid, status);
+      onStatusChanged?.(status);
       toast?.("Status updated successfully", "success");
     } catch (e) {
       toast?.(String(e?.message || e), "error");
@@ -122,12 +93,13 @@ export default function ProjectActionsMenu({
       setBusy(false);
       handleClose();
     }
-  }, [pid, setStatus, toast]);
+  }, [pid, setStatus, toast, onStatusChanged]);
 
   const doRecompute = useCallback(async () => {
     try {
       setBusy(true);
       await recomputeProgress(pid);
+      onRecomputed?.();
       toast?.("Progress recomputed", "success");
     } catch (e) {
       toast?.(String(e?.message || e), "error");
@@ -135,7 +107,7 @@ export default function ProjectActionsMenu({
       setBusy(false);
       handleClose();
     }
-  }, [pid, recomputeProgress, toast]);
+  }, [pid, recomputeProgress, toast, onRecomputed]);
 
   const doCopyId = useCallback(() => {
     navigator.clipboard.writeText(pid);
@@ -150,44 +122,15 @@ export default function ProjectActionsMenu({
     handleClose();
   }, [openUrl, toast]);
 
-  const doOpenMembers = useCallback(() => {
-    handleClose();
-    onOpenMembers?.();
-  }, [onOpenMembers]);
-
-  const doOpenTimeline = useCallback(() => {
-    handleClose();
-    onOpenTimeline?.();
-  }, [onOpenTimeline]);
-
-  const doEdit = useCallback(() => {
-    handleClose();
-    onEdit?.();
-  }, [onEdit]);
-
-  const doDelete = useCallback(async () => {
-    handleClose();
-    onDeleted?.();
-  }, [onDeleted]);
-
-  const onMenuOpen = async (e) => {
-    handleOpen(e);
-    await initFavorite();
-  };
-
   const currentStatus = project?.status;
 
   return (
     <>
       <Tooltip title="More actions">
-        <IconButton 
-          size="small" 
-          onClick={onMenuOpen}
-          sx={{
-            '&:hover': {
-              bgcolor: 'primary.50',
-            }
-          }}
+        <IconButton
+          size="small"
+          onClick={handleOpen}
+          sx={{ '&:hover': { bgcolor: 'primary.50' } }}
         >
           <MoreVertIcon fontSize="small" />
         </IconButton>
@@ -214,25 +157,25 @@ export default function ProjectActionsMenu({
           },
         }}
       >
-        {/* Project Info Header */}
+        {/* Header */}
         <Box sx={{ px: 2, py: 1.5, bgcolor: 'grey.50' }}>
           <Typography variant="caption" color="text.secondary" fontWeight={600}>
             PROJECT ACTIONS
           </Typography>
-          <Typography 
-            variant="body2" 
-            fontWeight={600} 
+          <Typography
+            variant="body2"
+            fontWeight={600}
             noWrap
             sx={{ mt: 0.5, maxWidth: 240 }}
           >
             {project?.name || "Untitled Project"}
           </Typography>
           {currentStatus && (
-            <Chip 
-              label={currentStatus.replace(/_/g, " ")} 
+            <Chip
+              label={currentStatus.replace(/_/g, " ")}
               size="small"
-              sx={{ 
-                mt: 0.5, 
+              sx={{
+                mt: 0.5,
                 height: 20,
                 fontSize: 11,
                 textTransform: 'capitalize',
@@ -243,34 +186,44 @@ export default function ProjectActionsMenu({
 
         <Divider />
 
-        {/* Quick Actions */}
+        {/* Quick */}
         <MenuList dense sx={{ py: 0.5 }}>
           <MenuItem onClick={jump} disabled={!canEnter}>
             <ListItemIcon>
               <OpenInNewIcon fontSize="small" color={canEnter ? "primary" : "disabled"} />
             </ListItemIcon>
-            <ListItemText 
-              primary="Open Project" 
+            <ListItemText
+              primary="Open Project"
               secondary={!canEnter ? "No access" : null}
               primaryTypographyProps={{ fontWeight: 500 }}
             />
           </MenuItem>
 
-          <MenuItem 
-            onClick={toggleFavorite}
-            disabled={busy}
+          <MenuItem
+            onClick={async () => {
+              try {
+                if (!onToggleFavorite) return;
+                setBusy(true);
+                await onToggleFavorite();
+              } catch (e) {
+                toast?.(String(e?.message || e), "error");
+              } finally {
+                setBusy(false);
+              }
+            }}
+            disabled={busy || !onToggleFavorite}
           >
             <ListItemIcon>
               {busy ? (
                 <CircularProgress size={18} />
-              ) : favorite ? (
+              ) : isFavorite ? (
                 <StarIcon fontSize="small" sx={{ color: 'warning.main' }} />
               ) : (
                 <StarBorderIcon fontSize="small" />
               )}
             </ListItemIcon>
-            <ListItemText 
-              primary={favorite ? "Remove from Favorites" : "Add to Favorites"}
+            <ListItemText
+              primary={isFavorite ? "Remove from Favorites" : "Add to Favorites"}
               primaryTypographyProps={{ fontWeight: 500 }}
             />
           </MenuItem>
@@ -278,108 +231,64 @@ export default function ProjectActionsMenu({
 
         <Divider />
 
-        {/* Management Section */}
+        {/* Manage */}
         <MenuList dense sx={{ py: 0.5 }}>
-          <ListSubheader 
-            sx={{ 
-              lineHeight: '32px', 
-              fontSize: 11,
-              fontWeight: 700,
-              color: 'text.secondary',
-              bgcolor: 'transparent',
-            }}
-          >
+          <ListSubheader sx={{ lineHeight: '32px', fontSize: 11, fontWeight: 700, color: 'text.secondary', bgcolor: 'transparent' }}>
             MANAGE
           </ListSubheader>
 
-          <MenuItem onClick={doOpenMembers} disabled={!canManage}>
+          <MenuItem onClick={() => { handleClose(); onOpenMembers?.(); }} disabled={!canManage}>
             <ListItemIcon>
               <GroupIcon fontSize="small" color={canManage ? "action" : "disabled"} />
             </ListItemIcon>
-            <ListItemText 
-              primary="Team Members"
-              primaryTypographyProps={{ fontWeight: 500 }}
-            />
+            <ListItemText primary="Team Members" primaryTypographyProps={{ fontWeight: 500 }} />
           </MenuItem>
 
-          <MenuItem onClick={doOpenTimeline}>
+          <MenuItem onClick={() => { handleClose(); onOpenTimeline?.(); }}>
             <ListItemIcon>
               <TimelineIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText 
-              primary="Timeline & Milestones"
-              primaryTypographyProps={{ fontWeight: 500 }}
-            />
+            <ListItemText primary="Timeline & Milestones" primaryTypographyProps={{ fontWeight: 500 }} />
           </MenuItem>
 
-          <MenuItem onClick={doEdit} disabled={!canManage}>
+          <MenuItem onClick={() => { handleClose(); onEdit?.(); }} disabled={!canManage}>
             <ListItemIcon>
               <EditIcon fontSize="small" color={canManage ? "action" : "disabled"} />
             </ListItemIcon>
-            <ListItemText 
-              primary="Edit Details"
-              primaryTypographyProps={{ fontWeight: 500 }}
-            />
+            <ListItemText primary="Edit Details" primaryTypographyProps={{ fontWeight: 500 }} />
           </MenuItem>
         </MenuList>
 
         <Divider />
 
-        {/* Status Section */}
+        {/* Status */}
         <MenuList dense sx={{ py: 0.5 }}>
-          <ListSubheader 
-            sx={{ 
-              lineHeight: '32px', 
-              fontSize: 11,
-              fontWeight: 700,
-              color: 'text.secondary',
-              bgcolor: 'transparent',
-            }}
-          >
+          <ListSubheader sx={{ lineHeight: '32px', fontSize: 11, fontWeight: 700, color: 'text.secondary', bgcolor: 'transparent' }}>
             CHANGE STATUS
           </ListSubheader>
 
-          {STATUS_OPTIONS.map((statusOpt) => {
-            const Icon = statusOpt.icon;
-            const isCurrentStatus = currentStatus === statusOpt.value;
-            
+          {STATUS_OPTIONS.map((st) => {
+            const Icon = st.icon;
+            const isCurrent = currentStatus === st.value;
             return (
               <MenuItem
-                key={statusOpt.value}
-                onClick={() => doStatus(statusOpt.value)}
-                disabled={!canManage || busy || isCurrentStatus}
+                key={st.value}
+                onClick={() => doStatus(st.value)}
+                disabled={!canManage || busy || isCurrent}
                 sx={{
-                  bgcolor: isCurrentStatus ? alpha(statusOpt.color, 0.08) : 'transparent',
-                  '&:hover': {
-                    bgcolor: isCurrentStatus 
-                      ? alpha(statusOpt.color, 0.12)
-                      : undefined,
-                  },
+                  bgcolor: isCurrent ? alpha(st.color, 0.08) : 'transparent',
+                  '&:hover': { bgcolor: isCurrent ? alpha(st.color, 0.12) : undefined },
                 }}
               >
                 <ListItemIcon>
-                  <Icon 
-                    fontSize="small" 
-                    sx={{ 
-                      color: isCurrentStatus ? statusOpt.color : 'action.active',
-                    }} 
-                  />
+                  <Icon fontSize="small" sx={{ color: isCurrent ? st.color : 'action.active' }} />
                 </ListItemIcon>
-                <ListItemText 
-                  primary={statusOpt.label}
-                  primaryTypographyProps={{ 
-                    fontWeight: isCurrentStatus ? 600 : 500,
-                  }}
+                <ListItemText
+                  primary={st.label}
+                  primaryTypographyProps={{ fontWeight: isCurrent ? 600 : 500 }}
                 />
-                {isCurrentStatus && (
-                  <CheckCircleIcon 
-                    fontSize="small" 
-                    sx={{ 
-                      ml: 1, 
-                      color: statusOpt.color,
-                      fontSize: 16,
-                    }} 
-                  />
+                {isCurrent && (
+                  <CheckCircleIcon fontSize="small" sx={{ ml: 1, color: st.color, fontSize: 16 }} />
                 )}
               </MenuItem>
             );
@@ -388,99 +297,56 @@ export default function ProjectActionsMenu({
 
         <Divider />
 
-        {/* Utilities Section */}
+        {/* Utils */}
         <MenuList dense sx={{ py: 0.5 }}>
-          <ListSubheader 
-            sx={{ 
-              lineHeight: '32px', 
-              fontSize: 11,
-              fontWeight: 700,
-              color: 'text.secondary',
-              bgcolor: 'transparent',
-            }}
-          >
-            UTILITIES
-          </ListSubheader>
-
           <MenuItem onClick={doRecompute} disabled={!canManage || busy}>
             <ListItemIcon>
-              {busy ? (
-                <CircularProgress size={18} />
-              ) : (
-                <DoneAllIcon fontSize="small" />
-              )}
+              {busy ? <CircularProgress size={18} /> : <DoneAllIcon fontSize="small" />}
             </ListItemIcon>
-            <ListItemText 
-              primary="Recompute Progress"
-              primaryTypographyProps={{ fontWeight: 500 }}
-            />
+            <ListItemText primary="Recompute Progress" primaryTypographyProps={{ fontWeight: 500 }} />
           </MenuItem>
 
           <MenuItem onClick={doCopyId}>
             <ListItemIcon>
               <ContentCopyIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText 
-              primary="Copy Project ID"
-              primaryTypographyProps={{ fontWeight: 500 }}
-            />
+            <ListItemText primary="Copy Project ID" primaryTypographyProps={{ fontWeight: 500 }} />
           </MenuItem>
 
           <MenuItem onClick={doShare}>
             <ListItemIcon>
               <ShareIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText 
-              primary="Copy Project Link"
-              primaryTypographyProps={{ fontWeight: 500 }}
-            />
+            <ListItemText primary="Copy Project Link" primaryTypographyProps={{ fontWeight: 500 }} />
           </MenuItem>
         </MenuList>
 
         <Divider />
 
-        {/* Danger Zone */}
+        {/* Danger */}
         <MenuList dense sx={{ py: 0.5 }}>
-          <MenuItem 
-            onClick={doDelete} 
+          <MenuItem
+            onClick={() => { handleClose(); onDeleted?.(); }}
             disabled={!canManage}
-            sx={{
-              color: 'error.main',
-              '&:hover': {
-                bgcolor: alpha('#dc2626', 0.08),
-              },
-            }}
+            sx={{ color: 'error.main', '&:hover': { bgcolor: alpha('#dc2626', 0.08) } }}
           >
             <ListItemIcon>
               <DeleteIcon fontSize="small" color="error" />
             </ListItemIcon>
-            <ListItemText 
-              primary="Delete Project"
-              primaryTypographyProps={{ fontWeight: 600 }}
-            />
+            <ListItemText primary="Delete Project" primaryTypographyProps={{ fontWeight: 600 }} />
           </MenuItem>
         </MenuList>
 
-        {/* Footer Info */}
-        <Box 
-          sx={{ 
-            px: 2, 
-            py: 1, 
-            bgcolor: 'grey.50',
-            borderTop: '1px solid',
-            borderColor: 'divider',
-          }}
-        >
-          <Stack direction="row" spacing={0.5} alignItems="center">
+        {/* Footer */}
+        <Box sx={{ px: 2, py: 1, bgcolor: 'grey.50', borderTop: '1px solid', borderColor: 'divider' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <InfoOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
             <Typography variant="caption" color="text.disabled">
               ID: {pid?.slice(0, 12)}...
             </Typography>
-          </Stack>
+          </Box>
         </Box>
       </Menu>
     </>
   );
 }
-
-// Add Stack import

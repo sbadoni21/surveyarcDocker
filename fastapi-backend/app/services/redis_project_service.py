@@ -115,7 +115,15 @@ class RedisProjectService:
         except Exception as e:
             print(f"[RedisProjectService] Failed to cache project: {e}")
             return False
-    
+    # in services/redis_project_service.py
+    @staticmethod
+    async def invalidate_project_stats_cache(project_id: str) -> bool:
+        try:
+            key = f"project:{project_id}:stats"
+            return await redis_client.delete(key)
+        except Exception:
+            return False
+
     @classmethod
     async def get_cached_project(cls, org_id: str, project_id: str) -> Optional[Dict[str, Any]]:
         """Get a cached project"""

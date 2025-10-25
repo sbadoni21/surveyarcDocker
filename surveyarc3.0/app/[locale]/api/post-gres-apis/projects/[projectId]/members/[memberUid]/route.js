@@ -88,29 +88,17 @@ export async function PATCH(req, { params }) {
 
 // DELETE one member (preserve others)
 export async function DELETE(req, { params }) {
-  const { projectId, memberUid } = params;
+  const { projectId, memberUid } = await params;
   const { searchParams } = new URL(req.url);
   const orgId = searchParams.get("orgId");
   if (!orgId) return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
 
-  const getRes = await fetch(`${BASE}/projects/${orgId}/${projectId}?use_cache=false`, {
+  const res = await fetch(`${BASE}/projects/${orgId}/${projectId}/members/${memberUid}`, {
+    method: "DELETE",
     signal: AbortSignal.timeout(30000),
     cache: "no-store",
   });
-  const getPayload = await jsonOrError(getRes);
-  if (!getPayload.ok) return NextResponse.json(getPayload.json, { status: getPayload.status });
 
-  const existing = Array.isArray(getPayload.json.members) ? getPayload.json.members.map(withUidShape) : [];
-  const filtered = existing.filter((m) => m.uid !== memberUid);
-
-  const payload = ENC ? await encryptPayload({ members: filtered }) : { members: filtered };
-  const res = await fetch(`${BASE}/projects/${orgId}/${projectId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", ...(ENC ? { "x-encrypted": "1" } : {}) },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(30000),
-    cache: "no-store",
-  });
 
   return forceDecryptResponse(res);
 }

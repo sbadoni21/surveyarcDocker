@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { BASE, ENC, jsonOrError } from "@/utils/categoryApiHelpers";
+import { BASE, ENC, forceDecryptResponse, jsonOrError } from "@/utils/categoryApiHelpers";
 import { encryptPayload } from "@/utils/crypto_utils";
 
 export async function GET(req, { params }) {
@@ -10,8 +10,8 @@ export async function GET(req, { params }) {
   const res = await fetch(`${BASE}/projects/${orgId}/${projectId}/milestones`, {
     signal: AbortSignal.timeout(30000), cache: "no-store",
   });
-  const { status, json } = await jsonOrError(res);
-  return NextResponse.json(json, { status });
+  
+  return forceDecryptResponse(res);
 }
 
 export async function POST(req, { params }) {
@@ -26,6 +26,6 @@ export async function POST(req, { params }) {
     body: JSON.stringify(milestone),
     signal: AbortSignal.timeout(30000), cache: "no-store",
   });
-  const { status, json } = await jsonOrError(res);
-  return NextResponse.json(json, { status });
+  return forceDecryptResponse(res);
+
 }

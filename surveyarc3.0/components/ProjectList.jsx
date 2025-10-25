@@ -8,24 +8,21 @@ import { useProject } from "@/providers/postGresPorviders/projectProvider";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import { timeformater } from "@/utils/timeformater";
 
-// MUI
 import {
   Box, Paper, Stack, Toolbar, Typography, TextField, InputAdornment,
   IconButton, Tooltip, Chip, Table, TableHead, TableRow, TableCell,
   TableBody, TableContainer, TableSortLabel, Pagination, FormControlLabel,
   Checkbox, Select, MenuItem, Dialog, DialogTitle, DialogContent, DialogActions,
-  Alert, Snackbar, Avatar, Button, AvatarGroup, Badge, Card, CardContent,
-  Divider, LinearProgress,
+  Alert, Snackbar, Avatar, Button, AvatarGroup, Card, CardContent,
+  Divider, LinearProgress
 } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
 
-// Icons
 import SearchIcon from "@mui/icons-material/Search";
 import GroupIcon from "@mui/icons-material/Group";
 import LockIcon from "@mui/icons-material/Lock";
 import PersonRemoveIcon from "@mui/icons-material/PersonRemove";
 import ClearIcon from "@mui/icons-material/Clear";
-import CheckIcon from "@mui/icons-material/Check";
 import AddIcon from "@mui/icons-material/Add";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import LocalOfferIcon from "@mui/icons-material/LocalOffer";
@@ -34,24 +31,22 @@ import StarIcon from "@mui/icons-material/Star";
 import StarBorderIcon from "@mui/icons-material/StarBorder";
 import ArchiveIcon from "@mui/icons-material/Archive";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+
 import ProjectActionsMenu from "./ProjectActionsMenu";
 
 const ITEMS_PER_PAGE = 10;
-// put this near the top of the file (once)
 const STATUS_META = {
-  planning:   { label: "Planning",    color: "info",    variant: "outlined" },
-  in_progress:{ label: "In Progress", color: "primary", variant: "filled"   },
-  on_hold:    { label: "On Hold",     color: "warning", variant: "outlined" },
-  completed:  { label: "Completed",   color: "success", variant: "filled"   },
-  cancelled:  { label: "Cancelled",   color: "error",   variant: "outlined" },
+  planning: { label: "Planning", color: "info", variant: "outlined" },
+  in_progress: { label: "In Progress", color: "primary", variant: "filled" },
+  on_hold: { label: "On Hold", color: "warning", variant: "outlined" },
+  completed: { label: "Completed", color: "success", variant: "filled" },
+  cancelled: { label: "Cancelled", color: "error", variant: "outlined" },
 };
-
 // ---------- helpers ----------
 const norm = (v) => (typeof v === "string" ? v.toLowerCase().trim() : v);
 const getId = (obj) => obj?.uid || obj?.user_id || obj?.id || "";
 const getRole = (obj) => norm(obj?.role || obj?.member_role || "");
 
-// sort helpers
 function descendingComparator(a, b, orderBy) {
   const va = orderBy === "members"
     ? (Array.isArray(a.members) ? a.members.length : 0)
@@ -63,7 +58,7 @@ function descendingComparator(a, b, orderBy) {
   if (va === undefined || va === null) return 1;
   if (vb === undefined || vb === null) return -1;
 
-  if (orderBy === "name") return vb.toString().localeCompare(va.toString());
+  if (orderBy === "name") return vb?.toString?.().localeCompare(va?.toString?.());
   return vb > va ? 1 : vb < va ? -1 : 0;
 }
 function getComparator(order, orderBy) {
@@ -75,6 +70,7 @@ function getComparator(order, orderBy) {
 export default function ProjectsList({
   orgId,
   projects = [],
+  deleteProject,
   onEditProject,
 }) {
   const router = useRouter();
@@ -82,16 +78,16 @@ export default function ProjectsList({
   const { organisation } = useOrganisation();
 
   const {
-    updateProject, getProjectById,deleteProject,
-    addMember, updateMember, removeMember,
-    addSurveyId, removeSurveyId, patchSurveys,
+    updateProject, getProjectById,
+    addMember, removeMember,
+    addSurveyId, removeSurveyId,
     addMilestone, patchMilestone, deleteMilestone,
-    patchTags, addAttachment, removeAttachment,
+    patchTags, addAttachment,
     setStatus, getTimeline, recomputeProgress,
-    searchProjects, bulkProjects, listFavorites, addFavorite, removeFavorite,
+    bulkProjects, listFavorites, addFavorite, removeFavorite,
   } = useProject();
 
-  // table state
+  // table/filter state
   const [order, setOrder] = useState("desc");
   const [orderBy, setOrderBy] = useState("lastActivity");
   const [page, setPage] = useState(1);
@@ -99,29 +95,31 @@ export default function ProjectsList({
   const [statusFilter, setStatusFilter] = useState("all");
   const [onlyMine, setOnlyMine] = useState(false);
 
-  // selection / favorites / timeline
+  // selection / favorites / overrides
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [favorites, setFavorites] = useState(new Set());
+  const [projectOverrides, setProjectOverrides] = useState({}); // { [projectId]: partial project }
+
+  // dialogs
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [timelineData, setTimelineData] = useState({ milestones: [], activities: [] });
-  const [favorites, setFavorites] = useState(new Set());
 
-  // dialog state
   const [memberOpen, setMemberOpen] = useState(false);
   const [activeProject, setActiveProject] = useState(null);
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [activeLoading, setActiveLoading] = useState(false);
 
-  // tag editor state
-  const [editingTags, setEditingTags] = useState(null); // projectId being edited
+  // tag editor
+  const [editingTags, setEditingTags] = useState(null);
   const [tagInput, setTagInput] = useState("");
 
-  // assignment form state
+  // add-member form
   const [selectedOrgMember, setSelectedOrgMember] = useState(null);
   const [newMemberUid, setNewMemberUid] = useState("");
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const [newMemberRole, setNewMemberRole] = useState("contributor");
 
-  // quick editors
+  // attachments / surveys inputs
   const [attachName, setAttachName] = useState("");
   const [attachUrl, setAttachUrl] = useState("");
   const [surveyInput, setSurveyInput] = useState("");
@@ -131,17 +129,14 @@ export default function ProjectsList({
   const [toast, setToast] = useState({ open: false, severity: "info", msg: "" });
   const [memberProfiles, setMemberProfiles] = useState({});
 
-  // ---------- permissions ----------
+  // permissions
   const isOwner = useMemo(() => {
     const team = Array.isArray(organisation?.team_members) ? organisation.team_members : [];
     const myId = getId(user) || user?.uid || "";
     return team.some((m) => getId(m) === myId && norm(m?.role) === "owner");
   }, [organisation, user]);
 
-  const byUid = useCallback(
-    (uid) => (uid ? memberProfiles[uid] : undefined),
-    [memberProfiles]
-  );
+  const byUid = useCallback((uid) => (uid ? memberProfiles[uid] : undefined), [memberProfiles]);
 
   const userInProject = useCallback(
     (project) => {
@@ -151,6 +146,55 @@ export default function ProjectsList({
     [user]
   );
 
+  const canManageProject = useCallback(
+    (project) => {
+      if (isOwner) return true;
+      const myId = getId(user);
+      const me = (project?.members || []).find((m) => getId(m) === myId);
+      const r = getRole(me);
+      return ["owner", "admin", "editor"].includes(r);
+    },
+    [isOwner, user]
+  );
+
+  const canEnter = useCallback(
+    (project) => isOwner || userInProject(project),
+    [isOwner, userInProject]
+  );
+
+  // org members
+  const orgTeamMembers = useMemo(
+    () => (Array.isArray(organisation?.team_members) ? organisation.team_members : []),
+    [organisation]
+  );
+
+  // unassigned candidates for active project
+  const unassignedCandidates = useMemo(() => {
+    if (!activeProject) return orgTeamMembers;
+    const assigned = new Set((activeProject.members || []).map((m) => getId(m)));
+    return orgTeamMembers.filter((m) => !assigned.has(getId(m)));
+  }, [orgTeamMembers, activeProject]);
+
+  // load favorites
+  const myUserId = useMemo(
+    () => getId(user) || user?.uid || getCookie("currentUserId"),
+    [user]
+  );
+
+  useEffect(() => {
+    if (!myUserId) return;
+    (async () => {
+      try {
+        const favs = await listFavorites(myUserId);
+        const favSet = new Set((favs?.items || []).map((x) => x.projectId || x.project_id));
+        setFavorites(favSet);
+      } catch (e) {
+        console.error("Failed to load favorites:", e);
+      }
+    })();
+  }, [myUserId, listFavorites]);
+
+  // keep member profiles for dialog
   useEffect(() => {
     if (!memberOpen || !activeProject?.members?.length) return;
 
@@ -161,7 +205,6 @@ export default function ProjectsList({
           .filter(Boolean)
       )
     );
-
     if (uids.length === 0) return;
     const missing = uids.filter((id) => !memberProfiles[id]);
     if (missing.length === 0) return;
@@ -181,72 +224,17 @@ export default function ProjectsList({
     })();
   }, [memberOpen, activeProject, getUsersByIds, memberProfiles]);
 
-  const canManageProject = useCallback(
-    (project) => {
-      if (isOwner) return true;
-      const myId = getId(user);
-      const me = (project?.members || []).find((m) => getId(m) === myId);
-      const r = getRole(me);
-      return ["owner", "admin", "editor"].includes(r);
-    },
-    [isOwner, user]
-  );
-
-  const memberLabel = (m) => {
-    const uid = getId(m);
-    const prof = byUid(uid);
-    return prof?.display_name || prof?.email || m?.email || uid || "—";
-  };
-
-  const memberEmail = (m) => {
-    const uid = getId(m);
-    const prof = byUid(uid);
-    const email = prof?.email || m?.email || "";
-    return email && email !== memberLabel(m) ? email : "";
-  };
-
-  const memberAvatarText = (m) => {
-    const nameLike = memberLabel(m);
-    return (nameLike || "?").charAt(0).toUpperCase();
-  };
-
-  const canEnter = useCallback(
-    (project) => isOwner || userInProject(project),
-    [isOwner, userInProject]
-  );
-
-  const orgTeamMembers = useMemo(
-    () => (Array.isArray(organisation?.team_members) ? organisation.team_members : []),
-    [organisation]
-  );
-
-  const unassignedCandidates = useMemo(() => {
-    if (!activeProject) return orgTeamMembers;
-    const assigned = new Set((activeProject.members || []).map((m) => getId(m)));
-    return orgTeamMembers.filter((m) => !assigned.has(getId(m)));
-  }, [orgTeamMembers, activeProject]);
-
-  // Load favorites
-  const myUserId = useMemo(() => getId(user) || user?.uid || getCookie("currentUserId"), [user]);
-
-  useEffect(() => {
-    if (!myUserId) return;
-    (async () => {
-      try {
-        console.log(myUserId)
-        const favs = await listFavorites(myUserId);
-        const favSet = new Set((favs?.items || []).map((x) => x.projectId || x.project_id));
-        setFavorites(favSet);
-      } catch (e) {
-        console.error("Failed to load favorites:", e);
-      }
-    })();
-  }, [myUserId, listFavorites]);
+  // ---------- local overrides (instant UI refresh) ----------
+  const applyProjectPatch = useCallback((pid, patch) => {
+    setProjectOverrides((prev) => ({
+      ...prev,
+      [pid]: { ...(prev[pid] || {}), ...patch },
+    }));
+  }, []);
 
   // ---------- filtering/sorting/paging ----------
   const filteredSorted = useMemo(() => {
     const q = search.trim().toLowerCase();
-    console.log(q)
     let rows = projects.filter((p) => {
       if (statusFilter !== "all") {
         const isActive = !!p.is_active;
@@ -277,11 +265,12 @@ export default function ProjectsList({
     if (page !== pageSafe) setPage(pageSafe);
   }, [page, pageSafe]);
 
-  // ---------- utilities ----------
+  // ---------- toast ----------
   const openToast = useCallback((msg, severity = "info") => {
     setToast({ open: true, severity, msg });
   }, []);
 
+  // ---------- selection ----------
   const toggleRowSelect = useCallback((pid) => {
     setSelectedIds((prev) => {
       const n = new Set(prev);
@@ -290,9 +279,9 @@ export default function ProjectsList({
     });
   }, []);
 
-  const toggleFavorite = useCallback(async (project) => {
+  // ---------- favorites ----------
+  const toggleFavorite = useCallback(async (pid) => {
     try {
-      const pid = project.projectId;
       const isFav = favorites.has(pid);
       if (isFav) {
         await removeFavorite(myUserId, pid);
@@ -301,27 +290,31 @@ export default function ProjectsList({
           n.delete(pid);
           return n;
         });
+        openToast("Removed from favorites", "success");
       } else {
         await addFavorite(myUserId, pid);
         setFavorites((prev) => new Set(prev).add(pid));
+        openToast("Added to favorites", "success");
       }
-      openToast(isFav ? "Removed from favorites" : "Added to favorites", "success");
     } catch (e) {
       openToast(String(e?.message || e), "error");
     }
   }, [favorites, addFavorite, removeFavorite, myUserId, openToast]);
 
+  // ---------- enter project ----------
   const handleEnter = useCallback(
     (project) => {
-      if (!canEnter(project)) {
+      const effective = { ...project, ...(projectOverrides[project.projectId] || {}) };
+      if (!canEnter(effective)) {
         openToast("You're not part of this project's team yet.", "warning");
         return;
       }
       router.push(`/postgres-org/${orgId}/dashboard/projects/${project.projectId}`);
     },
-    [canEnter, openToast, router, orgId]
+    [canEnter, openToast, router, orgId, projectOverrides]
   );
 
+  // ---------- sorting ----------
   const handleRequestSort = useCallback(
     (property) => {
       const isAsc = orderBy === property && order === "asc";
@@ -334,62 +327,63 @@ export default function ProjectsList({
   // ---------- tag management ----------
   const handleAddTag = useCallback(
     async (projectId, tag) => {
-      if (!tag.trim()) return;
+      const t = (tag || "").trim();
+      if (!t) return;
       try {
-        await patchTags(projectId, { add: [tag.trim()] });
+        await patchTags(projectId, { add: [t] });
+        // optional: update tags in overrides for instant UI
+        const fresh = await getProjectById(projectId);
+        applyProjectPatch(projectId, { tags: fresh?.tags || [] });
         openToast("Tag added", "success");
         setTagInput("");
       } catch (e) {
         openToast(String(e?.message || e), "error");
       }
     },
-    [patchTags, openToast]
+    [patchTags, openToast, getProjectById, applyProjectPatch]
   );
 
   const handleRemoveTag = useCallback(
     async (projectId, tag) => {
       try {
         await patchTags(projectId, { remove: [tag] });
+        const fresh = await getProjectById(projectId);
+        applyProjectPatch(projectId, { tags: fresh?.tags || [] });
         openToast("Tag removed", "success");
       } catch (e) {
         openToast(String(e?.message || e), "error");
       }
     },
-    [patchTags, openToast]
+    [patchTags, openToast, getProjectById, applyProjectPatch]
   );
 
   // ---------- members dialog ----------
-  const openMembers = useCallback(
-    async (project) => {
-      setMemberOpen(true);
-      setSelectedOrgMember(null);
-      setNewMemberUid("");
-      setNewMemberEmail("");
-      setNewMemberRole("contributor");
+  const openMembers = useCallback(async (project) => {
+    setMemberOpen(true);
+    setSelectedOrgMember(null);
+    setNewMemberUid("");
+    setNewMemberEmail("");
+    setNewMemberRole("contributor");
 
-      const pid = project?.projectId || null;
-      setActiveProjectId(pid);
+    const pid = project?.projectId || null;
+    setActiveProjectId(pid);
 
-      if (pid) {
-        try {
-          setActiveLoading(true);
-          const fresh = await getProjectById(pid);
-          setActiveProject(fresh || project);
-        } catch {
-          setActiveProject(project || null);
-        } finally {
-          setActiveLoading(false);
-        }
-      } else {
-        setActiveProject(null);
+    if (pid) {
+      try {
+        setActiveLoading(true);
+        const fresh = await getProjectById(pid);
+        setActiveProject(fresh || project);
+      } catch {
+        setActiveProject(project || null);
+      } finally {
+        setActiveLoading(false);
       }
-    },
-    [getProjectById]
-  );
+    } else {
+      setActiveProject(null);
+    }
+  }, [getProjectById]);
 
-  const closeMembers = useCallback(() => {
-    setMemberOpen(false);
-  }, []);
+  const closeMembers = useCallback(() => setMemberOpen(false), []);
 
   useEffect(() => {
     if (selectedOrgMember) {
@@ -415,6 +409,7 @@ export default function ProjectsList({
       });
       const updated = await getProjectById(projectId);
       setActiveProject(updated);
+      applyProjectPatch(projectId, { members: updated.members }); // instant reflect
       openToast("Member assigned successfully!", "success");
       setSelectedOrgMember(null);
       setNewMemberUid("");
@@ -425,57 +420,40 @@ export default function ProjectsList({
     } finally {
       setBusy(false);
     }
-  }, [activeProject, activeProjectId, newMemberUid, newMemberEmail, newMemberRole, getProjectById, addMember, openToast]);
+  }, [activeProject, activeProjectId, newMemberUid, newMemberEmail, newMemberRole, getProjectById, addMember, openToast, applyProjectPatch]);
 
-  const handleRemoveMember = useCallback(
-    async (memberUid) => {
-      const projectId = activeProject?.projectId || activeProjectId;
-      if (!projectId) return openToast("No active project selected.", "error");
-      setBusy(true);
-      try {
-        await removeMember(projectId, memberUid);
-        const updated = await getProjectById(projectId);
-        setActiveProject(updated);
-        openToast("Member removed successfully!", "success");
-      } catch (e) {
-        openToast(String(e?.message || e), "error");
-      } finally {
-        setBusy(false);
-      }
-    },
-    [activeProject, activeProjectId, getProjectById, removeMember, openToast]
-  );
+  const handleRemoveMember = useCallback(async (memberUid) => {
+    const projectId = activeProject?.projectId || activeProjectId;
+    if (!projectId) return openToast("No active project selected.", "error");
+    setBusy(true);
+    try {
+      await removeMember(projectId, memberUid);
+      const updated = await getProjectById(projectId);
+      setActiveProject(updated);
+      applyProjectPatch(projectId, { members: updated.members }); // instant reflect
+      openToast("Member removed successfully!", "success");
+    } catch (e) {
+      openToast(String(e?.message || e), "error");
+    } finally {
+      setBusy(false);
+    }
+  }, [activeProject, activeProjectId, getProjectById, removeMember, openToast, applyProjectPatch]);
 
   return (
     <Box>
-      {/* Enhanced Toolbar */}
-      <Paper 
+      {/* Toolbar */}
+      <Paper
         elevation={0}
-        sx={{ 
-          p: 2.5, 
-          mb: 3,
-          border: '1px solid',
-          borderColor: 'divider',
-          borderRadius: 2,
-        }}
+        sx={{ p: 2.5, mb: 3, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}
       >
         <Stack spacing={2.5}>
-          {/* Header Row */}
           <Stack direction="row" alignItems="center" justifyContent="space-between">
             <Stack direction="row" alignItems="center" spacing={1.5}>
               <FolderIcon sx={{ color: 'primary.main', fontSize: 28 }} />
-              <Typography variant="h5" fontWeight={600}>
-                Projects
-              </Typography>
-              <Chip 
-                label={filteredSorted.length} 
-                size="small" 
-                color="primary" 
-                variant="outlined"
-              />
+              <Typography variant="h5" fontWeight={600}>Projects</Typography>
+              <Chip label={filteredSorted.length} size="small" color="primary" variant="outlined" />
             </Stack>
 
-            {/* Bulk Actions */}
             {selectedIds.size > 0 && (
               <Stack direction="row" spacing={1}>
                 <Chip
@@ -513,7 +491,6 @@ export default function ProjectsList({
 
           <Divider />
 
-          {/* Filters Row */}
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="stretch">
             <TextField
               size="small"
@@ -549,29 +526,15 @@ export default function ProjectsList({
             </Select>
 
             <FormControlLabel
-              control={
-                <Checkbox 
-                  checked={onlyMine} 
-                  onChange={(e) => setOnlyMine(e.target.checked)}
-                  size="small"
-                />
-              }
+              control={<Checkbox checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} size="small" />}
               label="My Projects"
             />
           </Stack>
         </Stack>
       </Paper>
 
-      {/* Enhanced Table */}
-      <TableContainer 
-        component={Paper} 
-        elevation={0}
-        sx={{ 
-          border: '1px solid',
-          borderColor: 'divider',
-          borderRadius: 2,
-        }}
-      >
+      {/* Table */}
+      <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
         <Table>
           <TableHead>
             <TableRow sx={{ bgcolor: 'grey.50' }}>
@@ -589,6 +552,7 @@ export default function ProjectsList({
                   }}
                 />
               </TableCell>
+
               <TableCell sortDirection={orderBy === "name" ? order : false}>
                 <TableSortLabel
                   active={orderBy === "name"}
@@ -598,9 +562,11 @@ export default function ProjectsList({
                   <Typography variant="subtitle2" fontWeight={600}>Project</Typography>
                 </TableSortLabel>
               </TableCell>
+
               <TableCell>
                 <Typography variant="subtitle2" fontWeight={600}>Tags</Typography>
               </TableCell>
+
               <TableCell sortDirection={orderBy === "is_active" ? order : false}>
                 <TableSortLabel
                   active={orderBy === "is_active"}
@@ -610,6 +576,7 @@ export default function ProjectsList({
                   <Typography variant="subtitle2" fontWeight={600}>Status</Typography>
                 </TableSortLabel>
               </TableCell>
+
               <TableCell sortDirection={orderBy === "members" ? order : false}>
                 <TableSortLabel
                   active={orderBy === "members"}
@@ -619,6 +586,7 @@ export default function ProjectsList({
                   <Typography variant="subtitle2" fontWeight={600}>Team</Typography>
                 </TableSortLabel>
               </TableCell>
+
               <TableCell sortDirection={orderBy === "lastActivity" ? order : false}>
                 <TableSortLabel
                   active={orderBy === "lastActivity"}
@@ -628,6 +596,7 @@ export default function ProjectsList({
                   <Typography variant="subtitle2" fontWeight={600}>Last Activity</Typography>
                 </TableSortLabel>
               </TableCell>
+
               <TableCell align="right">
                 <Typography variant="subtitle2" fontWeight={600}>Actions</Typography>
               </TableCell>
@@ -636,24 +605,37 @@ export default function ProjectsList({
 
           <TableBody>
             {rows.map((p) => {
-              const allowed = canEnter(p);
-              const memberCount = Array.isArray(p.members) ? p.members.length : 0;
-              const canManage = canManageProject(p);
               const pid = p.projectId;
+              const effective = projectOverrides[pid] ? { ...p, ...projectOverrides[pid] } : p;
+
+              const allowed = canEnter(effective);
+              const canManage = canManageProject(effective);
+              const memberCount = Array.isArray(effective.members) ? effective.members.length : 0;
               const isFav = favorites.has(pid);
               const isEditing = editingTags === pid;
+
+              const memberLabel = (m) => {
+                const uid = getId(m);
+                const prof = byUid(uid);
+                return prof?.display_name || prof?.email || m?.email || uid || "—";
+              };
+              const memberEmail = (m) => {
+                const uid = getId(m);
+                const prof = byUid(uid);
+                const email = prof?.email || m?.email || "";
+                return email && email !== memberLabel(m) ? email : "";
+              };
+              const memberAvatarText = (m) => {
+                const nameLike = memberLabel(m);
+                return (nameLike || "?").charAt(0).toUpperCase();
+              };
 
               return (
                 <TableRow
                   key={pid}
                   hover
-                  sx={{ 
-                    cursor: allowed ? "pointer" : "default",
-                    '&:hover': {
-                      bgcolor: allowed ? 'action.hover' : 'transparent',
-                    }
-                  }}
-                  onClick={() => allowed && handleEnter(p)}
+                  sx={{ cursor: allowed ? "pointer" : "default", '&:hover': { bgcolor: allowed ? 'action.hover' : 'transparent' } }}
+                  onClick={() => allowed && handleEnter(effective)}
                 >
                   <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
                     <Checkbox
@@ -668,7 +650,7 @@ export default function ProjectsList({
                       <Stack direction="row" alignItems="center" spacing={1}>
                         <IconButton
                           size="small"
-                          onClick={() => toggleFavorite(p)}
+                          onClick={() => toggleFavorite(pid)}
                           sx={{ p: 0.5 }}
                         >
                           {isFav ? (
@@ -684,25 +666,16 @@ export default function ProjectsList({
                           </Tooltip>
                         )}
 
-                        <Typography 
-                          variant="body2" 
+                        <Typography
+                          variant="body2"
                           fontWeight={600}
-                          sx={{ 
-                            color: allowed ? 'text.primary' : 'text.disabled',
-                          }}
+                          sx={{ color: allowed ? 'text.primary' : 'text.disabled' }}
                         >
-                          {p.name}
+                          {effective.name}
                         </Typography>
                       </Stack>
-                      <Typography 
-                        variant="caption" 
-                        sx={{ 
-                          fontFamily: 'monospace',
-                          color: 'text.secondary',
-                          fontSize: 11,
-                        }}
-                      >
-                        {p.projectId}
+                      <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', fontSize: 11 }}>
+                        {pid}
                       </Typography>
                     </Stack>
                   </TableCell>
@@ -710,18 +683,13 @@ export default function ProjectsList({
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     {isEditing ? (
                       <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap">
-                        {(p.tags || []).map((t) => (
+                        {(effective.tags || []).map((t) => (
                           <Chip
                             key={t}
-                            size="small"
+                            size="medium"
                             label={t}
                             onDelete={() => handleRemoveTag(pid, t)}
-                            sx={{ 
-                              bgcolor: 'primary.50',
-                              '& .MuiChip-deleteIcon': {
-                                fontSize: 16,
-                              }
-                            }}
+                            sx={{ bgcolor: 'primary.50', '& .MuiChip-deleteIcon': { fontSize: 16 } }}
                           />
                         ))}
                         <TextField
@@ -743,42 +711,28 @@ export default function ProjectsList({
                           }}
                           autoFocus
                           sx={{ width: 140 }}
-                          InputProps={{
-                            sx: { height: 28, fontSize: 13 }
-                          }}
+                          InputProps={{ sx: { height: 28, fontSize: 13 } }}
                         />
                       </Stack>
                     ) : (
-                      <Stack 
-                        direction="row" 
-                        spacing={0.5} 
-                        alignItems="center" 
+                      <Stack
+                        direction="row"
+                        spacing={0.5}
+                        alignItems="center"
                         flexWrap="wrap"
                         onClick={() => canManage && setEditingTags(pid)}
                         sx={{ cursor: canManage ? 'pointer' : 'default' }}
                       >
-                        {(p.tags || []).slice(0, 3).map((t) => (
+                        {(effective.tags || []).slice(0, 3).map((t) => (
                           <Chip
                             key={t}
                             size="small"
                             label={t}
-                            sx={{ 
-                              bgcolor: 'primary.50',
-                              color: 'primary.main',
-                              fontWeight: 500,
-                              fontSize: 11,
-                            }}
+                            sx={{ bgcolor: 'primary.50', color: 'primary.main', fontWeight: 500, fontSize: 11 }}
                           />
                         ))}
-                        {(p.tags?.length || 0) > 3 && (
-                          <Chip
-                            size="small"
-                            label={`+${p.tags.length - 3}`}
-                            sx={{ 
-                              bgcolor: 'grey.100',
-                              fontSize: 11,
-                            }}
-                          />
+                        {(effective.tags?.length || 0) > 3 && (
+                          <Chip size="small" label={`+${effective.tags.length - 3}`} sx={{ bgcolor: 'grey.100', fontSize: 11 }} />
                         )}
                         {canManage && (
                           <Tooltip title="Click to edit tags">
@@ -787,7 +741,7 @@ export default function ProjectsList({
                             </IconButton>
                           </Tooltip>
                         )}
-                        {(!p.tags || p.tags.length === 0) && (
+                        {(!effective.tags || effective.tags.length === 0) && (
                           <Typography variant="caption" color="text.disabled">
                             {canManage ? 'Click to add tags' : 'No tags'}
                           </Typography>
@@ -795,39 +749,45 @@ export default function ProjectsList({
                       </Stack>
                     )}
                   </TableCell>
-
-<TableCell>
+  <TableCell>
   {(() => {
-    const key = String(p.status || "").toLowerCase();
-    const meta = STATUS_META[key] || { label: p.status || "Unknown", color: "default", variant: "outlined" };
+    const key = String(effective.status || "").toLowerCase(); // <-- use effective
+    const meta = STATUS_META[key] || {
+      label: effective.status || "Unknown", // <-- use effective
+      color: "default",
+      variant: "outlined",
+    };
     return (
       <Chip
         size="small"
         label={meta.label}
         color={meta.color}
         variant={meta.variant}
-        sx={{ fontWeight: 500, minWidth: 110, textTransform: "none" }}
+        sx={{
+          fontWeight: 500,
+          minWidth: 110,
+          textTransform: "none",
+        }}
       />
     );
   })()}
 </TableCell>
 
+
                   <TableCell>
                     <Stack direction="row" spacing={1.5} alignItems="center">
                       {memberCount > 0 ? (
-                        <AvatarGroup 
-                          max={4} 
-                          sx={{ 
-                            '& .MuiAvatar-root': { 
-                              width: 28, 
-                              height: 28,
-                              fontSize: 12,
-                              border: '2px solid white',
-                            }
-                          }}
+                        <AvatarGroup
+                          max={4}
+                          sx={{ '& .MuiAvatar-root': { width: 28, height: 28, fontSize: 12, border: '2px solid white' } }}
                         >
-                          {(p.members || []).map((m) => (
-                            <Tooltip key={getId(m)} title={memberLabel(m)}>
+                          {(effective.members || []).map((m) => (
+                            <Tooltip key={getId(m)} title={
+                              <>
+                                <div>{memberLabel(m)}</div>
+                                {memberEmail(m) ? <div style={{ opacity: 0.75 }}>{memberEmail(m)}</div> : null}
+                              </>
+                            }>
                               <Avatar sx={{ bgcolor: 'primary.main' }}>
                                 {memberAvatarText(m)}
                               </Avatar>
@@ -837,9 +797,7 @@ export default function ProjectsList({
                       ) : (
                         <Stack direction="row" spacing={0.5} alignItems="center">
                           <GroupIcon fontSize="small" sx={{ color: 'text.disabled' }} />
-                          <Typography variant="caption" color="text.disabled">
-                            No members
-                          </Typography>
+                          <Typography variant="caption" color="text.disabled">No members</Typography>
                         </Stack>
                       )}
                       <Typography variant="body2" color="text.secondary" fontWeight={500}>
@@ -850,27 +808,40 @@ export default function ProjectsList({
 
                   <TableCell>
                     <Typography variant="body2" color="text.secondary">
-                      {p.lastActivity ? timeformater(p.lastActivity) : "—"}
+                      {effective.lastActivity ? timeformater(effective.lastActivity) : "—"}
                     </Typography>
                   </TableCell>
 
                   <TableCell align="right" onClick={(e) => e.stopPropagation()}>
                     <ProjectActionsMenu
-                      project={p}
+                      project={effective}
                       orgId={orgId}
                       canManage={canManage}
                       canEnter={allowed}
                       toast={openToast}
-                      onOpenMembers={() => openMembers(p)}
+                      isFavorite={isFav}
+                      onToggleFavorite={() => toggleFavorite(pid)}
+                      onOpenMembers={() => openMembers(effective)}
                       onOpenTimeline={async () => {
-                        const data = await getTimeline(p.project_id || p.projectId);
+                        const id = effective.projectId;
+                        const data = await getTimeline(id);
                         setTimelineData(data || { milestones: [], activities: [] });
                         setTimelineOpen(true);
-                        setActiveProject(p);
-                        setActiveProjectId(p.project_id || p.projectId);
+                        setActiveProject(effective);
+                        setActiveProjectId(id);
                       }}
-                      onEdit={() => onEditProject?.(p)}
-                      onDeleted={() => deleteProject?.(p.project_id || p.projectId)}
+                      onEdit={() => onEditProject?.(effective)}
+                      onDeleted={() => deleteProject?.(effective.projectId)}
+                      onStatusChanged={async () => {
+                        // optional: reload and patch if your backend mutates other fields
+                        const fresh = await getProjectById(effective.projectId);
+                        applyProjectPatch(effective.projectId, fresh || {});
+                      }}
+                      onRecomputed={async () => {
+                        // optional: fetch progress fields and patch
+                        const fresh = await getProjectById(effective.projectId);
+                        applyProjectPatch(effective.projectId, fresh || {});
+                      }}
                     />
                   </TableCell>
                 </TableRow>
@@ -882,9 +853,7 @@ export default function ProjectsList({
                 <TableCell colSpan={7} align="center" sx={{ py: 8 }}>
                   <Stack alignItems="center" spacing={2}>
                     <FolderIcon sx={{ fontSize: 64, color: 'text.disabled', opacity: 0.3 }} />
-                    <Typography variant="h6" color="text.secondary">
-                      No projects found
-                    </Typography>
+                    <Typography variant="h6" color="text.secondary">No projects found</Typography>
                     <Typography variant="body2" color="text.disabled">
                       {search ? "Try adjusting your search or filters" : "Create your first project to get started"}
                     </Typography>
@@ -910,24 +879,19 @@ export default function ProjectsList({
         </Stack>
       )}
 
-      {/* Enhanced Member Management Dialog */}
+      {/* Member Management Dialog */}
       <Dialog open={memberOpen} onClose={closeMembers} fullWidth maxWidth="md">
         <DialogTitle sx={{ pb: 1 }}>
           <Stack direction="row" alignItems="center" spacing={1.5}>
             <GroupIcon color="primary" />
-            <Typography variant="h6" fontWeight={600}>
-              Team Members
-            </Typography>
-            {activeProject && (
-              <Chip label={activeProject.name} size="small" variant="outlined" />
-            )}
+            <Typography variant="h6" fontWeight={600}>Team Members</Typography>
+            {activeProject && <Chip label={activeProject.name} size="small" variant="outlined" />}
           </Stack>
         </DialogTitle>
-        
+
         <DialogContent dividers sx={{ p: 3 }}>
           {activeLoading && <LinearProgress sx={{ mb: 2 }} />}
 
-          {/* Current Members */}
           <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 2 }}>
             Current Members ({(activeProject?.members || []).length})
           </Typography>
@@ -935,40 +899,31 @@ export default function ProjectsList({
           <Stack spacing={1.5} sx={{ mb: 4 }}>
             {(activeProject?.members || []).map((m) => {
               const uid = getId(m);
-              const secondaryEmail = memberEmail(m);
+              const name = (byUid(uid)?.display_name) || (byUid(uid)?.email) || m?.email || uid;
+              const email = (byUid(uid)?.email) || (m?.email) || "";
+              const avatarText = (name || "?").charAt(0).toUpperCase();
               return (
                 <Card key={uid} variant="outlined" sx={{ bgcolor: 'grey.50' }}>
                   <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                     <Stack direction="row" alignItems="center" justifyContent="space-between">
                       <Stack direction="row" spacing={2} alignItems="center">
-                        <Avatar sx={{ width: 40, height: 40, bgcolor: 'primary.main' }}>
-                          {memberAvatarText(m)}
-                        </Avatar>
+                        <Avatar sx={{ width: 40, height: 40, bgcolor: 'primary.main' }}>{avatarText}</Avatar>
                         <Stack spacing={0.5}>
-                          <Typography variant="body1" fontWeight={600}>
-                            {memberLabel(m)}
-                          </Typography>
-                          {secondaryEmail && (
+                          <Typography variant="body1" fontWeight={600}>{name}</Typography>
+                          {email && (
                             <Typography variant="caption" color="text.secondary">
-                              {secondaryEmail}
+                              {email}
                             </Typography>
                           )}
                           <Stack direction="row" spacing={1} alignItems="center">
-                            <Chip 
-                              label={getRole(m) || "contributor"} 
-                              size="small" 
+                            <Chip
+                              label={(m?.role || "contributor")}
+                              size="small"
                               color="primary"
                               variant="outlined"
                               sx={{ height: 20, fontSize: 11 }}
                             />
-                            <Typography
-                              component="code"
-                              sx={{ 
-                                fontSize: 10, 
-                                opacity: 0.5,
-                                fontFamily: 'monospace',
-                              }}
-                            >
+                            <Typography component="code" sx={{ fontSize: 10, opacity: 0.5, fontFamily: 'monospace' }}>
                               {uid}
                             </Typography>
                           </Stack>
@@ -976,12 +931,7 @@ export default function ProjectsList({
                       </Stack>
 
                       <Tooltip title="Remove member">
-                        <IconButton
-                          size="small"
-                          color="error"
-                          disabled={busy}
-                          onClick={() => handleRemoveMember(uid)}
-                        >
+                        <IconButton size="small" color="error" disabled={busy} onClick={() => handleRemoveMember(uid)}>
                           <PersonRemoveIcon />
                         </IconButton>
                       </Tooltip>
@@ -1057,11 +1007,9 @@ export default function ProjectsList({
             </Select>
           </Stack>
         </DialogContent>
-        
+
         <DialogActions sx={{ p: 2.5 }}>
-          <Button onClick={closeMembers} variant="outlined">
-            Close
-          </Button>
+          <Button onClick={closeMembers} variant="outlined">Close</Button>
           <Button
             onClick={handleAssign}
             disabled={busy || activeLoading || !activeProjectId || !newMemberUid}
@@ -1073,32 +1021,22 @@ export default function ProjectsList({
         </DialogActions>
       </Dialog>
 
-      {/* Enhanced Timeline Dialog */}
+      {/* Timeline Dialog */}
       <Dialog open={timelineOpen} onClose={() => setTimelineOpen(false)} fullWidth maxWidth="md">
         <DialogTitle sx={{ pb: 1 }}>
           <Stack direction="row" alignItems="center" spacing={1.5}>
-            <Typography variant="h6" fontWeight={600}>
-              Project Timeline
-            </Typography>
-            {activeProject && (
-              <Chip label={activeProject.name} size="small" variant="outlined" />
-            )}
+            <Typography variant="h6" fontWeight={600}>Project Timeline</Typography>
+            {activeProject && <Chip label={activeProject.name} size="small" variant="outlined" />}
           </Stack>
         </DialogTitle>
-        
+
         <DialogContent dividers sx={{ p: 3 }}>
-          {/* Milestones Section */}
           <Stack spacing={3}>
+            {/* Milestones */}
             <Box>
               <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
-                <Typography variant="subtitle1" fontWeight={600}>
-                  Milestones
-                </Typography>
-                <Chip 
-                  label={(timelineData.milestones || []).length} 
-                  size="small" 
-                  color="primary"
-                />
+                <Typography variant="subtitle1" fontWeight={600}>Milestones</Typography>
+                <Chip label={(timelineData.milestones || []).length} size="small" color="primary" />
               </Stack>
 
               <Stack spacing={1.5}>
@@ -1116,13 +1054,10 @@ export default function ProjectsList({
                             }}
                           />
                           <Stack flex={1}>
-                            <Typography 
-                              variant="body1" 
+                            <Typography
+                              variant="body1"
                               fontWeight={500}
-                              sx={{ 
-                                textDecoration: m.done ? 'line-through' : 'none',
-                                color: m.done ? 'text.disabled' : 'text.primary',
-                              }}
+                              sx={{ textDecoration: m.done ? 'line-through' : 'none', color: m.done ? 'text.disabled' : 'text.primary' }}
                             >
                               {m.title}
                             </Typography>
@@ -1187,27 +1122,15 @@ export default function ProjectsList({
 
             <Divider />
 
-            {/* Attachments Section */}
+            {/* Attachments */}
             <Box>
               <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2 }}>
                 Attachments
               </Typography>
-              
+
               <Stack direction="row" spacing={1}>
-                <TextField 
-                  size="small" 
-                  placeholder="Name" 
-                  value={attachName} 
-                  onChange={(e) => setAttachName(e.target.value)} 
-                  sx={{ width: 200 }}
-                />
-                <TextField 
-                  size="small" 
-                  placeholder="URL" 
-                  value={attachUrl} 
-                  onChange={(e) => setAttachUrl(e.target.value)} 
-                  fullWidth 
-                />
+                <TextField size="small" placeholder="Name" value={attachName} onChange={(e) => setAttachName(e.target.value)} sx={{ width: 200 }} />
+                <TextField size="small" placeholder="URL" value={attachUrl} onChange={(e) => setAttachUrl(e.target.value)} fullWidth />
                 <Button
                   variant="outlined"
                   startIcon={<UploadFileIcon />}
@@ -1227,12 +1150,12 @@ export default function ProjectsList({
 
             <Divider />
 
-            {/* Surveys Section */}
+            {/* Surveys */}
             <Box>
               <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2 }}>
                 Survey Links
               </Typography>
-              
+
               <Stack direction="row" spacing={1}>
                 <TextField
                   size="small"
@@ -1276,7 +1199,7 @@ export default function ProjectsList({
               <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2 }}>
                 Recent Activity
               </Typography>
-              
+
               <Stack spacing={1.5} sx={{ maxHeight: 300, overflow: "auto" }}>
                 {(timelineData.activities || []).map((a, i) => (
                   <Card key={i} variant="outlined" sx={{ bgcolor: 'grey.50' }}>
@@ -1285,14 +1208,12 @@ export default function ProjectsList({
                         <Typography variant="caption" color="text.secondary" sx={{ minWidth: 120 }}>
                           {timeformater(a.timestamp)}
                         </Typography>
-                        <Typography variant="body2">
-                          {a.activity}
-                        </Typography>
+                        <Typography variant="body2">{a.activity}</Typography>
                       </Stack>
                     </CardContent>
                   </Card>
                 ))}
-                
+
                 {(!timelineData.activities || timelineData.activities.length === 0) && (
                   <Typography variant="body2" color="text.disabled" textAlign="center" py={2}>
                     No recent activity
@@ -1302,15 +1223,13 @@ export default function ProjectsList({
             </Box>
           </Stack>
         </DialogContent>
-        
+
         <DialogActions sx={{ p: 2.5 }}>
-          <Button onClick={() => setTimelineOpen(false)} variant="contained">
-            Close
-          </Button>
+          <Button onClick={() => setTimelineOpen(false)} variant="contained">Close</Button>
         </DialogActions>
       </Dialog>
 
-      {/* Toast Notification */}
+      {/* Toast */}
       <Snackbar
         open={toast.open}
         autoHideDuration={3200}
