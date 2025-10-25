@@ -1,199 +1,197 @@
 "use client";
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { getCookie } from "cookies-next";
-import projectModel from "@/models/projectModel";
+import projectModel from "@/models/postGresModels/projectModel";
 
-const ProjectContext = createContext();
+const ProjectContext = createContext(undefined);
 
 export const ProjectProvider = ({ children }) => {
-  const model = projectModel;
-
   const [projects, setProjects] = useState([]);
   const [selectedProject, setSelectedProject] = useState(null);
-  const [loading, setLoading] = useState(false);
 
-  const getOrgId = () => {
-    const orgId = getCookie("currentOrgId");
-    if (!orgId) {
-      throw new Error("No organization ID found. Please select an organization.");
-    }
-    return orgId;
-  };
+  const orgId = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const v = getCookie("currentOrgId");
+    return v ? String(v) : null;
+  }, [typeof window !== "undefined" ? getCookie("currentOrgId") : null]);
 
+  // ===== LOAD ALL =====
   const fetchProjects = async () => {
-    try {
-      const orgId = getCookie("currentOrgId");
-      if (orgId) {
-        setLoading(true);
-        const data = await model.getAll(orgId);
-        setProjects(data || []);
-      }
-    } catch (error) {
-      console.error("Error fetching projects:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchProjects();
-  }, []);
-
-  // ========== PROJECT OPERATIONS ==========
-
-  const getAllProjects = async () => {
-    const orgId = getOrgId();
-    const data = await model.getAll(orgId);
-    setProjects(data || []);
+    if (!orgId) return [];
+    const data = await projectModel.getAll(orgId);
+    setProjects(Array.isArray(data) ? data : []);
     return data;
   };
 
+  useEffect(() => { fetchProjects(); }, [orgId]);
+
+  // ===== CORE =====
+  const getAllProjects = fetchProjects;
+
   const getProjectById = async (projectId) => {
-    const orgId = getOrgId();
-    const data = await model.getById(orgId, projectId);
+    if (!orgId) return null;
+    const data = await projectModel.getById(orgId, projectId);
     setSelectedProject(data || null);
     return data;
   };
 
   const createProject = async (data) => {
-    const created = await model.create(data);
+    // data must include: projectId, orgId, name, ownerUID, description?
+    const created = await projectModel.create(data);
     setProjects((prev) => [...prev, created]);
     return created;
   };
 
-  const updateProject = async (projectId, updateData) => {
-    const orgId = getOrgId();
-    const updated = await model.update(orgId, projectId, updateData);
+  const updateProject = async (projectId, patch) => {
+    if (!orgId) return null;
+    const updated = await projectModel.update(orgId, projectId, patch);
     setProjects((prev) =>
-      prev.map((p) => (p.project_id === projectId ? { ...p, ...updated } : p))
+      prev.map((p) => (p.projectId === projectId || p.project_id === projectId ? updated : p))
     );
-    if (selectedProject?.project_id === projectId) {
-      setSelectedProject((prev) => ({ ...prev, ...updated }));
+    if (selectedProject && (selectedProject.projectId === projectId || selectedProject.project_id === projectId)) {
+      setSelectedProject(updated);
     }
     return updated;
   };
 
   const deleteProject = async (projectId) => {
-    const orgId = getOrgId();
-    await model.delete(orgId, projectId);
-    setProjects((prev) => prev.filter((p) => p.project_id !== projectId));
-    if (selectedProject?.project_id === projectId) {
+    if (!orgId) return;
+    await projectModel.deleteProject(orgId, projectId);
+    setProjects((prev) =>
+      prev.filter((p) => (p.projectId || p.project_id) !== projectId)
+    );
+    if (selectedProject && (selectedProject.projectId === projectId || selectedProject.project_id === projectId)) {
       setSelectedProject(null);
     }
   };
 
-  // ========== MEMBER OPERATIONS ==========
-
-  const getMembers = async (projectId) => {
-    const orgId = getOrgId();
-    return await model.getMembers(orgId, projectId);
-  };
-
-  const getMember = async (projectId, memberUid) => {
-    const orgId = getOrgId();
-    return await model.getMember(orgId, projectId, memberUid);
-  };
-
+  // ===== MEMBERS =====
   const addMember = async (projectId, member) => {
-    const orgId = getOrgId();
-    const updated = await model.addMember(orgId, projectId, member);
-
-    setProjects((prev) =>
-      prev.map((p) => (p.project_id === projectId ? updated : p))
-    );
-    if (selectedProject?.project_id === projectId) {
-      setSelectedProject(updated);
-    }
-    return updated;
+    if (!orgId) return;
+    await projectModel.addMember(orgId, projectId, member);
+    await getProjectById(projectId);
   };
-
   const updateMember = async (projectId, memberUid, memberUpdate) => {
-    const orgId = getOrgId();
-    const updated = await model.updateMember(orgId, projectId, memberUid, memberUpdate);
-
-    setProjects((prev) =>
-      prev.map((p) => (p.project_id === projectId ? updated : p))
-    );
-    if (selectedProject?.project_id === projectId) {
-      setSelectedProject(updated);
-    }
-    return updated;
+    if (!orgId) return;
+    await projectModel.updateMember(orgId, projectId, memberUid, memberUpdate);
+    await getProjectById(projectId);
   };
-
   const removeMember = async (projectId, memberUid) => {
-    const orgId = getOrgId();
-    const updated = await model.removeMember(orgId, projectId, memberUid);
-
-    setProjects((prev) =>
-      prev.map((p) => (p.project_id === projectId ? updated : p))
-    );
-    if (selectedProject?.project_id === projectId) {
-      setSelectedProject(updated);
-    }
-    return updated;
+    if (!orgId) return;
+    await projectModel.removeMember(orgId, projectId, memberUid);
+    await getProjectById(projectId);
   };
 
-  // ========== SURVEY OPERATIONS ==========
-
-  const getSurveys = async (projectId) => {
-    const orgId = getOrgId();
-    return await model.getSurveys(orgId, projectId);
-  };
-
+  // ===== SURVEYS =====
   const addSurveyId = async (projectId, surveyId) => {
-    const orgId = getOrgId();
-    const updated = await model.addSurveyId(orgId, projectId, surveyId);
-
-    setProjects((prev) =>
-      prev.map((p) => (p.project_id === projectId ? updated : p))
-    );
-    if (selectedProject?.project_id === projectId) {
-      setSelectedProject(updated);
-    }
-    return updated;
+    if (!orgId) return;
+    // If you prefer batch: await projectModel.patchSurveys(orgId, projectId, { add: [surveyId] })
+    await projectModel.addSurveyId(orgId, projectId, surveyId);
+    await getProjectById(projectId);
+  };
+  const removeSurveyId = async (projectId, surveyId) => {
+    if (!orgId) return;
+    // If you prefer batch: await projectModel.patchSurveys(orgId, projectId, { remove: [surveyId] })
+    await projectModel.removeSurveyId(orgId, projectId, surveyId);
+    await getProjectById(projectId);
   };
 
-  const removeSurveyId = async (projectId, surveyId) => {
-    const orgId = getOrgId();
-    const updated = await model.removeSurveyId(orgId, projectId, surveyId);
+  // ===== MILESTONES / TAGS / ATTACHMENTS =====
+  const addMilestone = async (projectId, milestone) => {
+    if (!orgId) return;
+    await projectModel.addMilestone(orgId, projectId, milestone);
+    await getProjectById(projectId);
+  };
+  const patchMilestone = async (projectId, mid, patch) => {
+    if (!orgId) return;
+    await projectModel.patchMilestone(orgId, projectId, mid, patch);
+    await getProjectById(projectId);
+  };
+  const deleteMilestone = async (projectId, mid) => {
+    if (!orgId) return;
+    await projectModel.deleteMilestone(orgId, projectId, mid);
+    await getProjectById(projectId);
+  };
 
-    setProjects((prev) =>
-      prev.map((p) => (p.project_id === projectId ? updated : p))
-    );
-    if (selectedProject?.project_id === projectId) {
-      setSelectedProject(updated);
-    }
-    return updated;
+  const patchTags = async (projectId, { add = [], remove = [] }) => {
+    if (!orgId) return;
+    await projectModel.patchTags(orgId, projectId, { add, remove });
+    await getProjectById(projectId);
+  };
+
+  const addAttachment = async (projectId, attachment) => {
+    if (!orgId) return;
+    await projectModel.addAttachment(orgId, projectId, attachment);
+    await getProjectById(projectId);
+  };
+  const removeAttachment = async (projectId, aid) => {
+    if (!orgId) return;
+    await projectModel.removeAttachment(orgId, projectId, aid);
+    await getProjectById(projectId);
+  };
+
+  // ===== STATUS / TIMELINE / PROGRESS =====
+  const setStatus = async (projectId, status, reason) => {
+    if (!orgId) return;
+    await projectModel.setStatus(orgId, projectId, { status, reason });
+    await getProjectById(projectId);
+  };
+  const getTimeline = async (projectId) => {
+    if (!orgId) return { milestones: [], activities: [] };
+    return await projectModel.timeline(orgId, projectId);
+  };
+  const recomputeProgress = async (projectId) => {
+    if (!orgId) return;
+    const res = await projectModel.recomputeProgress(orgId, projectId);
+    await getProjectById(projectId);
+    return res;
+  };
+
+  // ===== SEARCH / BULK / FAVORITES =====
+  const searchProjects = async (query) => {
+    if (!orgId) return { total: 0, count: 0, items: [] };
+    return await projectModel.search(orgId, query);
+  };
+  const bulkProjects = async (body) => {
+    if (!orgId) return { ok: false };
+    const res = await projectModel.bulk(orgId, body);
+    await fetchProjects(); // list likely changed
+    return res;
+  };
+  const listFavorites = async (userId) => {
+    console.log(userId)
+    if (!orgId) return { count: 0, items: [] };
+    return await projectModel.listFavorites(orgId,userId);
+  };
+  const addFavorite = async (userId, projectId) => {
+    if (!orgId) return;
+    return await projectModel.addFavorite(orgId, userId, projectId);
+  };
+  const removeFavorite = async (userId, projectId) => {
+    if (!orgId) return;
+    return await projectModel.removeFavorite(orgId, userId, projectId);
   };
 
   return (
     <ProjectContext.Provider
       value={{
-        // State
-        projects,
-        selectedProject,
-        loading,
-        setSelectedProject,
-
-        // Project operations
-        fetchProjects,
-        getAllProjects,
-        getProjectById,
-        createProject,
-        updateProject,
-        deleteProject,
-
-        // Member operations
-        getMembers,
-        getMember,
-        addMember,
-        updateMember,
-        removeMember,
-
-        // Survey operations
-        getSurveys,
-        addSurveyId,
-        removeSurveyId,
+        // state
+        projects, selectedProject, setSelectedProject,
+        // loads
+        fetchProjects, getAllProjects, getProjectById,
+        // core
+        createProject, updateProject, deleteProject,
+        // members
+        addMember, updateMember, removeMember,
+        // surveys
+        addSurveyId, removeSurveyId, // or use patchSurveys via model if batching
+        // milestones/tags/attachments
+        addMilestone, patchMilestone, deleteMilestone,
+        patchTags, addAttachment, removeAttachment,
+        // status/timeline/progress
+        setStatus, getTimeline, recomputeProgress,
+        // org-scope
+        searchProjects, bulkProjects, listFavorites, addFavorite, removeFavorite,
       }}
     >
       {children}
@@ -201,10 +199,4 @@ export const ProjectProvider = ({ children }) => {
   );
 };
 
-export const useProject = () => {
-  const context = useContext(ProjectContext);
-  if (!context) {
-    throw new Error("useProject must be used within a ProjectProvider");
-  }
-  return context;
-};
+export const useProject = () => useContext(ProjectContext);

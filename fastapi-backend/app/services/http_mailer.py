@@ -1,25 +1,36 @@
+# app/services/http_mailer.py
 import os
 import requests
 
-MAILER_URL = os.getenv("MAILER_URL", "http://localhost:4001/send")
+MAILER_URL        = os.getenv("MAILER_URL", "http://localhost:4001/send")
+MAILER_URL_KINDS  = os.getenv("MAILER_URL_KINDS", "http://localhost:4001/send/from-payload")
+MAIL_API_TOKEN    = os.getenv("MAIL_API_TOKEN", "supersecrettoken")
+FROM_ADDRESS      = os.getenv("FROM_ADDRESS")  # optional
 
-def send_via_mailer(to: list[str], subject: str, html: str):
-    """
-    Sends an email via the Node mail-relay server.
-    Expects the Node relay to accept JSON:
-        { to: [...], subject: "...", html: "..." }
-    """
+_DEFAULT_TIMEOUT = float(os.getenv("MAILER_TIMEOUT", "8"))
+
+def _headers():
+    h = {"Content-Type": "application/json"}
+    if MAIL_API_TOKEN:
+        h["Authorization"] = f"Bearer {MAIL_API_TOKEN}"
+    return h
+
+def send_via_mailer(to, subject, html, cc=None, bcc=None, reply_to=None):
     if not to:
-        print("[Mailer] No recipients → skipping send")
-        return
+        raise ValueError("No recipients provided")
 
     payload = {"to": to, "subject": subject, "html": html}
+    if FROM_ADDRESS: payload["from"] = FROM_ADDRESS
+    if cc:           payload["cc"] = cc
+    if bcc:          payload["bcc"] = bcc
+    if reply_to:     payload["replyTo"] = reply_to
 
-    try:
-        r = requests.post(MAILER_URL, json=payload, timeout=5)
-        if r.status_code == 200:
-            print(f"[Mailer] ✅ Sent email → {to}")
-        else:
-            print(f"[Mailer] ⚠️ Mail relay responded {r.status_code}: {r.text}")
-    except Exception as e:
-        print(f"[Mailer] ❌ Failed to reach relay at {MAILER_URL}: {e}")
+    r = requests.post(MAILER_URL, json=payload, headers=_headers(), timeout=_DEFAULT_TIMEOUT)
+    r.raise_for_status()  # <-- critical: bubble up failures
+    return r.json() if r.headers.get("content-type","").startswith("application/json") else {"ok": True}
+
+def send_from_payload(kind: str, payload: dict):
+    r = requests.post(MAILER_URL_KINDS, json={"kind": kind, "payload": payload},
+                      headers=_headers(), timeout=_DEFAULT_TIMEOUT)
+    r.raise_for_status()
+    return r.json() if r.headers.get("content-type","").startswith("application/json") else {"ok": True}

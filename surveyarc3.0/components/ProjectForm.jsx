@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useEffect, useState } from "react";
 import { X } from "lucide-react";
 
@@ -11,7 +13,6 @@ export default function ProjectForm({
   const [description, setDescription] = useState("");
   const [error, setError] = useState(null);
 
-  // 🔧 UseEffect to populate form when editing
   useEffect(() => {
     setName(initialData?.name || "");
     setDescription(initialData?.description || "");
@@ -22,20 +23,17 @@ export default function ProjectForm({
       setError("Project name is required.");
       return;
     }
-
     setError(null);
     onSubmit({ name, description });
-    setName("");
-    setDescription("");
+    // keep fields if editing; clear on create UX below is fine
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
       <div className="bg-orange-50 dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-auto">
-        {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-orange-200 dark:border-gray-700">
           <h2 className="text-xl font-bold text-gray-900 dark:text-amber-100">
-            {initialData?.projectId ? "Edit Project" : "Create New Project"}
+            {initialData?.project_id || initialData?.projectId ? "Edit Project" : "Create New Project"}
           </h2>
           <button
             onClick={onCancel}
@@ -46,13 +44,10 @@ export default function ProjectForm({
           </button>
         </div>
 
-        {/* Form Content */}
         <div className="p-6">
           {error && (
             <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-600 rounded-lg">
-              <p className="text-red-700 dark:text-red-400 text-sm font-medium">
-                {error}
-              </p>
+              <p className="text-red-700 dark:text-red-400 text-sm font-medium">{error}</p>
             </div>
           )}
 
@@ -92,7 +87,6 @@ export default function ProjectForm({
             </div>
           </div>
 
-          {/* Buttons */}
           <div className="flex gap-3 mt-6">
             <button
               onClick={handleSubmit}
@@ -103,7 +97,7 @@ export default function ProjectForm({
             >
               {loading
                 ? "Saving..."
-                : initialData?.projectId
+                : initialData?.project_id || initialData?.projectId
                 ? "Update Project"
                 : "Create Project"}
             </button>

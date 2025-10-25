@@ -1,6 +1,9 @@
-from pydantic import BaseModel
-from typing import List, Optional, Dict
+from pydantic import BaseModel,Field
+from typing import Optional, List, Literal, Dict, Any
 from datetime import datetime
+
+Role = Literal["owner", "admin", "manager", "contributor", "viewer"]
+MemberStatus = Literal["active", "invited", "removed", "left"]
 
 class Member(BaseModel):
     uid: str
@@ -63,3 +66,53 @@ class ProjectGetBase(BaseModel):
     notifications_enabled: Optional[bool] = True
     last_activity: Optional[datetime]
     survey_ids: Optional[List[str]] = []
+    
+class ProjectMember(BaseModel):
+    uid: str
+    role: Role = "contributor"
+    status: MemberStatus = "active"
+    joined_at: Optional[datetime] = None
+
+class Milestone(BaseModel):
+    id: str
+    title: str
+    due: Optional[datetime] = None
+    done: bool = False
+    note: str = ""
+
+class Attachment(BaseModel):
+    id: str
+    name: str
+    url: str
+    size: Optional[int] = None
+    uploaded_at: Optional[datetime] = None
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+class StatusChange(BaseModel):
+    status: Literal["planning","in_progress","on_hold","completed","cancelled"]
+    reason: Optional[str] = None
+
+class TagPatch(BaseModel):
+    add: List[str] = Field(default_factory=list)
+    remove: List[str] = Field(default_factory=list)
+
+class SurveyPatch(BaseModel):
+    add: List[str] = Field(default_factory=list)
+    remove: List[str] = Field(default_factory=list)
+
+class SearchQuery(BaseModel):
+    q: Optional[str] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    tag: Optional[str] = None
+    is_active: Optional[bool] = None
+    created_from: Optional[datetime] = None
+    created_to: Optional[datetime] = None
+    order_by: Optional[str] = "updated_at:desc"  # e.g., "created_at:asc"
+    limit: int = 50
+    offset: int = 0
+
+class BulkAction(BaseModel):
+    project_ids: List[str]
+    op: Literal["archive","unarchive","delete","set_priority","set_status"]
+    value: Optional[str] = None  # used by set_priority/set_status

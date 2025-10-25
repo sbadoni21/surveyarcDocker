@@ -30,6 +30,8 @@ router.post("/send", verifyAuth, async (req, res) => {
       bcc: bcc.length ? bcc.join(",") : undefined,
       subject, html, attachments
     });
+    console.log("MAIL ▶", { to, cc, bcc, subject, len: (html||"").length, fromAddr: from });
+
     res.json({ ok: true, messageId: info.messageId });
   } catch (e) {
     console.error(e);
@@ -65,6 +67,7 @@ router.post("/send/from-payload", verifyAuth, async (req, res) => {
       subject,
       html
     });
+    console.log("MAIL KIND ▶", kind, payload);
 
     res.json({ ok: true, messageId: info.messageId });
   } catch (e) {

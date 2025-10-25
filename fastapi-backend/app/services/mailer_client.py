@@ -22,5 +22,4 @@ def send_email(to: list[str], subject: str, html: str, cc: list[str] | None = No
     return _post_json(MAILER_URL, payload, bearer=MAIL_API_TOKEN)
 
 def send_from_payload(kind: str, payload: dict) -> dict:
-    # relay will build subject/body/recipients by kind
     return _post_json(MAILER_URL_KINDS, {"kind": kind, "payload": payload}, bearer=MAIL_API_TOKEN)

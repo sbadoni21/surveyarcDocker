@@ -7,6 +7,25 @@ from datetime import datetime, timedelta
 from ..core.redis_client import redis_client
 from ..schemas.project import ProjectGetBase, ProjectCreate, ProjectUpdate
 
+# app/services/redis_project_service.py  (add near other KEYs)
+FAVORITES_KEY = "projects:favorites:{user_id}"
+
+
+
+
+# app/services/redis_project_service.py
+@classmethod
+def simple_rate_limit(cls, key: str, max_ops: int, window_s: int) -> bool:
+    try:
+        if not redis_client.ping(): return True
+        now = int(time.time())
+        bucket = f"rl:{key}:{now//window_s}"
+        v = redis_client.client.incr(bucket)
+        if v == 1:
+            redis_client.client.expire(bucket, window_s)
+        return v <= max_ops
+    except:
+        return True
 
 class RedisProjectService:
     """Redis service layer for project operations"""
@@ -177,7 +196,53 @@ class RedisProjectService:
         except Exception as e:
             print(f"[RedisProjectService] Failed to get cached org projects: {e}")
             return None
-    
+    @classmethod
+    async def add_favorite(cls, user_id: str, project_id: str) -> bool:
+        try:
+            if not redis_client.ping():
+                return False
+            key = cls.FAVORITES_KEY.format(user_id=user_id)
+            redis_client.client.sadd(key, project_id)
+            # optional TTL to auto-expire favorites set (remove if you want permanent)
+            redis_client.client.expire(key, 30 * 24 * 3600)
+            return True
+        except Exception as e:
+            print("[RedisProjectService] add_favorite error:", e)
+            return False
+
+    @classmethod
+    async def remove_favorite(cls, user_id: str, project_id: str) -> bool:
+        try:
+            if not redis_client.ping():
+                return False
+            key = cls.FAVORITES_KEY.format(user_id=user_id)
+            redis_client.client.srem(key, project_id)
+            return True
+        except Exception as e:
+            print("[RedisProjectService] remove_favorite error:", e)
+            return False
+
+    @classmethod
+    async def get_favorites(cls, user_id: str) -> list[str]:
+        try:
+            if not redis_client.ping():
+                return []
+            key = cls.FAVORITES_KEY.format(user_id=user_id)
+            raw = redis_client.client.smembers(key) or set()
+            # smembers returns a set of bytes → decode to str
+            out = []
+            for v in raw:
+                if isinstance(v, bytes):
+                    try:
+                        out.append(v.decode("utf-8"))
+                    except Exception:
+                        out.append(str(v))
+                else:
+                    out.append(str(v))
+            return out
+        except Exception as e:
+            print("[RedisProjectService] get_favorites error:", e)
+            return []
     @classmethod
     async def invalidate_project_cache(cls, org_id: str, project_id: str) -> bool:
         """Invalidate project cache"""
