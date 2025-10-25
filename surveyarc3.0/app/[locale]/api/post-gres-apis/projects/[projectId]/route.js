@@ -90,7 +90,7 @@ export async function DELETE(req, { params }) {
   const { projectId } =  await params;
   const { searchParams } = new URL(req.url);
   const orgId = searchParams.get("orgId");
-  
+  console.log(projectId, orgId)
   if (!orgId) {
     return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
   }

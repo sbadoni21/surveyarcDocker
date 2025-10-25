@@ -67,7 +67,7 @@ export default function ProjectPage() {
     setLoading(true);
     setError(null);
     try {
-      await deleteProject(orgId, projectId);
+      await deleteProject( projectId);
     } catch (err) {
       setError(err.message);
     } finally {

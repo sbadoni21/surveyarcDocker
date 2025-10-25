@@ -78,6 +78,7 @@ def process_one(session: Session, ob: Outbox):
         ob.sent_at = datetime.now(tz=UTC)
         return
 
+
     # Try the mailer; let exceptions bubble to caller so we don't mark sent on failures
     logger.info(f"Sending email for outbox {ob.id} to {len(to)} recipients")
     send_via_mailer(to=to, subject=subject, html=html)
