@@ -317,7 +317,7 @@ const Droppable = ({ id, children }) => {
       {children}
     </div>
   );
-};
+}; 
 
 const DraggableQuestionsList = ({
   questions,
