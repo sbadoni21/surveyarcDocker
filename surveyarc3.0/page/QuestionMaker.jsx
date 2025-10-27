@@ -166,18 +166,12 @@ export default function Dist() {
   }, [survey?.blocks, selectedBlock, questionsById]);
 
   const handleAddQuestion = async () => {
-    if (!selectedBlock) {
-      alert("Please select a block to add question");
-      return;
-    }
-    if (!selectedType || !newQuestionData.label?.trim()) {
-      alert("Please choose a type and enter a label");
-      return;
-    }
+    if (!selectedBlock) return alert("Please select a block to add question");
+    if (!selectedType || !newQuestionData.label?.trim())
+      return alert("Please choose a type and enter a label");
 
     const questionId = `Q${Math.floor(100000 + Math.random() * 900000)}`;
-
-    const payload = {
+    const optimisticQuestion = {
       questionId,
       type: selectedType,
       label: newQuestionData.label,
@@ -189,38 +183,54 @@ export default function Dist() {
     };
 
     try {
-      await QuestionModel.create(orgId, surveyId, payload);
+      // 1) OPTIMISTIC: update UI immediately
+      setQuestions((prev) => [...prev, optimisticQuestion]);
+      setSurvey((prev) => {
+        if (!prev) return prev;
+        const updatedBlocks = (prev.blocks || []).map((b) =>
+          b.blockId === selectedBlock
+            ? { ...b, questionOrder: [...(b.questionOrder || []), questionId] }
+            : b
+        );
+        const updatedQuestionOrder = [
+          ...(prev.questionOrder || []),
+          questionId,
+        ];
+        return {
+          ...prev,
+          blocks: updatedBlocks,
+          questionOrder: updatedQuestionOrder,
+        };
+      });
 
+      // 2) Server create
+      await QuestionModel.create(orgId, surveyId, optimisticQuestion);
+
+      // 3) Persist survey order server-side
       const current = normalizeSurveyFromApi(await getSurvey(surveyId));
-
-      const updatedBlocks = (current.blocks || []).map((b) =>
+      const updatedBlocksServer = (current.blocks || []).map((b) =>
         b.blockId === selectedBlock
-          ? {
-              ...b,
-              questionOrder: [...(b.questionOrder || []), questionId],
-            }
+          ? { ...b, questionOrder: [...(b.questionOrder || []), questionId] }
           : b
       );
-
-      const updatedQuestionOrder = [
+      const updatedQuestionOrderServer = [
         ...(current.questionOrder || []),
         questionId,
       ];
 
-      // Persist updated blocks and question order — don't send legacy randomizeQuestions field
       await SurveyModel.update(surveyId, {
-        blocks: updatedBlocks,
-        block_order: current.blockOrder, // unchanged
-        question_order: updatedQuestionOrder,
+        blocks: updatedBlocksServer,
+        block_order: current.blockOrder,
+        question_order: updatedQuestionOrderServer,
       });
 
-      // refresh UI
+      // 4) Reconcile with fresh data (if needed)
       const freshQs = await getAllQuestions(orgId, surveyId);
       setQuestions(freshQs || []);
       setSurvey({
         ...current,
-        blocks: updatedBlocks,
-        questionOrder: updatedQuestionOrder,
+        blocks: updatedBlocksServer,
+        questionOrder: updatedQuestionOrderServer,
       });
 
       // reset dialog
@@ -229,9 +239,97 @@ export default function Dist() {
       setShowTypePopup(false);
     } catch (err) {
       console.error("Error adding question:", err);
+      // rollback optimistic change
+      setQuestions((prev) => prev.filter((q) => q.questionId !== questionId));
+      setSurvey((prev) => {
+        if (!prev) return prev;
+        const updatedBlocks = (prev.blocks || []).map((b) =>
+          b.blockId === selectedBlock
+            ? {
+                ...b,
+                questionOrder: (b.questionOrder || []).filter(
+                  (id) => id !== questionId
+                ),
+              }
+            : b
+        );
+        const updatedQuestionOrder = (prev.questionOrder || []).filter(
+          (id) => id !== questionId
+        );
+        return {
+          ...prev,
+          blocks: updatedBlocks,
+          questionOrder: updatedQuestionOrder,
+        };
+      });
       alert(err?.message || "Failed to add question");
     }
   };
+
+  // Add in Dist component (next to handleAddQuestion)
+  const handleUpdateQuestion = async (questionId, updatedQuestion) => {
+    if (!questionId) throw new Error("questionId required");
+    try {
+      // 1) Optimistic update locally so user sees change immediately
+      setQuestions((prev) =>
+        (prev || []).map((q) =>
+          q.questionId === questionId ? { ...q, ...updatedQuestion } : q
+        )
+      );
+
+      // 2) Call backend model (adjust signature if your model expects different args)
+      // I assume QuestionModel.update(orgId, surveyId, questionId, payload) OR QuestionModel.update(questionId, payload)
+      // Try the most likely first, otherwise fall back.
+      if (typeof QuestionModel?.update === "function") {
+        // prefer org+survey signature if available
+        try {
+          // some implementations: QuestionModel.update(orgId, surveyId, id, payload)
+          await QuestionModel.update(
+            orgId,
+            surveyId,
+            questionId,
+            updatedQuestion
+          );
+        } catch (err) {
+          // fallback: QuestionModel.update(id, payload)
+          await QuestionModel.update(questionId, updatedQuestion);
+        }
+      } else if (typeof QuestionModel?.patch === "function") {
+        await QuestionModel.patch(questionId, updatedQuestion);
+      } else {
+        throw new Error("QuestionModel.update not available");
+      }
+
+      // 3) Reconcile with server copy (recommended)
+      const fresh = await getAllQuestions(orgId, surveyId);
+      setQuestions(fresh || []);
+      // Optionally refresh survey structure if update touches order/blocks:
+      try {
+        const rawSurvey = await getSurvey(surveyId);
+        setSurvey(normalizeSurveyFromApi(rawSurvey));
+      } catch (e) {
+        // non-fatal
+        console.warn("Failed to refresh survey after question update", e);
+      }
+
+      return true;
+    } catch (err) {
+      // rollback local optimistic change by refetching
+      try {
+        const fresh = await getAllQuestions(orgId, surveyId);
+        setQuestions(fresh || []);
+      } catch (e) {
+        console.warn("Failed to rollback after update failure", e);
+      }
+      // bubble error for UI
+      throw err;
+    }
+  };
+
+  const selectedBlockOrderLen = useMemo(() => {
+    const blk = (survey?.blocks || []).find((b) => b.blockId === selectedBlock);
+    return blk?.questionOrder?.length || 0;
+  }, [survey?.blocks, selectedBlock]);
 
   // ===== Add Block =====
   const handleAddBlock = async () => {
@@ -330,7 +428,7 @@ export default function Dist() {
               showNewQuestion
             />
 
-            <QuestionsTab
+            {/* <QuestionsTab
               questions={questions}
               blocks={survey?.blocks || []}
               selectedBlockId={selectedBlock} // blockId
@@ -351,6 +449,30 @@ export default function Dist() {
                   prev ? { ...prev, blocks: newBlocks } : prev
                 )
               }
+            /> */}
+            <QuestionsTab
+              key={`${selectedBlock}-${selectedBlockOrderLen}-${questions.length}`}
+              questions={questions}
+              blocks={survey?.blocks || []}
+              selectedBlockId={selectedBlock}
+              publicSurveyUrl={publicSurveyUrl}
+              showTypePopup={showTypePopup}
+              fetchQuestions={getAllQuestions}
+              setShowTypePopup={setShowTypePopup}
+              setSelectedType={setSelectedType}
+              selectedType={selectedType}
+              QUESTION_TYPES={QUESTION_TYPES}
+              newQuestionData={newQuestionData}
+              setNewQuestionData={setNewQuestionData}
+              updateConfig={updateConfig}
+              handleCopyLink={handleCopyLink}
+              handleAddQuestion={handleAddQuestion}
+              handleUpdateQuestion={handleUpdateQuestion}
+              onBlocksChange={(newBlocks) =>
+                setSurvey((prev) =>
+                  prev ? { ...prev, blocks: newBlocks } : prev
+                )
+              }
             />
           </>
         )}
@@ -364,7 +486,13 @@ export default function Dist() {
           />
         )}
 
-        {activeTab === "flow" && <SurveyFlowView questions={questions} surveyId={surveyId}   blocks={survey?.blocks || []}/>}
+        {activeTab === "flow" && (
+          <SurveyFlowView
+            questions={questions}
+            surveyId={surveyId}
+            blocks={survey?.blocks || []}
+          />
+        )}
         {activeTab === "demo" && <SurveyDemoPage />}
         {activeTab === "distribution" && <DistributionPage />}
         {activeTab === "campaign" && <CampaignPage />}
