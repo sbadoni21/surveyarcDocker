@@ -84,7 +84,7 @@ export default function TicketsPage() {
 
   const handleTicketSelect = (ticket) => {
     // Navigate to the ticket detail page
-    router.push(`/postgres-org/${orgId}/dashboard/tickets/${ticket.ticketId}`);
+    router.push(`/postgres-org/${orgId}/dashboard/org-tickets/tickets/${ticket.ticketId}`);
   };
 
   return (

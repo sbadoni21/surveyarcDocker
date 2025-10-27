@@ -1,6 +1,4 @@
-// ============================================================
-// FILE: components/tickets/agent/TicketDetailPanel.jsx
-// ============================================================
+// components/tickets/agent/TicketDetailPanel.jsx
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import TicketModel from "@/models/ticketModel";
@@ -12,6 +10,7 @@ import ConversationSection from "./ConversationSection";
 import WorklogsSection from "./WorklogsSection";
 import SidebarActionsPanel from "./SidebarActionsPanel";
 import SLAInfoCard from "./SLAInfoCard";
+import { useUser } from "@/providers/postGresPorviders/UserProvider";
 
 export default function TicketDetailPanel({ ticket, onTicketChanged, currentUserId }) {
   const [busy, setBusy] = useState(false);
@@ -19,6 +18,9 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
   const [comments, setComments] = useState([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [worklogs, setWorklogs] = useState([]);
+  const [authorMap, setAuthorMap] = useState({}); // NEW: userId -> user
+
+  const { getUsersByIds } = useUser();
 
   const loadComments = useCallback(async () => {
     if (!ticket.ticketId) return;
@@ -26,20 +28,39 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
     try {
       const data = await CommentModel.list(ticket.ticketId);
       setComments(data || []);
+
+      // ----- NEW: hydrate authors in a single batch -----
+      const ids = Array.from(
+        new Set(
+          (data || [])
+            .map(c => c.author_id || c.authorId)
+            .filter(Boolean)
+        )
+      );
+      if (ids.length) {
+        const users = await getUsersByIds(ids);
+        const map = {};
+        for (const u of users) {
+          // adjust field names per your UserModel
+          map[u.uid || u.user_id || u.id] = u;
+        }
+        setAuthorMap(map);
+      } else {
+        setAuthorMap({});
+      }
     } catch (err) {
       console.error("Failed to load comments:", err);
     } finally {
       setCommentsLoading(false);
     }
-  }, [ticket.ticketId]);
+  }, [ticket.ticketId, getUsersByIds]);
 
   const hydrate = useCallback(async () => {
     try {
-      // Get full ticket with SLA data included
       const t = await TicketModel.get(ticket.ticketId);
       setFull(t);
       await loadComments();
-      
+
       const wls = await WorklogModel.list(ticket.ticketId).catch(() => []);
       setWorklogs(wls || []);
     } catch (err) {
@@ -53,14 +74,26 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
 
   const handleCommentAdded = async (newComment) => {
     setComments((prev) => [...prev, newComment]);
-    // Refresh full ticket to get updated SLA timers
+
+    // hydrate author for the new comment if missing
+    const id = newComment.author_id || newComment.authorId;
+    if (id && !authorMap[id]) {
+      try {
+        const [u] = await getUsersByIds([id]);
+        if (u) {
+          setAuthorMap((m) => ({ ...m, [u.uid || u.user_id || u.id]: u }));
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
     const fresh = await TicketModel.get(full.ticketId);
     setFull(fresh);
     onTicketChanged?.(fresh);
   };
 
   const handleSLAPaused = async () => {
-    // Refresh ticket to get updated SLA status
     const fresh = await TicketModel.get(full.ticketId);
     setFull(fresh);
     onTicketChanged?.(fresh);
@@ -85,7 +118,6 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
       <TicketMetadata ticket={full} />
 
       <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12">
-        {/* Main Content */}
         <div className="xl:col-span-8 border-r min-h-0 flex flex-col">
           <ConversationSection
             ticket={full}
@@ -95,6 +127,7 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
             onCommentAdded={handleCommentAdded}
             onCommentDeleted={handleCommentDeleted}
             onSLAPaused={handleSLAPaused}
+            authorMap={authorMap}               
             busy={busy}
             setBusy={setBusy}
           />
@@ -108,7 +141,6 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
           />
         </div>
 
-        {/* Sidebar */}
         <div className="xl:col-span-4 min-h-0 flex flex-col">
           <SidebarActionsPanel
             ticket={full}
@@ -117,7 +149,6 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
             setBusy={setBusy}
           />
           <SLAInfoCard slaId={full.slaId} ticket={full} dimension="resolution" />
-
         </div>
       </div>
     </div>

@@ -1,12 +1,12 @@
 "use client";
 import React from "react";
-import { FaArrowUp } from "react-icons/fa";
-import { useOrganisation } from "@/providers/organisationPProvider";
 import { Icon } from "@iconify/react";
+import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
+import { formatDate } from "../tickets/utils/ticketHelpers";
 
 export default function Subscription() {
   const { organisation } = useOrganisation();
-
+  console.log(organisation);
   const subscription = organisation?.subscription;
 
   if (!subscription) {
@@ -62,11 +62,7 @@ export default function Subscription() {
             </div>
             <p className="font-medium text-sm mt-1">
               {startDate
-                ? startDate.toDate().toLocaleDateString("en-US", {
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                  })
+                ? formatDate(startDate)
                 : "-"}
             </p>
           </div>
@@ -77,11 +73,7 @@ export default function Subscription() {
             </div>
             <p className="font-medium text-sm mt-1">
               {endDate
-                ? endDate.toDate().toLocaleDateString("en-US", {
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                  })
+                ?  formatDate(endDate)
                 : "-"}
             </p>
           </div>

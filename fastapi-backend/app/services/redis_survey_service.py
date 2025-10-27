@@ -41,6 +41,27 @@ class RedisSurveyService:
               except Exception:
                   pass
       return data
+# app/services/redis_survey_service.py
+
+    @classmethod
+    def set_project_surveys_exact(cls, project_id: str, surveys: List[Any]) -> bool:
+        """Replace the entire project list with exactly these surveys (no merge)."""
+        try:
+            if not redis_client.ping():
+                return False
+            # cache individuals
+            ids: list[str] = []
+            for s in surveys:
+                cls.cache_survey(s)
+                sid = getattr(s, "survey_id", None) or (isinstance(s, dict) and s.get("survey_id"))
+                if sid:
+                    ids.append(sid)
+            list_key = cls.PROJECT_SURVEYS_KEY.format(project_id=project_id)
+            redis_client.client.setex(list_key, cls.SURVEY_LIST_TTL, json.dumps(ids))
+            return True
+        except Exception as e:
+            print(f"[RedisSurveyService] set_project_surveys_exact failed: {e}")
+            return False
 
     @classmethod
     def cache_survey(cls, survey: Any) -> bool:
@@ -123,6 +144,17 @@ class RedisSurveyService:
             print(f"[RedisSurveyService] invalidate_survey failed: {e}")
             return False
 
+# app/services/redis_survey_service.py
+
+    @classmethod
+    def invalidate_project_surveys(cls, project_id: str) -> None:
+        try:
+            if not redis_client.ping():
+                return
+            list_key = cls.PROJECT_SURVEYS_KEY.format(project_id=project_id)
+            redis_client.client.delete(list_key)
+        except Exception as e:
+            print(f"[RedisSurveyService] invalidate_project_surveys failed: {e}")
 
 
     @classmethod

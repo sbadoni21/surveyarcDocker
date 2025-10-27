@@ -1,6 +1,3 @@
-// ==========================================
-// FILE: org-tickets/layout.js
-// ==========================================
 'use client'
 
 import { usePathname, useRouter } from 'next/navigation'
@@ -13,18 +10,16 @@ export default function OrgTicketsLayout({ children }) {
   const { user } = useUser()
   const role = user?.role?.toLowerCase() || null
 
-  // Extract the base path (language + postgres-org + orgId + dashboard)
+  // Extract base path (language + postgres-org + orgId + dashboard)
   const basePath = useMemo(() => {
     const segments = pathname.split('/').filter(Boolean)
     const dashboardIndex = segments.findIndex(s => s === 'dashboard')
-    
     if (dashboardIndex !== -1) {
       return '/' + segments.slice(0, dashboardIndex + 1).join('/')
     }
     return ''
   }, [pathname])
 
-  // All available tabs with role permissions
   const allTabs = [
     { name: 'Business Calendars', path: 'business-calendars', roles: ['owner', 'admin', 'manager'] },
     { name: 'Tickets', path: 'tickets', roles: ['owner', 'admin', 'manager','user', 'team_lead'] },
@@ -38,27 +33,61 @@ export default function OrgTicketsLayout({ children }) {
     { name: 'Team Lead', path: 'team-lead', roles: ['owner', 'admin', 'team_lead'] },
   ]
 
-  // Filter tabs based on user role
   const visibleTabs = useMemo(() => {
     if (!role) return []
     return allTabs.filter(tab => tab.roles.includes(role.toLowerCase()))
   }, [role])
 
-  // Redirect if user doesn't have access to current page
+  // Find the segment immediately after "org-tickets"
+  const tabSegment = useMemo(() => {
+    const segments = pathname.split('/').filter(Boolean)
+    const idx = segments.findIndex(s => s === 'org-tickets')
+    if (idx !== -1) {
+      return segments.length > idx + 1 ? segments[idx + 1] : '' // '' means no tab segment present
+    }
+    // if 'org-tickets' not found, fallback to last segment
+    const last = segments[segments.length - 1] || ''
+    return last
+  }, [pathname])
+
+  // Heuristic to detect an "id" (ticket id / calendar id). Adjust regex if you have strict formats.
+  const looksLikeId = useMemo(() => {
+    if (!tabSegment) return false
+    // common patterns: contains underscore (tkt_...), long random hex, or purely numeric id
+    if (tabSegment.includes('_')) return true
+    if (/^[0-9a-f]{8,}$/i.test(tabSegment)) return true
+    if (/^\d{4,}$/.test(tabSegment)) return true
+    return false
+  }, [tabSegment])
+
   useEffect(() => {
-    if (!role || visibleTabs.length === 0) return
+    // Only decide to redirect after we know role and visibleTabs
+    if (!role) return
 
-    const currentTab = pathname.split('/').pop()
-    const hasAccess = visibleTabs.some(tab => tab.path === currentTab)
-
-    if (!hasAccess && currentTab && currentTab !== 'org-tickets') {
+    // If there's no tab segment after org-tickets (user navigated to /org-tickets),
+    // redirect to the first visible tab.
+    if (tabSegment === '') {
       if (visibleTabs.length > 0) {
-        router.push(`${basePath}/org-tickets/${visibleTabs[0].path}`)
+        router.replace(`${basePath}/org-tickets/${visibleTabs[0].path}`)
+      }
+      return
+    }
+
+    // If the segment looks like an id (detail page), don't redirect.
+    if (looksLikeId) return
+
+    // Now the segment is a candidate tab (like 'tickets' or 'business-calendars').
+    // If the user does not have access to that tab, redirect to first visible tab.
+    const hasAccess = visibleTabs.some(tab => tab.path === tabSegment)
+    if (!hasAccess) {
+      if (visibleTabs.length > 0) {
+        router.replace(`${basePath}/org-tickets/${visibleTabs[0].path}`)
       }
     }
-  }, [pathname, role, visibleTabs, basePath, router])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, tabSegment, visibleTabs, basePath, router, looksLikeId])
 
-  // Show loading if no role
+  // Show loading while we resolve the user's role
   if (!role) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-[#1A1A1E] flex items-center justify-center">
@@ -67,7 +96,7 @@ export default function OrgTicketsLayout({ children }) {
     )
   }
 
-  // If agent, show only agent tickets (no tabs needed)
+  // If agent, keep things simple (no tabs)
   if (role === 'agent') {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-[#1A1A1E]">
@@ -80,14 +109,12 @@ export default function OrgTicketsLayout({ children }) {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#1A1A1E]">
-      {/* Top Navigation Tabs */}
       <div className="bg-white dark:bg-[#242428] border-b border-gray-200 dark:border-gray-800 shadow-sm">
         <div className="mx-auto px-4">
           <nav className="flex space-x-1 overflow-x-auto">
             {visibleTabs.map((tab) => {
               const fullPath = `${basePath}/org-tickets/${tab.path}`
-              const isActive = pathname.endsWith(tab.path)
-              
+              const isActive = tabSegment === tab.path
               return (
                 <button
                   key={tab.path}
@@ -110,7 +137,6 @@ export default function OrgTicketsLayout({ children }) {
         </div>
       </div>
 
-      {/* Main Content Area */}
       <main className="mx-auto px-4 py-6">
         {children}
       </main>

@@ -66,26 +66,41 @@ def process_one(session: Session, ob: Outbox):
                    + (r.get("requester", []) or []))
         subject = f"[SLA Breach] {p.get('dimension')} — Ticket {p.get('ticket_id')}"
         html = f"<p>SLA <strong>{p.get('dimension')}</strong> breached for ticket {p.get('ticket_id')}.</p>"
+    elif k == "ticket.comment":
+        from .http_mailer import send_from_payload
+        logger.info(f"Relaying ticket.comment via /send/from-payload for outbox {ob.id}")
+        send_from_payload("ticket.comment", p)
+        ob.sent_at = datetime.now(tz=UTC)
+        return
+        # >>> NEW
+    elif k == "calendar.created":
+        logger.info(f"Relaying calendar.created via /send/from-payload for outbox {ob.id}")
+        send_from_payload("calendar.created", p)
+        ob.sent_at = datetime.now(tz=UTC)
+        return
+    # NEW
+    elif k == "calendar.deleted":
+        send_from_payload("calendar.deleted", p)
+        ob.sent_at = datetime.now(tz=UTC)
+        return
 
+  
     else:
-        # Unknown kind: mark as sent to avoid poison messages
+        # Unknown kind: mark as sent to avoid po        ison messages
         logger.warning(f"Unknown outbox kind: {k}")
         ob.sent_at = datetime.now(tz=UTC)
         return
 
     if not to:
-        logger.info(f"No recipients for outbox {ob.id}, marking as sent")
         ob.sent_at = datetime.now(tz=UTC)
         return
 
 
     # Try the mailer; let exceptions bubble to caller so we don't mark sent on failures
-    logger.info(f"Sending email for outbox {ob.id} to {len(to)} recipients")
     send_via_mailer(to=to, subject=subject, html=html)
     ob.sent_at = datetime.now(tz=UTC)
-    logger.info(f"Successfully sent outbox {ob.id}")
 
-def run_forever(poll_interval: float = 2.0, batch: int = 25):
+def run_forever(poll_interval: float = 1000.0, batch: int = 25):
     logger.info(f"Starting outbox processor (poll_interval={poll_interval}s, batch={batch})")
     
     while True:
@@ -105,9 +120,6 @@ def run_forever(poll_interval: float = 2.0, batch: int = 25):
                     .all()
                 )
 
-                if rows:
-                    logger.info(f"Processing {len(rows)} outbox messages")
-
                 for ob in rows:
                     try:
                         process_one(session, ob)
@@ -115,8 +127,6 @@ def run_forever(poll_interval: float = 2.0, batch: int = 25):
                         did_work = True
                     except Exception as e:
                         session.rollback()
-                        logger.error(f"Error processing outbox {ob.id}: {e}")
-                        logger.error(traceback.format_exc())
                         
                         # Update error tracking if columns exist
                         try:

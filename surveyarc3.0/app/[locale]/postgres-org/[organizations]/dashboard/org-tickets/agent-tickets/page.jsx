@@ -1,4 +1,3 @@
-// app/(dashboard)/[orgSlug]/[orgId]/tickets/agent/page.jsx
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { usePathname } from "next/navigation";
@@ -30,7 +29,6 @@ export default function AgentTicketsPage() {
     try {
       const list = await TicketModel.list({
         orgId,
-        // IMPORTANT: filter by agentId (string), not assigneeId
         agentId: String(uid),
         q: filters.q || undefined,
         status: filters.status || undefined,
@@ -56,18 +54,20 @@ export default function AgentTicketsPage() {
 
       setTickets(sortTickets(normalized, filters.sortBy));
 
-      if (selected) {
-        const stillExists = normalized.find((x) => x.ticketId === selected.ticketId);
-        setSelected(stillExists || null);
-      }
+     if (selected?.ticketId) {
+      const found = normalized.find((x) => x.ticketId === selected.ticketId) || null;
+       if ((found?.ticketId || null) !== (selected?.ticketId || null)) {
+         setSelected(found);
+       }
+     }
     } finally {
       setLoading(false);
     }
-  }, [orgId, uid, filters.q, filters.status, filters.sortBy, selected?.ticketId]);
+  }, [orgId, uid, filters.q, filters.status, filters.sortBy]);
 
   useEffect(() => {
     loadTickets();
-  }, [loadTickets]);
+  }, [orgId, uid, filters.q, filters.status, filters.sortBy]);
 
   const handleFiltersChange = (updates) => {
     setFilters((prev) => ({ ...prev, ...updates }));

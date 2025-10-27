@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { useUser } from "@/providers/UserPProvider";
-import { useOrganisation } from "@/providers/organisationPProvider";
+import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
+import { useUser } from "@/providers/postGresPorviders/UserProvider";
 
 export default function OrganizationForm() {
   const { create, update, getById } = useOrganisation();

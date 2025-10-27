@@ -15,6 +15,19 @@ def _import_user_model():
         return User
     except Exception:
         return None
+# add near your other lookups
+def lookup_org_owner_email(session: Session, org_id: str) -> str | None:
+    try:
+        from ..models.organisation import Organisation  # adjust module/name if different
+    except Exception:
+        # fallback if model import path differs in your project
+        return None
+
+    org = session.get(Organisation, org_id)
+    if not org:
+        return None
+    # field name per your note: owner_email
+    return getattr(org, "owner_email", None) or getattr(org, "owner_emial", None)  # if typo exists
 
 def _import_support_models():
     try:

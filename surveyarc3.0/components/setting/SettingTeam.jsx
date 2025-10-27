@@ -1,10 +1,11 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { useUser } from "@/providers/UserPProvider";
-import { useOrganisation } from "@/providers/organisationPProvider";
+
 import TeamInvite from "./TeamInvite";
 import { FaUsers } from "react-icons/fa";
 import OwnerShipTransfer from "./OwnerShipTransfer";
+import { useUser } from "@/providers/postGresPorviders/UserProvider";
+import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
 
 const SettingTeam = () => {
   const { user } = useUser();

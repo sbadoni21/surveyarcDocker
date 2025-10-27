@@ -1,6 +1,4 @@
-// ============================================================
-// FILE: components/tickets/agent/CommentsList.jsx
-// ============================================================
+// components/tickets/agent/CommentsList.jsx
 "use client";
 import { Loader2, MessageSquare } from "lucide-react";
 import CommentItem from "./CommentItem";
@@ -9,7 +7,8 @@ export default function CommentsList({
   comments, 
   loading, 
   currentUserId,
-  onCommentDeleted 
+  onCommentDeleted,
+  authorMap = {}            // NEW
 }) {
   if (loading) {
     return (
@@ -19,7 +18,7 @@ export default function CommentsList({
     );
   }
 
-  if (comments.length === 0) {
+  if (!comments?.length) {
     return (
       <div className="flex-1 overflow-auto p-6 text-gray-500 flex flex-col items-center justify-center gap-2">
         <MessageSquare className="h-8 w-8 text-gray-300" />
@@ -37,10 +36,10 @@ export default function CommentsList({
             comment={comment}
             currentUserId={currentUserId}
             onDelete={onCommentDeleted}
+            author={authorMap[comment.author_id || comment.authorId]}  // NEW
           />
         ))}
       </ul>
     </div>
   );
 }
-

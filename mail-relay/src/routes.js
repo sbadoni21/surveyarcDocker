@@ -3,7 +3,9 @@ import { makeTransporter } from "./transporter.js";
 import tmplAssigned from "./templates/slaAssigned.js";
 import tmplWarn from "./templates/slaWarn.js";
 import tmplBreach from "./templates/slaBreach.js";
-
+import tmplTicketComment from "./templates/ticketComment.js";
+import tmplCalendarCreated from "./templates/calendarCreated.js";
+import tmplCalendarDeleted from "./templates/calendarDeleted.js";
 export const router = express.Router();
 const transporter = makeTransporter();
 
@@ -59,7 +61,19 @@ router.post("/send/from-payload", verifyAuth, async (req, res) => {
     } else if (kind === "sla.breach") {
       subject = `[SLA Breach] ${payload.dimension} — Ticket ${payload.ticket_id}`;
       html = tmplBreach(payload);
+    }   else if (kind === "ticket.comment") {
+      const internalTag = payload.is_internal ? " [INTERNAL]" : "";  
+      subject = `[TKT-${payload.number ?? "?"}] New comment${internalTag}: ${payload.subject ?? ""}`;
+      html = tmplTicketComment(payload);
     }
+      else if (kind === "calendar.created") {
+      subject = `[Calendar] New business calendar: ${payload.name ?? payload.calendar_id}`;
+      html = tmplCalendarCreated(payload);
+    } else if (kind === "calendar.deleted") {
+      subject = `[Calendar] Business calendar deleted: ${payload.name ?? payload.calendar_id}`;
+      html = tmplCalendarDeleted(payload);
+    }
+    
 
     const info = await transporter.sendMail({
       from: process.env.FROM_DEFAULT || process.env.SMTP_USER,

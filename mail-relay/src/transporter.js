@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import 'dotenv/config'
 
 export function makeTransporter(env = process.env) {
   return nodemailer.createTransport({

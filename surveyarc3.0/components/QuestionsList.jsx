@@ -311,7 +311,6 @@ const Droppable = ({ id, children }) => {
     <div
       ref={setNodeRef}
       className={isOver ? "ring-2 ring-blue-400 rounded-md" : ""}
-      // helps empty blocks accept drops
       style={{ minHeight: 12 }}
     >
       {children}
@@ -368,20 +367,7 @@ const DraggableQuestionsList = ({
     setByBlock(next);
   }, [renderBlocks, qIndex]);
 
-  // --- Handle Randomization Changes ---
-  const handleRandomizationChange = async (blockId, randomizationType) => {
-    const newBlocks = renderBlocks.map((b) =>
-      b.blockId === blockId
-        ? {
-            ...b,
-            randomizationType,
-            randomizeQuestions: randomizationType === "randomizeQuestions",
-          }
-        : b
-    );
-    setRenderBlocks(newBlocks);
-    await persistBlocks(newBlocks);
-  };
+
 
   const persistBlocks = async (newBlocks) => {
     try {
@@ -684,14 +670,6 @@ const DraggableQuestionsList = ({
     await persistBlocks(newBlocks);
     cancelRename();
   };
-
-  const displayBlocks = useMemo(() => {
-    if (!renderBlocks?.length || !selectedBlockId) return renderBlocks || [];
-    const idx = renderBlocks.findIndex((b) => b.blockId === selectedBlockId);
-    if (idx <= 0) return renderBlocks;
-    const sel = renderBlocks[idx];
-    return [sel, ...renderBlocks.slice(0, idx), ...renderBlocks.slice(idx + 1)];
-  }, [renderBlocks, selectedBlockId]);
 
   return (
     <div ref={scrollRef} className="rounded-lg mt-8 dark:bg-[#1A1A1E] pb-0.5">

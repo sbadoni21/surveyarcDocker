@@ -103,7 +103,7 @@ async list({
 ,
 
   async get(ticketId) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}`, { cache: "no-store" });
+    const res = await fetch(`${BASE}/${ticketId}`, { cache: "no-store" });
     const t = await json(res);
     return toCamel(t);
   },

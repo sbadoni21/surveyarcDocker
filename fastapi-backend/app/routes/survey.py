@@ -62,11 +62,9 @@ def list_surveys(project_id: Optional[str] = Query(None), db: Session = Depends(
         cached_list = RedisSurveyService.get_project_surveys(project_id)
         if cached_list:
             return cached_list
-
         surveys = db.query(Survey).filter(Survey.project_id == project_id).all()
-        if surveys:
-            RedisSurveyService.cache_project_surveys(project_id, surveys)
-        return surveys
+        RedisSurveyService.set_project_surveys_exact(project_id, surveys)
+        return surveys    
     # If no project_id passed, return empty or all (choose your policy)
     return []
 
@@ -75,11 +73,11 @@ def get_all_surveys(project_id: str, db: Session = Depends(get_db)):
     cached_list = RedisSurveyService.get_project_surveys(project_id)
     if cached_list:
         return cached_list
-
     surveys = db.query(Survey).filter(Survey.project_id == project_id).all()
-    if surveys:
-        RedisSurveyService.cache_project_surveys(project_id, surveys)
+    RedisSurveyService.set_project_surveys_exact(project_id, surveys)
     return surveys
+
+# app/routes/survey.py
 
 @router.patch("/{survey_id}", response_model=SurveyOut)
 def update_survey(survey_id: str, data: SurveyUpdate, db: Session = Depends(get_db)):
@@ -87,7 +85,9 @@ def update_survey(survey_id: str, data: SurveyUpdate, db: Session = Depends(get_
     if not survey:
         raise HTTPException(status_code=404, detail="Survey not found")
 
-    update_data = data.dict(exclude_unset=True)
+    old_project_id = survey.project_id
+
+    update_data = data.model_dump(exclude_unset=True)
     for k, v in update_data.items():
         setattr(survey, k, v)
     survey.updated_at = datetime.utcnow()
@@ -95,8 +95,18 @@ def update_survey(survey_id: str, data: SurveyUpdate, db: Session = Depends(get_
     db.refresh(survey)
 
     RedisSurveyService.cache_survey(survey)
+
     if survey.project_id:
-        RedisSurveyService.cache_project_surveys(survey.project_id, [survey])
+        if survey.project_id != old_project_id and old_project_id:
+            # remove from old + add to new (exact rebuilds for safety)
+            old_list = db.query(Survey).filter(Survey.project_id == old_project_id).all()
+            RedisSurveyService.set_project_surveys_exact(old_project_id, old_list)
+
+            new_list = db.query(Survey).filter(Survey.project_id == survey.project_id).all()
+            RedisSurveyService.set_project_surveys_exact(survey.project_id, new_list)
+        else:
+            # same project, merge is fine
+            RedisSurveyService.cache_project_surveys(survey.project_id, [survey])
 
     return survey
 
@@ -114,7 +124,7 @@ def delete_survey(survey_id: str, db: Session = Depends(get_db)):
     if project_id:
         # Rebuild project list cache (simple strategy)
         surveys = db.query(Survey).filter(Survey.project_id == project_id).all()
-        RedisSurveyService.cache_project_surveys(project_id, surveys)
+        RedisSurveyService.set_project_surveys_exact(project_id, surveys)
 
     return {"detail": "Survey deleted"}
 

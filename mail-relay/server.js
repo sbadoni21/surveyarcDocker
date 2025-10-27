@@ -1,5 +1,6 @@
 import express from "express";
 import { router } from "./src/routes.js";
+import 'dotenv/config'
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));

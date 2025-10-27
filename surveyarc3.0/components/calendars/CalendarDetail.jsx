@@ -565,7 +565,7 @@ export default function CalendarDetail({
         </Grid>
       </Grid>
 
-      {/* Business Hours Section */}
+  <div className="flex">    {/* Business Hours Section */}
       <Paper
         elevation={0}
         sx={{
@@ -593,7 +593,7 @@ export default function CalendarDetail({
               },
             }}
           >
-            Edit Hours
+            Edit
           </Button>
         </Stack>
         <BusinessHoursDisplay hours={calendar.hours} />
@@ -627,11 +627,11 @@ export default function CalendarDetail({
               },
             }}
           >
-            Edit Holidays
+            Edit
           </Button>
         </Stack>
         <HolidaysDisplay holidays={calendar.holidays} />
-      </Paper>
+      </Paper></div>
 
       {/* Forms */}
       <BusinessHoursForm

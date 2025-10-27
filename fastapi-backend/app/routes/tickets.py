@@ -164,6 +164,67 @@ def on_ticket_created(session, ticket: Ticket):
         "resolution_due_at": ticket.sla_status and ticket.sla_status.resolution_due_at and ticket.sla_status.resolution_due_at.isoformat(),
         "recipients": {k: list(v) for k, v in recips.items()},
     })
+def _resolve_comment_recipients(session: Session, ticket: Ticket, *, author_id: str, is_internal: bool) -> dict[str, list[str]]:
+    """
+    Build recipients for a new comment.
+    - Everyone involved (requester, assignee/agent, team mailbox/members, watchers, collaborators)
+    - EXCEPT the author themselves.
+    - If is_internal=True, do NOT notify requester/client contacts.
+    """
+    from ..models.tickets import TicketCollaborator
+
+    # base sets
+    emails = {
+        "requester": set(),
+        "assignee": set(),
+        "team": set(),
+        "watchers": set(),
+        "collaborators": set(),
+    }
+
+    author_email = lookup_user_email(session, author_id)
+
+    # requester (skip if internal)
+    if not is_internal:
+        req = lookup_user_email(session, ticket.requester_id)
+        if req and req != author_email:
+            emails["requester"].add(req)
+
+    # assignee/agent
+    for uid in [ticket.assignee_id, ticket.agent_id]:
+        if uid:
+            e = lookup_user_email(session, uid)
+            if e and e != author_email:
+                emails["assignee"].add(e)
+
+    # watchers
+    for w in (ticket.watchers or []):
+        e = lookup_user_email(session, w.user_id)
+        if e and e != author_email:
+            emails["watchers"].add(e)
+
+    # team mailbox preferred, else members
+    if ticket.team_id:
+        mbox = lookup_team_mailbox(session, ticket.team_id)
+        if mbox and mbox != author_email:
+            emails["team"].add(mbox)
+        else:
+            for e in list_team_member_emails(session, ticket.team_id):
+                if e and e != author_email:
+                    emails["team"].add(e)
+
+    # collaborators (if you use the collaborators table)
+    try:
+        rows = session.query(TicketCollaborator).filter(TicketCollaborator.ticket_id == ticket.ticket_id).all()
+        for r in rows:
+            e = lookup_user_email(session, r.user_id)
+            if e and e != author_email:
+                emails["collaborators"].add(e)
+    except Exception:
+        pass
+
+    # finalize to lists and remove empties
+    return {k: [*v] for k, v in emails.items() if v}
 
     
 def coerce_priority(v: str | None) -> TicketPriority | None:
@@ -1005,12 +1066,14 @@ def remove_collaborator(ticket_id: str, user_id: str, db: Session = Depends(get_
 # ---------------------------------------------------------------------
 # Comments
 # ---------------------------------------------------------------------
-
 @router.get("/{ticket_id}/comments", response_model=List[CommentOut])
 def list_comments(ticket_id: str, db: Session = Depends(get_db)):
-    """
-    List comments for a ticket in ascending create time.
-    """
+    # try cache first
+    cached = RedisTicketService.get_comments(ticket_id)
+    if cached is not None:
+        # already serialized dicts, return as pydantic models
+        return [CommentOut.model_validate(c) for c in cached]
+
     t = db.get(Ticket, ticket_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
@@ -1020,8 +1083,10 @@ def list_comments(ticket_id: str, db: Session = Depends(get_db)):
         .order_by(TicketComment.created_at.asc())
         .all()
     )
-    return [CommentOut.model_validate(r, from_attributes=True) for r in rows]
-
+    out = [CommentOut.model_validate(r, from_attributes=True) for r in rows]
+    # cache plain dicts
+    RedisTicketService.cache_comments(ticket_id, [o.model_dump() for o in out])
+    return out
 
 @router.post("/{ticket_id}/comments", response_model=CommentOut, status_code=201)
 def create_comment(ticket_id: str, payload: CommentCreate, db: Session = Depends(get_db)):
@@ -1072,6 +1137,37 @@ def create_comment(ticket_id: str, payload: CommentCreate, db: Session = Depends
     db.commit()
     db.refresh(row)
     _invalidate_all(db, t)
+    
+    try:
+     dto = CommentOut.model_validate(row, from_attributes=True).model_dump()
+     RedisTicketService.append_comment(t.ticket_id, dto)
+    except Exception:
+     pass
+
+    try:
+        recips = _resolve_comment_recipients(
+            db, t,
+            author_id=row.author_id,
+            is_internal=row.is_internal
+        )
+        # If nothing to notify, skip
+        if any(recips.values()):
+            dedupe = f"ticket.comment:{row.comment_id}"
+            enqueue_outbox(db, "ticket.comment", dedupe, {
+                "ticket_id": t.ticket_id,
+                "org_id": t.org_id,
+                "number": t.number,
+                "subject": t.subject,
+                "author_id": row.author_id,
+                "is_internal": bool(row.is_internal),
+                "body": row.body,
+                "recipients": recips,
+            })
+            db.commit()
+    except Exception:
+        # never break the API just because email enqueue failed
+        pass
+  
     return CommentOut.model_validate(row, from_attributes=True)
 
 
@@ -1089,6 +1185,10 @@ def delete_comment(ticket_id: str, comment_id: str, db: Session = Depends(get_db
     db.delete(row)
     db.commit()
     _invalidate_all(db, t)
+    try:
+     RedisTicketService.remove_comment(ticket_id, comment_id)
+    except Exception:
+     pass
     return None
 
 

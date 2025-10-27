@@ -12,7 +12,7 @@ export default function TicketDetailPage({ params }) {
   const router = useRouter();
   const path = usePathname();
   const orgId = path.split("/")[3];
-  const ticketId = path.split("/")[6];
+  const ticketId = path.split("/")[7];
   
   const { uid: currentUserId } = useUser() || {};
   const {
@@ -136,7 +136,7 @@ export default function TicketDetailPage({ params }) {
         <Stack spacing={2}>
           <Button
             startIcon={<ArrowBackIcon />}
-            onClick={() => router.push(`/postgres-org/${orgId}/dashboard/tickets`)}
+            onClick={() => router.push(`/postgres-org/${orgId}/dashboard/org-tickets/tickets`)}
           >
             Back to Tickets
           </Button>
@@ -151,7 +151,7 @@ export default function TicketDetailPage({ params }) {
       <Stack spacing={2}>
         <Button
           startIcon={<ArrowBackIcon />}
-          onClick={() => router.push(`/postgres-org/${orgId}/dashboard/tickets`)}
+            onClick={() => router.push(`/postgres-org/${orgId}/dashboard/org-tickets/tickets`)}
           sx={{ alignSelf: "flex-start" }}
         >
           Back to Tickets

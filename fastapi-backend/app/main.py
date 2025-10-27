@@ -14,6 +14,7 @@ from app.utils.redis_utils import RedisHealthCheck, RedisProjectAnalytics, Redis
 
 # Import outbox processor
 from app.services.outbox_processor import run_forever as run_outbox_processor
+from app.middleware.request_context import request_context_middleware
 
 # Import all models so SQLAlchemy knows about them
 init_models()
@@ -26,7 +27,7 @@ from app.routes import (
     archive, audit_log, domains, integration, invite, invoice,
     marketplace, metric, order, organisation, payment, pricing_plan, rule, contacts, 
     support_groups, support_teams, support_routing, slas, business_calendars, tags, 
-    ticket_categories, ticket_sla, ticket_taxonomies)
+    ticket_categories, ticket_sla, ticket_taxonomies, audit_events)
 
 app = FastAPI(
     title="Survey & Ticket Management API",
@@ -48,7 +49,6 @@ outbox_processor_thread = None
 def start_outbox_processor():
     """Start the outbox processor in a separate thread"""
     try:
-        print("🚀 Starting outbox processor thread...")
         run_outbox_processor(
             poll_interval=OUTBOX_POLL_INTERVAL,
             batch=OUTBOX_BATCH_SIZE
@@ -341,6 +341,7 @@ app.include_router(ticket_categories.router, tags=["Categories"])
 app.include_router(tags.router, tags=["Tags"])
 app.include_router(ticket_sla.router, tags=["Sla tickets"])
 app.include_router(ticket_taxonomies.router, tags=["Taxomony tickets"])
+app.include_router(audit_events.router, tags=["Audit Events"])
 
 # Add encryption middleware with configuration
 app.add_middleware(
@@ -348,3 +349,4 @@ app.add_middleware(
     enable_encryption=ENABLE_ENCRYPTION, 
     fallback_on_error=ENCRYPTION_FALLBACK
 )
+app.middleware("http")(request_context_middleware)

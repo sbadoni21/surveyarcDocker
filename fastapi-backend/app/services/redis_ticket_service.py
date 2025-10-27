@@ -371,3 +371,79 @@ class RedisTicketService:
             pipe.execute()
         except Exception:
             pass
+            
+    # --- new constants ---
+    COMMENTS_TTL = 900  # 15m, same as tickets
+    COMMENTS_KEY = "ticket:{ticket_id}:comments"   # stores a JSON array of comments
+    MAX_COMMENTS_CACHED = 500                      # safety cap (optional)
+
+    # --- helpers for comment (de)serialization reuse the default serializer ---
+    @classmethod
+    def _deserialize_list(cls, blob) -> list[dict]:
+        if not blob:
+            return []
+        if isinstance(blob, bytes):
+            blob = blob.decode("utf-8")
+        return json.loads(blob)
+
+    # ------------------------- comments cache (new) -------------------------
+
+    @classmethod
+    def cache_comments(cls, ticket_id: str, comments: list[dict]) -> bool:
+        try:
+            if not redis_client.ping():
+                return False
+            key = cls.COMMENTS_KEY.format(ticket_id=ticket_id)
+            # optional safety cap
+            if len(comments) > cls.MAX_COMMENTS_CACHED:
+                comments = comments[-cls.MAX_COMMENTS_CACHED:]
+            redis_client.client.setex(key, cls.COMMENTS_TTL, json.dumps(comments))
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    def get_comments(cls, ticket_id: str) -> Optional[list[dict]]:
+        try:
+            if not redis_client.ping():
+                return None
+            key = cls.COMMENTS_KEY.format(ticket_id=ticket_id)
+            blob = redis_client.client.get(key)
+            return cls._deserialize_list(blob) if blob else None
+        except Exception:
+            return None
+
+    @classmethod
+    def append_comment(cls, ticket_id: str, comment: dict) -> None:
+        """Append to cached list (or seed it) and refresh TTL."""
+        try:
+            if not redis_client.ping():
+                return
+            key = cls.COMMENTS_KEY.format(ticket_id=ticket_id)
+            pipe = redis_client.client.pipeline()
+            cur = redis_client.client.get(key)
+            lst = cls._deserialize_list(cur) if cur else []
+            lst.append(comment)
+            if len(lst) > cls.MAX_COMMENTS_CACHED:
+                lst = lst[-cls.MAX_COMMENTS_CACHED:]
+            pipe.setex(key, cls.COMMENTS_TTL, json.dumps(lst))
+            pipe.execute()
+        except Exception:
+            pass
+
+    @classmethod
+    def remove_comment(cls, ticket_id: str, comment_id: str) -> None:
+        """Remove a comment from cache; if not found, noop."""
+        try:
+            if not redis_client.ping():
+                return
+            key = cls.COMMENTS_KEY.format(ticket_id=ticket_id)
+            cur = redis_client.client.get(key)
+            if not cur:
+                return
+            lst = cls._deserialize_list(cur)
+            new_lst = [c for c in lst if (c.get("comment_id") or c.get("commentId")) != comment_id]
+            # keep TTL fresh
+            redis_client.client.setex(key, cls.COMMENTS_TTL, json.dumps(new_lst))
+        except Exception:
+            pass

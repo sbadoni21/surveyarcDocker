@@ -1,5 +1,5 @@
 "use client";
-import { useUser } from "@/providers/UserPProvider";
+import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import React, { useState } from "react";
 import { ImWarning } from "react-icons/im";
 

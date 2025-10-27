@@ -10,6 +10,7 @@ export default function ConversationSection({
   onCommentAdded,
   onCommentDeleted,
   busy,
+  authorMap,
   setBusy,
 }) {
   return (
@@ -26,6 +27,7 @@ export default function ConversationSection({
         loading={commentsLoading}
         currentUserId={currentUserId}
         onCommentDeleted={onCommentDeleted}
+        authorMap={authorMap}
       />
     </>
   );

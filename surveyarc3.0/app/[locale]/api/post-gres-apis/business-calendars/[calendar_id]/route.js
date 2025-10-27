@@ -6,7 +6,7 @@ import { encryptPayload } from "@/utils/crypto_utils";
 const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
 const ENC = process.env.ENCRYPT_SURVEYS === "1";
 
-// ----- shared decrypt helper (GET) -----
+// ---------- helpers ----------
 async function forceDecryptResponse(res) {
   const text = await res.text();
   try {
@@ -22,7 +22,9 @@ async function forceDecryptResponse(res) {
           })
         );
         return NextResponse.json(dec, { status: res.status });
-      } catch { return NextResponse.json(json, { status: res.status }); }
+      } catch {
+        return NextResponse.json(json, { status: res.status });
+      }
     }
     if (json && typeof json === "object") {
       try { return NextResponse.json(await decryptGetResponse(json), { status: res.status }); }
@@ -34,14 +36,45 @@ async function forceDecryptResponse(res) {
   }
 }
 
-// GET /api/post-gres-apis/slas/business-calendars/[calendar_id]
+function pickAuthHeaders(inHeaders) {
+  const out = {};
+  const auth = inHeaders.get("authorization");
+  const xuid = inHeaders.get("x-user-id");
+  if (auth) out["authorization"] = auth;   // Bearer <firebase-id-token>
+  if (xuid) out["x-user-id"] = xuid;       // trusted ID if you set it in middleware
+  return out;
+}
+
+function pickContextHeaders(inHeaders) {
+  const keys = [
+    "x-request-id",
+    "x-trace-id",
+    "x-correlation-id",
+    "x-session-id",
+    "x-parent-log-id",
+    "x-tenant-id",
+    "user-agent",
+    "x-forwarded-for",
+  ];
+  const out = {};
+  for (const k of keys) {
+    const v = inHeaders.get(k);
+    if (v) out[k] = v;
+  }
+  return out;
+}
+
+// ---------- GET /[calendar_id] ----------
 export async function GET(req, { params }) {
   const { calendar_id } = await params;
-
   try {
     const res = await fetch(`${BASE}/business-calendars/${encodeURIComponent(calendar_id)}`, {
       signal: AbortSignal.timeout(30000),
       cache: "no-store",
+      headers: {
+        ...pickAuthHeaders(req.headers),
+        ...pickContextHeaders(req.headers),
+      },
     });
     return forceDecryptResponse(res);
   } catch (e) {
@@ -49,17 +82,21 @@ export async function GET(req, { params }) {
   }
 }
 
-// PATCH /api/post-gres-apis/slas/business-calendars/[calendar_id]
+// ---------- PATCH /[calendar_id] ----------
 export async function PATCH(req, { params }) {
   const { calendar_id } = await params;
-
   try {
     const raw = await req.json();
     const payload = ENC ? await encryptPayload(raw) : raw;
 
     const res = await fetch(`${BASE}/business-calendars/${encodeURIComponent(calendar_id)}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...(ENC ? { "x-encrypted": "1" } : {}) },
+      headers: {
+        "Content-Type": "application/json",
+        ...(ENC ? { "x-encrypted": "1" } : {}),
+        ...pickAuthHeaders(req.headers),        // required for auth
+        ...pickContextHeaders(req.headers),     // fills audit ids/ua/ip
+      },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30000),
       cache: "no-store",
@@ -70,22 +107,23 @@ export async function PATCH(req, { params }) {
   }
 }
 
-// DELETE /api/post-gres-apis/slas/business-calendars/[calendar_id]
+// ---------- DELETE /[calendar_id] ----------
 export async function DELETE(req, { params }) {
   const { calendar_id } = await params;
-
   try {
     const res = await fetch(`${BASE}/business-calendars/${encodeURIComponent(calendar_id)}`, {
       method: "DELETE",
       signal: AbortSignal.timeout(30000),
       cache: "no-store",
+      headers: {
+        ...pickAuthHeaders(req.headers),
+        ...pickContextHeaders(req.headers),
+      },
     });
-    
-    // DELETE returns 204 No Content
+
     if (res.status === 204) {
       return new NextResponse(null, { status: 204 });
     }
-    
     return forceDecryptResponse(res);
   } catch (e) {
     return NextResponse.json({ detail: "Upstream error", message: String(e?.message || e) }, { status: 500 });
