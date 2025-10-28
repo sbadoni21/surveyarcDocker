@@ -1,8 +1,7 @@
 // app/en/api/invites/accept/route.ts
 import { NextResponse } from "next/server";
 
-// const BASE_URL = "http://localhost:8000" || "http://fastapi-backend:8000";
-const BASE =  "http://localhost:8000" ;
+const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
 
 
 async function asJson(res) {

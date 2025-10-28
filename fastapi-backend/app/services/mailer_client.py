@@ -1,7 +1,7 @@
 import os, json, urllib.request
 
-MAILER_URL       = os.getenv("MAILER_URL", "http://localhost:4001/send")
-MAILER_URL_KINDS = os.getenv("MAILER_URL_KINDS", "http://localhost:4001/send/from-payload")
+MAILER_URL       = os.getenv("MAILER_URL", "https://surveyarcdocker-ktno.onrender.com/send")
+MAILER_URL_KINDS = os.getenv("MAILER_URL_KINDS", "https://surveyarcdocker-ktno.onrender.com/send/from-payload")
 MAIL_API_TOKEN   = os.getenv("MAIL_API_TOKEN", "supersecrettoken")
 FROM_ADDRESS     = os.getenv("FROM_ADDRESS")  # optional default From
 

@@ -1,9 +1,13 @@
 import crypto from "crypto";
 
+const BASE = process.env.KEYSERVER_BASE_URL || "http://localhost:8001";
+const BACKEND_BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
+
+
 export async function POST(req) {
   const payload = await req.json();
   const key_id = "req_" + Date.now();
-  const keyRes = await fetch(`http://localhost:8001/get-key/${key_id}`);
+  const keyRes = await fetch(`${BASE}/get-key/${key_id}`);
   const { encrypted_key, aes_key_b64 } = await keyRes.json();
   const aesKey = Buffer.from(aes_key_b64, "base64");
   const iv = crypto.randomBytes(12); 
@@ -12,7 +16,7 @@ export async function POST(req) {
   ciphertext = Buffer.concat([ciphertext, cipher.final()]);
   const tag = cipher.getAuthTag();
 
-  const response = await fetch("http://localhost:8000/secure-crud" , {
+  const response = await fetch(`${BACKEND_BASE}/secure-crud` , {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

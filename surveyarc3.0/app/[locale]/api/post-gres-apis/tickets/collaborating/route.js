@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-const BASE = "http://localhost:8000";
+const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
 
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
