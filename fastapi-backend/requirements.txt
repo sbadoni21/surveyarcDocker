@@ -8,3 +8,4 @@ psycopg2-binary
 redis
 alembic
 firebase-admin
+python-multipart
