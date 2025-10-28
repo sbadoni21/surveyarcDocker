@@ -1,17 +1,11 @@
-# surveyarc/Dockerfile
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --legacy-peer-deps
-COPY . .
-# build Next.js (adjust if your app uses CRA or other)
-RUN npm run build
+FROM node:20-alpine
 
-FROM node:20-alpine AS runner
 WORKDIR /app
-ENV NODE_ENV=production
-COPY --from=builder /app/ ./
-# Next.js requires the .next and node_modules from build stage; we copied them
+
+COPY package*.json ./
+RUN npm install --frozen-lockfile
+
+COPY . .
+
 EXPOSE 3000
-# Next's production start command
-CMD ["npm", "run", "start"]
+CMD ["npm", "run", "dev"]
