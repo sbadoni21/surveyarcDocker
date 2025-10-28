@@ -17,6 +17,7 @@ const QuestionsTab = ({
   handleAddQuestion,
   handleUpdateQuestion,
   onBlocksChange,
+  addingQuestion,
   selectedBlockId
 }) => {
   const [selectedQuestionId, setSelectedQuestionId] = useState(null);
@@ -55,6 +56,7 @@ const QuestionsTab = ({
         updateConfig={updateConfig}
         handleAddQuestion={handleAddQuestion}
         handleUpdateQuestion={handleUpdateQuestion}
+        addingQuestion={addingQuestion}
       />
     </div>
   );

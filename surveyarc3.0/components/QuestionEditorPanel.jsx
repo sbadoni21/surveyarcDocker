@@ -1,7 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { FaPlus, FaFont } from "react-icons/fa";
-import { Plus, Type, Save, X, Settings } from "lucide-react";
+import { Plus, Type } from "lucide-react";
 import QUESTION_TYPES from "@/enums/questionTypes";
 import QuestionConfigForm from "./QuestionFrom";
 import { ICONS_MAP } from "@/utils/questionTypes";
@@ -16,33 +15,41 @@ export default function QuestionEditorPanel({
   updateConfig,
   handleAddQuestion,
   handleUpdateQuestion,
+  addingQuestion,
 }) {
   const [editableQuestion, setEditableQuestion] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (selectedQuestion) {
+    if (!selectedQuestion) return;
+    if (selectedQuestion.questionId !== editableQuestion?.questionId) {
       setEditableQuestion({ ...selectedQuestion });
     }
-  }, [selectedQuestion]);
+  }, [selectedQuestion?.questionId]);
 
-  const isEditMode = !!editableQuestion;
+  const isEditMode = Boolean(editableQuestion);
+
+  const nextFrame = () =>
+    new Promise((resolve) => requestAnimationFrame(() => resolve()));
+
+  const getIconForType = (type) => {
+    if (!type) return <Type className="w-5 h-5" />;
+    if (ICONS_MAP[type]) return ICONS_MAP[type];
+    const enumKey = Object.keys(QUESTION_TYPES).find(
+      (k) => QUESTION_TYPES[k] === type || k === type
+    );
+    if (enumKey && ICONS_MAP[enumKey]) return ICONS_MAP[enumKey];
+    return <Type className="w-5 h-5" />;
+  };
 
   const normalizedUpdateConfig = (keyOrObject, value) => {
     if (isEditMode) {
       if (typeof keyOrObject === "object") {
-        setEditableQuestion((prev) => ({
-          ...prev,
-          config: keyOrObject,
-        }));
+        setEditableQuestion((prev) => ({ ...prev, config: keyOrObject }));
       } else {
         setEditableQuestion((prev) => ({
           ...prev,
-          config: {
-            ...prev.config,
-            [keyOrObject]: value,
-          },
+          config: { ...(prev?.config || {}), [keyOrObject]: value },
         }));
       }
     } else {
@@ -50,38 +57,77 @@ export default function QuestionEditorPanel({
     }
   };
 
+  const isScreenType = (t) =>
+    ["welcome_screen", "end_screen", "redirect_screen"].includes(t);
+  const createDisabled = () =>
+    saving ||
+    addingQuestion ||
+    (!isScreenType(selectedType) && !(newQuestionData?.label || "").trim());
+
+  const editDisabled = () =>
+    saving ||
+    addingQuestion ||
+    !(
+      isScreenType(editableQuestion?.type) ||
+      (editableQuestion?.label && String(editableQuestion.label).trim())
+    );
+
+  const onCreateClick = async () => {
+    if (saving || addingQuestion) return;
+    try {
+      setSaving(true);
+      await nextFrame();
+
+      await Promise.resolve(handleAddQuestion());
+
+      setNewQuestionData({ label: "", description: "", config: {} });
+    } catch (err) {
+      console.error("Add question failed:", err);
+      alert(err?.message || "Failed to add question");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onUpdateClick = async () => {
+    if (!editableQuestion) return;
+    if (saving) return;
+    try {
+      setSaving(true);
+      await nextFrame();
+      await Promise.resolve(
+        handleUpdateQuestion(editableQuestion.questionId, editableQuestion)
+      );
+      setEditableQuestion(null);
+      setSelectedQuestionIndex(null);
+      setSelectedType(null);
+    } catch (err) {
+      console.error("Update question failed:", err);
+      alert(err?.message || "Failed to save changes");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <main className="flex-1 p-8 dark:bg-[#121214] bg-[#F5F5F5]">
-      {isLoading ? (
-        <div className="flex flex-col items-center justify-center h-full text-center animate-pulse">
-          <div className="relative">
-            <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-6"></div>
-            <div className="absolute inset-0 w-16 h-16 border-4 border-transparent border-l-blue-400 rounded-full animate-spin animate-reverse"></div>
-          </div>
-          <p className="text-lg font-semibold text-slate-600 animate-in fade-in duration-500 delay-300">
-            Loading Editor...
-          </p>
-        </div>
-      ) : editableQuestion ? (
+      {isEditMode ? (
         <div className="animate-in slide-in-from-right duration-500 ease-out">
           <EditorCard
-            title={`Edit ${editableQuestion.type.replaceAll("_", " ")}`}
-            icon={
-              ICONS_MAP[
-                Object.keys(QUESTION_TYPES).find(
-                  (k) => QUESTION_TYPES[k] === editableQuestion.type
-                )
-              ] || <Type className="w-5 h-5" />
-            }
+            title={`Edit ${String(editableQuestion?.type || "").replaceAll(
+              "_",
+              " "
+            )}`}
+            icon={getIconForType(editableQuestion?.type)}
           >
             {!["end_screen", "welcome_screen"].includes(
-              editableQuestion.type
+              editableQuestion?.type
             ) && (
               <>
                 <div className="animate-in slide-in-from-bottom duration-300 delay-100">
                   <LabeledInput
                     label="Question Label *"
-                    value={editableQuestion.label}
+                    value={editableQuestion?.label || ""}
                     onChange={(e) =>
                       setEditableQuestion((prev) => ({
                         ...prev,
@@ -93,7 +139,7 @@ export default function QuestionEditorPanel({
                 <div className="animate-in slide-in-from-bottom duration-300 delay-200">
                   <LabeledInput
                     label="Description"
-                    value={editableQuestion.description}
+                    value={editableQuestion?.description || ""}
                     onChange={(e) =>
                       setEditableQuestion((prev) => ({
                         ...prev,
@@ -107,8 +153,8 @@ export default function QuestionEditorPanel({
 
             <div className="rounded-lg bg-white/40 backdrop-blur-sm animate-in slide-in-from-bottom duration-300 delay-300">
               <QuestionConfigForm
-                type={editableQuestion?.type || selectedType}
-                config={editableQuestion?.config || newQuestionData.config}
+                type={editableQuestion?.type}
+                config={editableQuestion?.config || {}}
                 updateConfig={normalizedUpdateConfig}
               />
             </div>
@@ -127,30 +173,18 @@ export default function QuestionEditorPanel({
               </button>
 
               <button
-                onClick={async () => {
-                  setSaving(true);
-                  await new Promise((resolve) => setTimeout(resolve, 1000));
-                  handleUpdateQuestion(
-                    editableQuestion.questionId,
-                    editableQuestion
-                  );
-                  await new Promise((resolve) => setTimeout(resolve, 1000));
-                  setEditableQuestion(null);
-                  setSelectedQuestionIndex(null);
-                  setSelectedType(null);
-                  setSaving(false);
-                }}
+                onClick={onUpdateClick}
                 className="flex-1 px-4 py-2.5 rounded-lg font-medium transition-all duration-300 bg-[#ED7A13] text-white shadow-md hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none text-sm"
-                disabled={saving}
+                disabled={editDisabled()}
               >
                 {saving ? (
                   <div className="flex items-center justify-center gap-2">
-                    <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     Saving...
                   </div>
                 ) : (
-                  <div className="flex items-center  justify-center gap-2">
-                    Save Changes
+                  <div className="flex items-center justify-center gap-2">
+                    Update Changes
                   </div>
                 )}
               </button>
@@ -160,23 +194,21 @@ export default function QuestionEditorPanel({
       ) : selectedType ? (
         <div className="animate-in slide-in-from-left duration-500 ease-out">
           <EditorCard
-            title={`Configure ${selectedType.replaceAll("_", " ")}`}
-            icon={
-              ICONS_MAP[
-                Object.keys(QUESTION_TYPES).find(
-                  (k) => QUESTION_TYPES[k] === selectedType
-                )
-              ] || <Type className="w-5 h-5" />
-            }
+            title={`Configure ${String(selectedType).replaceAll("_", " ")}`}
+            icon={getIconForType(selectedType)}
           >
-            {!["end_screen", "welcome_screen"].includes(
-              selectedType
-            ) && (
+            {isScreenType(selectedType) && (
+              <p className="text-xs text-gray-500 mt-2">
+                Label / description are optional for screen types.
+              </p>
+            )}
+
+            {!["end_screen", "welcome_screen"].includes(selectedType) && (
               <>
                 <div className="animate-in slide-in-from-bottom duration-300 delay-100">
                   <LabeledInput
                     label="Question Label *"
-                    value={newQuestionData.label}
+                    value={newQuestionData?.label || ""}
                     onChange={(e) =>
                       setNewQuestionData((prev) => ({
                         ...prev,
@@ -190,7 +222,7 @@ export default function QuestionEditorPanel({
                 <div className="animate-in slide-in-from-bottom duration-300 delay-200">
                   <LabeledInput
                     label="Description (Optional)"
-                    value={newQuestionData.description}
+                    value={newQuestionData?.description || ""}
                     onChange={(e) =>
                       setNewQuestionData((prev) => ({
                         ...prev,
@@ -205,91 +237,35 @@ export default function QuestionEditorPanel({
 
             <div className="rounded-xl bg-white/40 backdrop-blur-sm animate-in slide-in-from-bottom duration-300 delay-300">
               <QuestionConfigForm
-                type={editableQuestion?.type || selectedType}
-                config={editableQuestion?.config || newQuestionData.config}
+                type={selectedType}
+                config={newQuestionData?.config || {}}
                 updateConfig={normalizedUpdateConfig}
               />
             </div>
 
-            <div className="flex gap-4 pt-6 animate-in slide-in-from-bottom duration-300 delay-400">
-              <button
-                onClick={() => {
-                  setSelectedType(null);
-                  setNewQuestionData({
-                    label: "",
-                    description: "",
-                    config: {},
-                  });
-                }}
-                className="flex-1 px-6 py-3 rounded-xl font-semibold dark:text-[#96949C] border-2 dark:bg-[#1A1A1E] border-slate-300 text-slate-600 bg-white/60 backdrop-blur-sm hover:bg-white/80 hover:border-slate-400 hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-300"
-                disabled={saving}
-              >
-                Cancel
-              </button>
-
-              <button
-                onClick={async () => {
-                  setSaving(true);
-                  await handleAddQuestion();
-                  setSaving(false);
-                }}
-                className="flex-1 px-6 py-3 rounded-xl font-semibold transition-all duration-300 bg-[#ED7A13] text-white shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                disabled={!newQuestionData.label.trim() || saving}
-              >
-                {saving ? (
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    Saving...
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center gap-2">
-                    Save Question
-                  </div>
-                )}
-              </button>
-            </div>
+            <SaveCancelRow
+              onCancel={() => {
+                setSelectedType(null);
+                setNewQuestionData({ label: "", description: "", config: {} });
+              }}
+              onSave={onCreateClick}
+              saveLabel="Save Question"
+              cancelDisabled={saving}
+              saveDisabled={createDisabled()}
+            />
           </EditorCard>
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center h-full text-center animate-in fade-in duration-700">
-          <div className="relative mb-8">
-            <div className="w-32 h-32 mx-auto rounded-full bg-gradient-to-br from-blue-100 via-indigo-100 to-purple-100 flex items-center justify-center shadow-2xl animate-in zoom-in duration-500 delay-200">
-              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg transform hover:scale-105 transition-transform duration-300">
-                <Plus className="w-12 h-12 text-white" />
-              </div>
-            </div>
-            <div className="absolute -top-4 -right-4 w-8 h-8 bg-gradient-to-r from-pink-400 to-purple-500 rounded-full animate-bounce delay-1000"></div>
-            <div className="absolute -bottom-2 -left-6 w-6 h-6 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full animate-bounce delay-1500"></div>
-          </div>
-
-          <div className="animate-in slide-in-from-bottom duration-500 delay-300">
-            <h3 className="text-3xl font-bold mb-4 dark:text-[#CBC9DE] text-black">
-              Ready to Create Questions?
-            </h3>
-            <p className="text-xl mb-8 dark:text-[#96949C] text-slate-600 max-w-md leading-relaxed">
-              Select "Add New Question" to get started with your survey
-            </p>
-          </div>
-
-          <div className="animate-in slide-in-from-bottom duration-500 delay-500">
-            <div className="flex flex-col sm:flex-row gap-4 items-center">
-              <div className="px-4 py-2 bg-white/60 backdrop-blur-sm rounded-full text-sm text-slate-600 border border-white/80">
-                💡 Choose from multiple question types
-              </div>
-              <div className="px-4 py-2 bg-white/60 backdrop-blur-sm rounded-full text-sm text-slate-600 border border-white/80">
-                ⚙️ Configure advanced options
-              </div>
-            </div>
-          </div>
-        </div>
+        <PlaceholderCreate />
       )}
     </main>
   );
 }
 
+
 function EditorCard({ title, icon, children }) {
   return (
-    <div className=" mx-auto rounded-xl p-6 shadow-xl space-y-6 overflow-y-auto h-[77vh] dark:bg-[#1A1A1E] bg-white dark:border-none border border-white/60 animate-in zoom-in-95 duration-300">
+    <div className="mx-auto rounded-xl p-6 shadow-xl space-y-6 overflow-y-auto h-[77vh] dark:bg-[#1A1A1E] bg-white dark:border-none border border-white/60 animate-in zoom-in-95 duration-300">
       <div className="text-center mb-6 animate-in slide-in-from-top duration-300">
         <div className="flex items-center gap-5">
           <div className="relative inline-block">
@@ -322,6 +298,81 @@ function LabeledInput({ label, value, onChange, placeholder = "" }) {
           placeholder={placeholder}
         />
         <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-blue-400/10 to-indigo-400/10 pointer-events-none opacity-0 transition-opacity duration-300 hover:opacity-100"></div>
+      </div>
+    </div>
+  );
+}
+
+function SaveCancelRow({
+  onCancel,
+  onSave,
+  saveLabel,
+  cancelDisabled,
+  saveDisabled,
+}) {
+  const extraBtnClass = saveDisabled ? "pointer-events-none opacity-70" : "";
+  return (
+    <div className="flex gap-4 pt-6 animate-in slide-in-from-bottom duration-300 delay-400">
+      <button
+        onClick={onCancel}
+        className="flex-1 px-6 py-3 rounded-xl font-semibold dark:text-[#96949C] border-2 dark:bg-[#1A1A1E] border-slate-300 text-slate-600 bg-white/60 backdrop-blur-sm hover:bg-white/80 hover:border-slate-400 hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-300"
+        disabled={cancelDisabled}
+      >
+        Cancel
+      </button>
+
+      <button
+        onClick={onSave}
+        aria-busy={saveDisabled ? "true" : "false"}
+        className={`flex-1 px-6 py-3 rounded-xl font-semibold transition-all duration-300 bg-[#ED7A13] text-white shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none ${extraBtnClass}`}
+        disabled={saveDisabled}
+      >
+        <div className="flex items-center justify-center gap-2">
+          {saveDisabled ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <span>Saving...</span>
+            </>
+          ) : (
+            <>{saveLabel}</>
+          )}
+        </div>
+      </button>
+    </div>
+  );
+}
+
+function PlaceholderCreate() {
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-center animate-in fade-in duration-700">
+      <div className="relative mb-8">
+        <div className="w-32 h-32 mx-auto rounded-full bg-gradient-to-br from-blue-100 via-indigo-100 to-purple-100 flex items-center justify-center shadow-2xl animate-in zoom-in duration-500 delay-200">
+          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg transform hover:scale-105 transition-transform duration-300">
+            <Plus className="w-12 h-12 text-white" />
+          </div>
+        </div>
+        <div className="absolute -top-4 -right-4 w-8 h-8 bg-gradient-to-r from-pink-400 to-purple-500 rounded-full animate-bounce delay-1000" />
+        <div className="absolute -bottom-2 -left-6 w-6 h-6 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full animate-bounce delay-1500" />
+      </div>
+
+      <div className="animate-in slide-in-from-bottom duration-500 delay-300">
+        <h3 className="text-3xl font-bold mb-4 dark:text-[#CBC9DE] text-black">
+          Ready to Create Questions?
+        </h3>
+        <p className="text-xl mb-8 dark:text-[#96949C] text-slate-600 max-w-md leading-relaxed">
+          Select "Add New Question" to get started with your survey
+        </p>
+      </div>
+
+      <div className="animate-in slide-in-from-bottom duration-500 delay-500">
+        <div className="flex flex-col sm:flex-row gap-4 items-center">
+          <div className="px-4 py-2 bg-white/60 backdrop-blur-sm rounded-full text-sm text-slate-600 border border-white/80">
+            💡 Choose from multiple question types
+          </div>
+          <div className="px-4 py-2 bg-white/60 backdrop-blur-sm rounded-full text-sm text-slate-600 border border-white/80">
+            ⚙️ Configure advanced options
+          </div>
+        </div>
       </div>
     </div>
   );
