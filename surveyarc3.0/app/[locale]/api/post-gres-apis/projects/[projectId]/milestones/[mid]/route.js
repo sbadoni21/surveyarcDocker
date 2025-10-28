@@ -1,6 +1,38 @@
 import { NextResponse } from "next/server";
-import { BASE, jsonOrError } from "@/app/api/post-gres-apis/_lib/http";
+import { decryptGetResponse } from "@/utils/crypto_client";
+import { encryptPayload } from "@/utils/crypto_utils";
 
+const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
+const ENC = process.env.ENCRYPT_SURVEYS === "1";
+
+async function forceDecryptResponse(res) {
+  const text = await res.text();
+  try {
+    const json = JSON.parse(text);
+    if (Array.isArray(json)) {
+      try {
+        const dec = await Promise.all(
+          json.map(async (item) => {
+            if (item && typeof item === "object") {
+              try { return await decryptGetResponse(item); } catch { return item; }
+            }
+            return item;
+          })
+        );
+        return NextResponse.json(dec, { status: res.status });
+      } catch {
+        return NextResponse.json(json, { status: res.status });
+      }
+    }
+    if (json && typeof json === "object") {
+      try { return NextResponse.json(await decryptGetResponse(json), { status: res.status }); }
+      catch { return NextResponse.json(json, { status: res.status }); }
+    }
+    return NextResponse.json(json, { status: res.status });
+  } catch {
+    return NextResponse.json({ status: "error", raw: text }, { status: res.status });
+  }
+}
 export async function PATCH(req, { params }) {
   const { projectId, mid } = await params;
   const { orgId, ...patch } = await req.json().catch(() => ({}));
@@ -12,8 +44,8 @@ export async function PATCH(req, { params }) {
     body: JSON.stringify(patch),
     signal: AbortSignal.timeout(30000), cache: "no-store",
   });
-  const { status, json } = await jsonOrError(res);
-  return NextResponse.json(json, { status });
+ 
+  return forceDecryptResponse(res);
 }
 
 export async function DELETE(req, { params }) {
@@ -25,6 +57,5 @@ export async function DELETE(req, { params }) {
     method: "DELETE",
     signal: AbortSignal.timeout(30000), cache: "no-store",
   });
-  const { status, json } = await jsonOrError(res);
-  return NextResponse.json(json, { status });
+  return forceDecryptResponse(res);
 }

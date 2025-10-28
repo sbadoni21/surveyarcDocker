@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { forceDecryptResponse, BASE } from "@/utils/taxonomyApiHelpers";
+import { forceDecryptResponse, BASE } from "@/utils/categoryApiHelpers";
 
 export async function POST(req, { params }) {
   const { ticketId } = await params;
