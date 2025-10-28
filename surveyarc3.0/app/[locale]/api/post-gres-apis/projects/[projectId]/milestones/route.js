@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { BASE, ENC, forceDecryptResponse, jsonOrError } from "@/utils/categoryApiHelpers";
+import { BASE, ENC, forceDecryptResponse } from "@/utils/categoryApiHelpers";
 import { encryptPayload } from "@/utils/crypto_utils";
 
 export async function GET(req, { params }) {

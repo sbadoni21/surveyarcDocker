@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { BASE, forceDecryptResponse, jsonOrError } from "@/utils/categoryApiHelpers";
+import { BASE, forceDecryptResponse } from "@/utils/categoryApiHelpers";
 
 // Body: { project_ids:[], op:"archive|unarchive|delete|set_priority|set_status", value? }
 export async function POST(req, { params }) {

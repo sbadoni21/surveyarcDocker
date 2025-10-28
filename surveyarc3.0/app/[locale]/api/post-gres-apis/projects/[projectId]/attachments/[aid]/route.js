@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { BASE, jsonOrError } from "@/utils/categoryApiHelpers";
+import { BASE, forceDecryptResponse } from "@/utils/categoryApiHelpers";
 
 export async function DELETE(req, { params }) {
   const { projectId, aid } = await params;
@@ -10,6 +10,6 @@ export async function DELETE(req, { params }) {
     method: "DELETE",
     signal: AbortSignal.timeout(30000), cache: "no-store",
   });
-  const { status, json } = await jsonOrError(res);
-  return NextResponse.json(json, { status });
+ 
+  return forceDecryptResponse(res);
 }

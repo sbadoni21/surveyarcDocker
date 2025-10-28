@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { BASE, forceDecryptResponse, jsonOrError } from "@/utils/categoryApiHelpers";
+import { BASE, forceDecryptResponse } from "@/utils/categoryApiHelpers";
 
 export async function POST(req, { params }) {
   const { projectId } =  await params;
