@@ -316,7 +316,7 @@ const Droppable = ({ id, children }) => {
       {children}
     </div>
   );
-}; 
+};
 
 const DraggableQuestionsList = ({
   questions,
@@ -366,8 +366,6 @@ const DraggableQuestionsList = ({
     });
     setByBlock(next);
   }, [renderBlocks, qIndex]);
-
-
 
   const persistBlocks = async (newBlocks) => {
     try {
@@ -460,48 +458,46 @@ const DraggableQuestionsList = ({
   };
 
   const handleDragOver = (evt) => {
-  const { active, over } = evt;
-  if (!over) return;
+    const { active, over } = evt;
+    if (!over) return;
 
-  const activeId = active.id; // question id
-  const overId = over.id;     // could be question id or block id
+    const activeId = active.id; // question id
+    const overId = over.id; // could be question id or block id
 
-  const fromBlockId = findContainerOfQuestion(activeId);
-  const toBlockId = findContainerOfQuestion(overId) || overId; // if over a block container
+    const fromBlockId = findContainerOfQuestion(activeId);
+    const toBlockId = findContainerOfQuestion(overId) || overId; // if over a block container
 
-  if (!fromBlockId || !toBlockId || fromBlockId === toBlockId) return;
+    if (!fromBlockId || !toBlockId || fromBlockId === toBlockId) return;
 
-  const fromArr = byBlock[fromBlockId] || [];
-  const toArr = byBlock[toBlockId] || [];
+    const fromArr = byBlock[fromBlockId] || [];
+    const toArr = byBlock[toBlockId] || [];
 
-  const moving = fromArr.find((q) => q.questionId === activeId);
-  if (!moving) return;
+    const moving = fromArr.find((q) => q.questionId === activeId);
+    if (!moving) return;
 
-  // where in target?
-  const overIdx =
-    toArr.findIndex((q) => q?.questionId === overId) // if over a question
-  const targetIndex = overIdx === -1 ? toArr.length : overIdx;
+    // where in target?
+    const overIdx = toArr.findIndex((q) => q?.questionId === overId); // if over a question
+    const targetIndex = overIdx === -1 ? toArr.length : overIdx;
 
-  const next = {
-    ...byBlock,
-    [fromBlockId]: fromArr.filter((q) => q.questionId !== activeId),
-    [toBlockId]: [
-      ...toArr.slice(0, targetIndex),
-      moving,
-      ...toArr.slice(targetIndex),
-    ],
+    const next = {
+      ...byBlock,
+      [fromBlockId]: fromArr.filter((q) => q.questionId !== activeId),
+      [toBlockId]: [
+        ...toArr.slice(0, targetIndex),
+        moving,
+        ...toArr.slice(targetIndex),
+      ],
+    };
+
+    setByBlock(next);
+
+    // keep SortableContext `items` (questionOrder) in sync immediately
+    const newBlocks = renderBlocks.map((b) => ({
+      ...b,
+      questionOrder: (next[b.blockId] || []).map((q) => q.questionId),
+    }));
+    setRenderBlocks(newBlocks);
   };
-
-  setByBlock(next);
-
-  // keep SortableContext `items` (questionOrder) in sync immediately
-  const newBlocks = renderBlocks.map((b) => ({
-    ...b,
-    questionOrder: (next[b.blockId] || []).map((q) => q.questionId),
-  }));
-  setRenderBlocks(newBlocks);
-};
-
 
   // --- Page Break Handlers ---
   const handleAddPageBreak = async (blockId, index) => {
@@ -576,54 +572,48 @@ const DraggableQuestionsList = ({
   };
 
   const handleDeleteBlock = async (blockId) => {
+    if (!Array.isArray(renderBlocks)) return;
+
     const block = renderBlocks.find((b) => b.blockId === blockId);
     if (!block) return;
 
     const confirmDelete = window.confirm(
-      `Delete block "${block.name}"? Questions inside will be moved to 'Unassigned'.`
+      `Delete block "${block.name}" and all questions inside it?`
     );
     if (!confirmDelete) return;
 
-    const qIds = block.questionOrder || [];
-    let newBlocks = renderBlocks.filter((b) => b.blockId !== blockId);
+    const newBlocks = renderBlocks.filter((b) => b.blockId !== blockId);
 
-    if (qIds.length > 0) {
-      let unassigned = newBlocks.find(
-        (b) =>
-          (b.name || "").toLowerCase() === "unassigned" ||
-          b.blockId === "unassigned"
-      );
-
-      if (unassigned) {
-        unassigned = {
-          ...unassigned,
-          questionOrder: [
-            ...new Set([...(unassigned.questionOrder || []), ...qIds]),
-          ],
-        };
-        newBlocks = newBlocks.map((b) =>
-          b.blockId === unassigned.blockId ? unassigned : b
-        );
-      } else {
-        const newUnassigned = {
-          blockId: `unassigned_${Date.now()}`,
-          name: "Unassigned",
-          questionOrder: [...qIds],
-        };
-        newBlocks = [...newBlocks, newUnassigned];
-      }
-    }
+    const blockQuestionIds = (block.questionOrder || []).filter(Boolean);
+    const updatedQuestions = (questions || []).filter(
+      (q) => !blockQuestionIds.includes(q.questionId)
+    );
 
     const newByBlock = {};
     newBlocks.forEach((b) => {
-      newByBlock[b.blockId] = (b.questionOrder || [])
-        .map((qid) => qIndex.get(qid))
+      const arr = (b.questionOrder || [])
+        .map((qid) => updatedQuestions.find((qq) => qq.questionId === qid))
         .filter(Boolean);
+      newByBlock[b.blockId] = arr;
     });
 
     setRenderBlocks(newBlocks);
     setByBlock(newByBlock);
-    await persistBlocks(newBlocks);
+
+    try {
+      const blockOrder = newBlocks.map((b) => b.blockId);
+      const questionOrder = updatedQuestions.map((q) => q.questionId);
+
+      await updateSurvey(orgId, surveyId, {
+        blocks: newBlocks,
+        blockOrder,
+        questionOrder,
+      });
+
+      onBlocksChange?.(newBlocks);
+    } catch (err) {
+      console.error("Failed to delete block and its questions", err);
+    }
   };
 
   const moveBlock = async (blockId, direction) => {

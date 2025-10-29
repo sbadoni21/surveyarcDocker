@@ -1,5 +1,6 @@
+// QuestionsTab.jsx
 "use client";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import DraggableQuestionsList from "./QuestionsList";
 import QuestionTypeModal from "./QuestionTypeModal";
 import QuestionEditorPanel from "./QuestionEditorPanel";
@@ -26,9 +27,47 @@ const QuestionsTab = ({
   const [saveRequest, setSaveRequest] = useState(0);
   const [pendingAction, setPendingAction] = useState(null);
 
-  const selectedQuestion = questions.find(
-    (q) => q.questionId === selectedQuestionId
-  );
+  const normalizedBlocks = useMemo(() => {
+    return (blocks || []).map((b) => ({
+      ...b,
+      blockId: b.blockId ?? b.id ?? b.block_id ?? null,
+      questionOrder:
+        Array.isArray(b.questionOrder) && b.questionOrder.length >= 0
+          ? b.questionOrder
+          : Array.isArray(b.question_order)
+          ? b.question_order
+          : [],
+    }));
+  }, [blocks]);
+
+  useEffect(() => {
+    if (
+      (selectedBlockId === null ||
+        selectedBlockId === undefined ||
+        selectedBlockId === "") &&
+      normalizedBlocks.length > 0
+    ) {
+      const first = normalizedBlocks.find((b) => b?.blockId);
+      if (first) {
+      }
+    }
+  }, [normalizedBlocks, selectedBlockId]);
+
+  const questionsInSelectedBlock = useMemo(() => {
+    if (!selectedBlockId) return [];
+    const selectedBlock = normalizedBlocks.find(
+      (b) => b.blockId === selectedBlockId
+    );
+    const order = selectedBlock?.questionOrder ?? [];
+    const qById = new Map((questions || []).map((q) => [q.questionId, q]));
+    return order.map((id) => qById.get(id)).filter(Boolean);
+  }, [questions, normalizedBlocks, selectedBlockId]);
+
+  const selectedQuestion = useMemo(() => {
+    return (
+      (questions || []).find((q) => q.questionId === selectedQuestionId) || null
+    );
+  }, [questions, selectedQuestionId]);
 
   const onChildSaved = async (result) => {
     setUnsaved(false);
@@ -96,14 +135,18 @@ const QuestionsTab = ({
   return (
     <div className="flex dark:bg-[#121214] h-[calc(100vh-120px)] overflow-hidden min-h-0 bg-[#F5F5F5]">
       <aside className="w-[40%] relative z-10 shrink-0 h-full overflow-y-auto">
-        {Array.isArray(questions) && questions.length >= 1 && (
+        {Array.isArray(normalizedBlocks) && normalizedBlocks.length > 0 ? (
           <DraggableQuestionsList
             questions={questions}
-            blocks={blocks}
+            blocks={normalizedBlocks}
             selectedBlockId={selectedBlockId}
             setSelectedQuestionIndex={attemptSelectQuestion}
             onBlocksChange={onBlocksChange}
           />
+        ) : (
+          <div className="p-6 text-sm text-slate-500">
+            No blocks yet. Use "Add Block" to create the first one.
+          </div>
         )}
 
         <QuestionTypeModal
