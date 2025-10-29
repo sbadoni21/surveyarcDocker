@@ -92,7 +92,7 @@ const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
                     Please renew or upgrade your plan to avoid service interruption.
                   </p>
                   
-                  <a href="https://surveyarc2-0.vercel.app/en/org/${orgId}/dashboard" 
+                  <a href="https://surveyarc-docker.vercel.app/en/org/${orgId}/dashboard" 
                      style="display:inline-block; background:#2563eb; color:#fff; text-decoration:none; padding:12px 20px; font-size:15px; border-radius:6px;">
                     Renew Subscription
                   </a>
@@ -103,7 +103,7 @@ const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
               <tr>
                 <td style="padding:20px; background:#f3f4f6; text-align:center; font-size:13px; color:#6b7280;">
                   Regards,<br/>Support Team<br/>
-                  <a href="https://surveyarc2-0.vercel.app" style="color:#2563eb; text-decoration:none;">surveyarc.com</a>
+                  <a href="https://surveyarc-docker.vercel.app" style="color:#2563eb; text-decoration:none;">surveyarc.com</a>
                 </td>
               </tr>
             </table>

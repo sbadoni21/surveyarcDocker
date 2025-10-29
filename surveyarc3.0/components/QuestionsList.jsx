@@ -248,51 +248,55 @@ const SortableBlock = ({
           items={block.questionOrder || []}
           strategy={verticalListSortingStrategy}
         >
-          {(block.questionOrder || []).map((qid, index) => {
-            // if the ID is a page break, render special divider
-            if (qid.startsWith("PB-")) {
-              return (
-                <div key={qid} className="my-3 text-center relative group">
-                  <div className="border-t border-dashed border-gray-400 dark:border-gray-600 mb-2" />
-                  <div className="text-xs text-gray-500 uppercase tracking-wider">
-                    Page Break
+          {(() => {
+            let qNumber = 0; 
+            return (block.questionOrder || []).map((qid) => {
+              if (qid.startsWith("PB-")) {
+                return (
+                  <div key={qid} className="my-3 text-center relative group">
+                    <div className="border-t border-dashed border-gray-400 dark:border-gray-600 mb-2" />
+                    <div className="text-xs text-gray-500 uppercase tracking-wider">
+                      Page Break
+                    </div>
+                    <button
+                      className="absolute top-1/2 right-2 -translate-y-1/2 text-red-500 text-xs opacity-0 group-hover:opacity-100 transition"
+                      onClick={() => handleRemovePageBreak(block.blockId, qid)}
+                    >
+                      ✕
+                    </button>
                   </div>
-                  <button
-                    className="absolute top-1/2 right-2 -translate-y-1/2 text-red-500 text-xs opacity-0 group-hover:opacity-100 transition"
-                    onClick={() => handleRemovePageBreak(block.blockId, qid)}
-                  >
-                    ✕
-                  </button>
-                </div>
+                );
+              }
+
+              const q = questions.find((qq) => qq.questionId === qid);
+              if (!q) return null;
+
+              qNumber += 1;
+
+              return (
+                <React.Fragment key={q.questionId}>
+                  <SortableItem
+                    q={q}
+                    index={qNumber - 1} 
+                    onDelete={() => onDeleteQuestion(q.questionId)}
+                    onSelect={() => onSelectQuestion(q.questionId)}
+                    isDragging={activeId === q.questionId}
+                  />
+
+                  <div className="text-center mt-2 mb-4">
+                    <button
+                      onClick={() =>
+                        handleAddPageBreak(block.blockId, qNumber - 1)
+                      }
+                      className="text-xs text-blue-500 hover:underline"
+                    >
+                      + Add Page Break
+                    </button>
+                  </div>
+                </React.Fragment>
               );
-            }
-
-            // normal question
-            const q = questions.find((qq) => qq.questionId === qid);
-            if (!q) return null;
-
-            return (
-              <React.Fragment key={q.questionId}>
-                <SortableItem
-                  q={q}
-                  index={index}
-                  onDelete={() => onDeleteQuestion(q.questionId)}
-                  onSelect={() => onSelectQuestion(q.questionId)}
-                  isDragging={activeId === q.questionId}
-                />
-
-                {/* --- Add Page Break button BELOW each question --- */}
-                <div className="text-center mt-2 mb-4">
-                  <button
-                    onClick={() => handleAddPageBreak(block.blockId, index)}
-                    className="text-xs text-blue-500 hover:underline"
-                  >
-                    + Add Page Break
-                  </button>
-                </div>
-              </React.Fragment>
-            );
-          })}
+            });
+          })()}
         </SortableContext>
         {(!block.questionOrder || block.questionOrder.length === 0) && (
           <div className="text-xs text-slate-400 py-2 text-center">
@@ -304,7 +308,6 @@ const SortableBlock = ({
   );
 };
 
-// Add once near the top-level of this file
 const Droppable = ({ id, children }) => {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (

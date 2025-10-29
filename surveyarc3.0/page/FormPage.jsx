@@ -482,6 +482,43 @@ export default function FormPage() {
     }
   };
 
+  const expandBlocksByPageBreaks = (blocks, questions) => {
+    const expanded = [];
+
+    blocks.forEach((block) => {
+      const order = block.questionOrder || [];
+      let currentPageQuestions = [];
+
+      order.forEach((qid) => {
+        if (qid.startsWith("PB-")) {
+          // Push the accumulated questions as one "page block"
+          if (currentPageQuestions.length > 0) {
+            expanded.push({
+              ...block,
+              blockId: `${block.blockId}-page-${expanded.length + 1}`,
+              questionOrder: [...currentPageQuestions],
+            });
+          }
+          // reset for next page
+          currentPageQuestions = [];
+        } else {
+          currentPageQuestions.push(qid);
+        }
+      });
+
+      // push the last set (after last page break)
+      if (currentPageQuestions.length > 0) {
+        expanded.push({
+          ...block,
+          blockId: `${block.blockId}-page-${expanded.length + 1}`,
+          questionOrder: [...currentPageQuestions],
+        });
+      }
+    });
+
+    return expanded.length ? expanded : blocks;
+  };
+
   return (
     <div>
       {loading ? (
@@ -499,7 +536,7 @@ export default function FormPage() {
           )}
           <SurveyForm
             questions={questions}
-            blocks={blocks}
+            blocks={expandBlocksByPageBreaks(blocks, questions)}
             handleSubmit={handleSubmit}
             rules={rules}
           />
