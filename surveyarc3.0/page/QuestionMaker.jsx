@@ -26,6 +26,8 @@ export default function Dist() {
     description: "",
     config: {},
   });
+  const [newQuestionSignal, setNewQuestionSignal] = useState(0);
+
   const [showTypePopup, setShowTypePopup] = useState(false);
   const [activeTab, setActiveTab] = useState("questions");
   const [rules, setRules] = useState("<Logic>\n</Logic>");
@@ -51,14 +53,20 @@ export default function Dist() {
   const [addingQuestion, setAddingQuestion] = useState(false);
   const addingQuestionRef = React.useRef(false);
 
+  const handleOpenNewQuestion = () => {
+    setSelectedType(null);
+    setNewQuestionData({ label: "", description: "", config: {} });
+    setShowTypePopup(true);
+    setNewQuestionSignal((n) => n + 1);
+  };
+
   const normalizeHashToTab = useCallback((hash) => {
     const k = String(hash || "")
       .replace(/^#/, "")
       .toLowerCase();
-
     if (["questions", "question", "questoins"].includes(k)) return "questions";
     if (["rules", "logicrules", "logic"].includes(k)) return "rules";
-    if (["flow", "surveyflow"].includes(k)) return "flow"; // ✅ Add this
+    if (["flow", "surveyflow"].includes(k)) return "flow";
     if (["demo", "preview"].includes(k)) return "demo";
     if (["distribution", "share"].includes(k)) return "distribution";
     if (["campaign"].includes(k)) return "campaign";
@@ -96,7 +104,6 @@ export default function Dist() {
             : Array.isArray(b.question_order)
             ? b.question_order
             : [],
-          // normalize the randomization object consistently
           randomization:
             b.randomization ??
             (b.randomizeQuestions
@@ -358,7 +365,7 @@ export default function Dist() {
 
       await updateSurvey(orgId, surveyId, {
         blocks: updatedBlocks,
-        block_order: updatedBlockOrder, 
+        block_order: updatedBlockOrder,
       });
 
       setSurvey({
@@ -367,7 +374,7 @@ export default function Dist() {
         blockOrder: updatedBlockOrder,
       });
       setNewBlockName("");
-      setSelectedBlock(blockId); 
+      setSelectedBlock(blockId);
     } catch (e) {
       console.error("Failed to add block:", e);
       alert(e?.message || "Failed to add block");
@@ -387,6 +394,12 @@ export default function Dist() {
     });
   };
 
+  // ensure popup false on first load (defensive)
+  useEffect(() => {
+    setShowTypePopup(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (loading) return <Loading />;
 
   return (
@@ -398,7 +411,7 @@ export default function Dist() {
           <>
             <SurveyToolbar
               blocks={survey?.blocks || []}
-              selectedBlock={selectedBlock} 
+              selectedBlock={selectedBlock}
               onSelectBlock={setSelectedBlock}
               onSelectBlockRandomization={(blockId, updatedBlocks) => {
                 setSelectedBlock(blockId);
@@ -417,7 +430,7 @@ export default function Dist() {
               setNewBlockName={setNewBlockName}
               onAddBlock={handleAddBlock}
               onCopyLink={handleCopyLink}
-              onNewQuestion={() => setShowTypePopup(true)}
+              onNewQuestion={handleOpenNewQuestion}
               publicSurveyUrl={publicSurveyUrl}
               surveyTitle={survey?.title || survey?.name || "Survey"}
               showBlocks
@@ -429,6 +442,7 @@ export default function Dist() {
             <QuestionsTab
               key={`${selectedBlock}-${selectedBlockOrderLen}-${questions.length}`}
               questions={questions}
+              newQuestionSignal={newQuestionSignal}
               blocks={survey?.blocks || []}
               selectedBlockId={selectedBlock}
               publicSurveyUrl={publicSurveyUrl}

@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Plus, Type } from "lucide-react";
 import QUESTION_TYPES from "@/enums/questionTypes";
 import QuestionConfigForm from "./QuestionFrom";
@@ -16,16 +16,36 @@ export default function QuestionEditorPanel({
   handleAddQuestion,
   handleUpdateQuestion,
   addingQuestion,
+  onDirtyChange,
+  saveRequestCounter,
+  onSaved,
 }) {
   const [editableQuestion, setEditableQuestion] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  const [dirty, setDirty] = useState(false);
+  const lastSaveRequest = useRef(saveRequestCounter);
 
   useEffect(() => {
     if (!selectedQuestion) return;
     if (selectedQuestion.questionId !== editableQuestion?.questionId) {
       setEditableQuestion({ ...selectedQuestion });
+      setDirty(false);
+      onDirtyChange?.(false);
     }
   }, [selectedQuestion?.questionId]);
+
+  useEffect(() => {
+    if (!selectedType) return;
+    if (!editableQuestion) {
+      setDirty(false);
+      onDirtyChange?.(false);
+    }
+  }, [selectedType]);
+
+  useEffect(() => {
+    onDirtyChange?.(Boolean(dirty));
+  }, [dirty]);
 
   const isEditMode = Boolean(editableQuestion);
 
@@ -43,6 +63,7 @@ export default function QuestionEditorPanel({
   };
 
   const normalizedUpdateConfig = (keyOrObject, value) => {
+    setDirty(true);
     if (isEditMode) {
       if (typeof keyOrObject === "object") {
         setEditableQuestion((prev) => ({ ...prev, config: keyOrObject }));
@@ -57,8 +78,25 @@ export default function QuestionEditorPanel({
     }
   };
 
+  useEffect(() => {
+    if (typeof saveRequestCounter === "undefined") return;
+    if (lastSaveRequest.current === saveRequestCounter) return;
+    lastSaveRequest.current = saveRequestCounter;
+
+    (async () => {
+      if (saving) return;
+      if (isEditMode) {
+        await onUpdateClick(true);
+      } else {
+        await onCreateClick(true);
+      }
+    })();
+    
+  }, [saveRequestCounter]);
+
   const isScreenType = (t) =>
     ["welcome_screen", "end_screen", "redirect_screen"].includes(t);
+
   const createDisabled = () =>
     saving ||
     addingQuestion ||
@@ -72,24 +110,27 @@ export default function QuestionEditorPanel({
       (editableQuestion?.label && String(editableQuestion.label).trim())
     );
 
-  const onCreateClick = async () => {
+  const onCreateClick = async (autoMode = false) => {
     if (saving || addingQuestion) return;
     try {
       setSaving(true);
       await nextFrame();
-
       await Promise.resolve(handleAddQuestion());
-
       setNewQuestionData({ label: "", description: "", config: {} });
+      setDirty(false);
+      onDirtyChange?.(false);
+      onSaved?.();
+      return { ok: true };
     } catch (err) {
       console.error("Add question failed:", err);
-      alert(err?.message || "Failed to add question");
+      if (!autoMode) alert(err?.message || "Failed to add question");
+      throw err;
     } finally {
       setSaving(false);
     }
   };
 
-  const onUpdateClick = async () => {
+  const onUpdateClick = async (autoMode = false) => {
     if (!editableQuestion) return;
     if (saving) return;
     try {
@@ -101,12 +142,71 @@ export default function QuestionEditorPanel({
       setEditableQuestion(null);
       setSelectedQuestionIndex(null);
       setSelectedType(null);
+      setDirty(false);
+      onDirtyChange?.(false);
+      onSaved?.();
+      return { ok: true };
     } catch (err) {
       console.error("Update question failed:", err);
-      alert(err?.message || "Failed to save changes");
+      if (!autoMode) alert(err?.message || "Failed to save changes");
+      throw err;
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleCancel = async () => {
+    if (dirty) {
+      const save = window.confirm(
+        "You have unsaved changes. Click OK to save changes, or Cancel to discard."
+      );
+      if (save) {
+        if (isEditMode) {
+          await onUpdateClick();
+        } else {
+          await onCreateClick();
+        }
+        return;
+      } else {
+        if (isEditMode) {
+          setEditableQuestion(null);
+          setSelectedQuestionIndex(null);
+        } else {
+          setSelectedType(null);
+          setNewQuestionData({ label: "", description: "", config: {} });
+        }
+        setDirty(false);
+        onDirtyChange?.(false);
+        return;
+      }
+    } else {
+      if (isEditMode) {
+        setEditableQuestion(null);
+        setSelectedQuestionIndex(null);
+        setSelectedType(null);
+      } else {
+        setSelectedType(null);
+        setNewQuestionData({ label: "", description: "", config: {} });
+      }
+    }
+  };
+
+  const onLabelChange = (value) => {
+    if (isEditMode) {
+      setEditableQuestion((prev) => ({ ...prev, label: value }));
+    } else {
+      setNewQuestionData((prev) => ({ ...prev, label: value }));
+    }
+    setDirty(true);
+  };
+
+  const onDescriptionChange = (value) => {
+    if (isEditMode) {
+      setEditableQuestion((prev) => ({ ...prev, description: value }));
+    } else {
+      setNewQuestionData((prev) => ({ ...prev, description: value }));
+    }
+    setDirty(true);
   };
 
   return (
@@ -128,24 +228,14 @@ export default function QuestionEditorPanel({
                   <LabeledInput
                     label="Question Label *"
                     value={editableQuestion?.label || ""}
-                    onChange={(e) =>
-                      setEditableQuestion((prev) => ({
-                        ...prev,
-                        label: e.target.value,
-                      }))
-                    }
+                    onChange={(e) => onLabelChange(e.target.value)}
                   />
                 </div>
                 <div className="animate-in slide-in-from-bottom duration-300 delay-200">
                   <LabeledInput
                     label="Description"
                     value={editableQuestion?.description || ""}
-                    onChange={(e) =>
-                      setEditableQuestion((prev) => ({
-                        ...prev,
-                        description: e.target.value,
-                      }))
-                    }
+                    onChange={(e) => onDescriptionChange(e.target.value)}
                   />
                 </div>
               </>
@@ -159,36 +249,14 @@ export default function QuestionEditorPanel({
               />
             </div>
 
-            <div className="flex gap-3 pt-4 animate-in slide-in-from-bottom duration-300 delay-400">
-              <button
-                onClick={() => {
-                  setEditableQuestion(null);
-                  setSelectedQuestionIndex(null);
-                  setSelectedType(null);
-                }}
-                className="flex-1 px-4 py-2.5 rounded-lg font-medium transition-all duration-300 border-2 border-slate-300 text-slate-600 bg-white/60 backdrop-blur-sm hover:bg-white/80 hover:border-slate-400 hover:shadow-md transform hover:scale-[1.02] active:scale-[0.98] text-sm"
-                disabled={saving}
-              >
-                Cancel
-              </button>
-
-              <button
-                onClick={onUpdateClick}
-                className="flex-1 px-4 py-2.5 rounded-lg font-medium transition-all duration-300 bg-[#ED7A13] text-white shadow-md hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none text-sm"
-                disabled={editDisabled()}
-              >
-                {saving ? (
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Saving...
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center gap-2">
-                    Update Changes
-                  </div>
-                )}
-              </button>
-            </div>
+            <SaveCancelRow
+              onCancel={handleCancel}
+              onSave={() => onUpdateClick(false)}
+              saveLabel="Update Changes"
+              cancelDisabled={saving}
+              saveDisabled={editDisabled()}
+              isSaving={saving}
+            />
           </EditorCard>
         </div>
       ) : selectedType ? (
@@ -209,12 +277,7 @@ export default function QuestionEditorPanel({
                   <LabeledInput
                     label="Question Label *"
                     value={newQuestionData?.label || ""}
-                    onChange={(e) =>
-                      setNewQuestionData((prev) => ({
-                        ...prev,
-                        label: e.target.value,
-                      }))
-                    }
+                    onChange={(e) => onLabelChange(e.target.value)}
                     placeholder="Enter your question here..."
                   />
                 </div>
@@ -223,12 +286,7 @@ export default function QuestionEditorPanel({
                   <LabeledInput
                     label="Description (Optional)"
                     value={newQuestionData?.description || ""}
-                    onChange={(e) =>
-                      setNewQuestionData((prev) => ({
-                        ...prev,
-                        description: e.target.value,
-                      }))
-                    }
+                    onChange={(e) => onDescriptionChange(e.target.value)}
                     placeholder="Add helpful context or instructions..."
                   />
                 </div>
@@ -244,14 +302,12 @@ export default function QuestionEditorPanel({
             </div>
 
             <SaveCancelRow
-              onCancel={() => {
-                setSelectedType(null);
-                setNewQuestionData({ label: "", description: "", config: {} });
-              }}
-              onSave={onCreateClick}
+              onCancel={handleCancel}
+              onSave={() => onCreateClick(false)}
               saveLabel="Save Question"
               cancelDisabled={saving}
               saveDisabled={createDisabled()}
+              isSaving={saving}
             />
           </EditorCard>
         </div>
@@ -262,6 +318,7 @@ export default function QuestionEditorPanel({
   );
 }
 
+/* --- helper components --- */
 
 function EditorCard({ title, icon, children }) {
   return (
@@ -309,6 +366,7 @@ function SaveCancelRow({
   saveLabel,
   cancelDisabled,
   saveDisabled,
+  isSaving = false,
 }) {
   const extraBtnClass = saveDisabled ? "pointer-events-none opacity-70" : "";
   return (
@@ -323,12 +381,12 @@ function SaveCancelRow({
 
       <button
         onClick={onSave}
-        aria-busy={saveDisabled ? "true" : "false"}
+        aria-busy={isSaving ? "true" : "false"}
         className={`flex-1 px-6 py-3 rounded-xl font-semibold transition-all duration-300 bg-[#ED7A13] text-white shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none ${extraBtnClass}`}
-        disabled={saveDisabled}
+        disabled={saveDisabled || isSaving}
       >
         <div className="flex items-center justify-center gap-2">
-          {saveDisabled ? (
+          {isSaving ? (
             <>
               <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               <span>Saving...</span>
