@@ -3,7 +3,7 @@ import { encryptPayload } from "@/utils/crypto_utils";
 import { NextResponse } from "next/server";
 
 // const BASE = process.env.FASTAPI_BASE_URL
-const BASE = process.env.DEVELOPMENT_MODE ? "http://localhost:8000" : process.env.FASTAPI_BASE_URL;
+const BASE = process.env.FASTAPI_BASE_URL;
 
 const ENC = process.env.ENCRYPT_RESPONSES === "1";
 

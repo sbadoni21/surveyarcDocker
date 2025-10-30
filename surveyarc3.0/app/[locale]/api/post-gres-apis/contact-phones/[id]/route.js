@@ -1,7 +1,7 @@
 import { decryptGetResponse } from "@/utils/crypto_client";
 import { NextResponse } from "next/server";
 
-const BASE = process.env.DEVELOPMENT_MODE ? "http://localhost:8000" : process.env.FASTAPI_BASE_URL;
+const BASE = process.env.FASTAPI_BASE_URL;
 
 const looksEnvelope = (o) =>
   o && typeof o === "object" && "key_id" in o && "encrypted_key" in o && "ciphertext" in o && "iv" in o && "tag" in o;

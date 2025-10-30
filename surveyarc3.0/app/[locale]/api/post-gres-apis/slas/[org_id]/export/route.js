@@ -1,7 +1,7 @@
 // app/api/post-gres-apis/slas/[org_id]/export/route.js
 import { NextResponse } from "next/server";
 
-const BASE = process.env.DEVELOPMENT_MODE ? "http://localhost:8000" : process.env.FASTAPI_BASE_URL;
+const BASE = process.env.FASTAPI_BASE_URL;
 
 export async function GET(req, { params }) {
   const { org_id } = await params;

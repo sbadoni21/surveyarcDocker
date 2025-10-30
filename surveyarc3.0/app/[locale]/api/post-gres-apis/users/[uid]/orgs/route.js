@@ -1,7 +1,7 @@
 // /api/post-gres-apis/users/[uid]/orgs/route.js
 import { NextResponse } from "next/server";
 
-const BASE = process.env.DEVELOPMENT_MODE ? "http://localhost:8000" : process.env.FASTAPI_BASE_URL;
+const BASE = process.env.FASTAPI_BASE_URL;
 
 export async function POST(req, { params }) {
   const { uid } = await params;

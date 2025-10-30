@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { decryptGetResponse } from "@/utils/crypto_client";
 import { encryptPayload } from "@/utils/crypto_utils";
 
-const BASE = process.env.DEVELOPMENT_MODE ? "http://localhost:8000" : process.env.FASTAPI_BASE_URL;
+const BASE = process.env.FASTAPI_BASE_URL;
 const ENC  = process.env.ENCRYPT_SUPPORT === "1";
 
 /** Decrypt-if-needed helper (array/object/primitive safe) */

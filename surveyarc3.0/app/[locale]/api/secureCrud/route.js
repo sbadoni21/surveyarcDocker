@@ -1,7 +1,7 @@
 import crypto from "crypto";
 
-const BASE = process.env.KEYSERVER_BASE_URL || "http://localhost:8001";
-const BACKEND_BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
+const BASE = process.env.KEYSERVER_BASE_URL;
+const BACKEND_BASE = process.env.FASTAPI_BASE_URL;
 
 
 export async function POST(req) {
