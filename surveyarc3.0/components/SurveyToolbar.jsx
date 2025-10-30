@@ -250,22 +250,22 @@ export default function SurveyToolbar({
                   <span className="hidden sm:inline">Add Block</span>
                 </button>
               </div>
+
+              <div className="ml-auto flex items-center gap-2">
+                {rightSlot}
+
+                {showCopy && (
+                  <button
+                    title="Copy survey link"
+                    onClick={onCopyLink}
+                    className="group relative p-3 rounded-lg transition-all duration-300 hover:scale-105 shadow-md hover:shadow-xl dark:bg-[#436F3A] bg-[#3BED1336] text-white flex items-center justify-center"
+                  >
+                    <IoCopyOutline className="w-5 h-5 text-[#427336] dark:text-[#4DC334]" />
+                  </button>
+                )}
+              </div>
             </>
           ))}
-
-        <div className="ml-auto flex items-center gap-2">
-          {rightSlot}
-
-          {showCopy && (
-            <button
-              title="Copy survey link"
-              onClick={onCopyLink}
-              className="group relative p-3 rounded-lg transition-all duration-300 hover:scale-105 shadow-md hover:shadow-xl dark:bg-[#436F3A] bg-[#3BED1336] text-white flex items-center justify-center"
-            >
-              <IoCopyOutline className="w-5 h-5 text-[#427336] dark:text-[#4DC334]" />
-            </button>
-          )}
-        </div>
       </div>
 
       {showAddBlockModal && (
