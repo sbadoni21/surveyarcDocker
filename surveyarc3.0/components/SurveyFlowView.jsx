@@ -166,13 +166,24 @@ export default function SurveyFlowView({
     return map;
   }, [questions]);
 
+  // Build blocksResolved but keep page-break placeholders (PB-) and keep Unassigned in this structure.
   const blocksResolved = useMemo(() => {
     const list = [];
     const seen = new Set();
     for (const b of blocks || []) {
       const order = Array.isArray(b.questionOrder) ? b.questionOrder : [];
-      const qs = order.map((id) => questionsById.get(id)).filter(Boolean);
-      qs.forEach((q) => seen.add(q.questionId));
+      const qs = order
+        .map((id) => {
+          if (typeof id === "string" && id.startsWith("PB-")) {
+            // page break placeholder (visual only)
+            return { questionId: id, __isPageBreak: true };
+          }
+          return questionsById.get(id) || null;
+        })
+        .filter(Boolean);
+      qs.forEach((q) => {
+        if (!q.__isPageBreak) seen.add(q.questionId);
+      });
       list.push({ ...b, _questions: qs });
     }
     const stray = questions.filter((q) => !seen.has(q.questionId));
@@ -183,12 +194,21 @@ export default function SurveyFlowView({
         _questions: stray,
       });
     return list;
-  }, [blocks, questions, questionsById]);
+  }, [blocks, questionsById]);
+
+  // blocks to render in flow: exclude unassigned block (as requested)
+  const blocksForFlow = useMemo(
+    () => (blocksResolved || []).filter((b) => b.blockId !== "__unassigned__"),
+    [blocksResolved]
+  );
 
   const blockEntryMap = useMemo(() => {
     const m = new Map();
     for (const b of blocksResolved) {
-      const first = b._questions?.[0]?.questionId;
+      // pick first non-page-break question as entry
+      const first = (b._questions || []).find(
+        (q) => !q.__isPageBreak
+      )?.questionId;
       if (first) m.set(b.blockId, first);
     }
     return m;
@@ -197,7 +217,9 @@ export default function SurveyFlowView({
   const qToBlockId = useMemo(() => {
     const m = new Map();
     blocksResolved.forEach((b) =>
-      b._questions.forEach((q) => m.set(q.questionId, b.blockId))
+      b._questions.forEach((q) => {
+        if (!q.__isPageBreak) m.set(q.questionId, b.blockId);
+      })
     );
     return m;
   }, [blocksResolved]);
@@ -205,7 +227,7 @@ export default function SurveyFlowView({
   const globalQ = useMemo(() => {
     const arr = [];
     blocksResolved.forEach((b) => b._questions.forEach((q) => arr.push(q)));
-    return arr;
+    return arr.filter(Boolean);
   }, [blocksResolved]);
 
   const qIndexMap = useMemo(() => {
@@ -217,7 +239,7 @@ export default function SurveyFlowView({
   const blockLayouts = useMemo(() => {
     let cursorX = 0;
     const out = [];
-    for (const b of blocksResolved) {
+    for (const b of blocksForFlow) {
       const count = b._questions.length || 1;
       const width =
         Math.max(1, count) * X_GAP - (X_GAP - Q_WIDTH) + BLOCK_PADDING * 2;
@@ -233,7 +255,7 @@ export default function SurveyFlowView({
       cursorX += width + 40;
     }
     return out;
-  }, [blocksResolved]);
+  }, [blocksForFlow]);
 
   const layoutByBlock = useMemo(() => {
     const m = new Map();
@@ -256,10 +278,7 @@ export default function SurveyFlowView({
         data: { label: l.name },
         style: {
           background: "transparent",
-          border:
-            l.blockId === "__unassigned__"
-              ? "2px dashed #EF4444"
-              : "2px solid #3b3b45",
+          border: "2px solid #3b3b45",
           borderRadius: BLOCK_BORDER_RADIUS,
           width: l.width,
           height: l.height,
@@ -281,13 +300,10 @@ export default function SurveyFlowView({
         style: {
           width: "max-content",
           padding: "4px 12px",
-          border:
-            l.blockId === "__unassigned__"
-              ? "1px dashed #EF4444"
-              : "1px solid #3b3b45",
+          border: "1px solid #3b3b45",
           borderRadius: 999,
           background: "#000",
-          color: l.blockId === "__unassigned__" ? "#FCA5A5" : "#E5E7EB",
+          color: "#E5E7EB",
           fontSize: 12,
           fontWeight: 600,
           lineHeight: 1.2,
@@ -300,10 +316,37 @@ export default function SurveyFlowView({
 
   const questionNodes = useMemo(() => {
     const nodes = [];
-    blocksResolved.forEach((b) => {
+    blocksForFlow.forEach((b) => {
       const lay = layoutByBlock.get(b.blockId);
       if (!lay) return;
       b._questions.forEach((q, i) => {
+        if (q.__isPageBreak) {
+          // render page break visually within the block
+          nodes.push({
+            id: q.questionId,
+            data: { label: "— Page Break —" },
+            parentNode: `block-${b.blockId}`,
+            extent: "parent",
+            position: {
+              x: BLOCK_PADDING + i * X_GAP,
+              y: BLOCK_PADDING + BLOCK_HEADER_H,
+            },
+            style: {
+              borderRadius: 8,
+              padding: 10,
+              background: "linear-gradient(180deg,#0f1724,#0b1220)",
+              color: "#FBBF24",
+              border: "1px dashed #F59E0B",
+              width: Q_WIDTH * 0.8,
+              textAlign: "center",
+              boxShadow: "0 6px 18px rgba(0,0,0,.35)",
+              fontWeight: 700,
+              fontSize: 13,
+            },
+          });
+          return;
+        }
+
         nodes.push({
           id: q.questionId,
           data: { label: `[Q.Id - ${q.questionId}] : ${q.label}` },
@@ -328,7 +371,7 @@ export default function SurveyFlowView({
       });
     });
     return nodes;
-  }, [blocksResolved, layoutByBlock]);
+  }, [blocksForFlow, layoutByBlock]);
 
   const ruleGroups = useMemo(() => {
     const g = {};
@@ -445,6 +488,7 @@ export default function SurveyFlowView({
     [canvasRightX]
   );
 
+  // build edges used by reactflow (keeps your existing logic)
   const edges = useMemo(() => {
     const arr = [];
 
@@ -469,7 +513,6 @@ export default function SurveyFlowView({
       });
 
       (rule.actions || []).forEach((a, idx) => {
-        // show_message -> message node (existing behavior)
         if (a?.type === "show_message") {
           const msgId = `msg-${rule.ruleId}-${idx}`;
           arr.push({
@@ -489,7 +532,6 @@ export default function SurveyFlowView({
           return;
         }
 
-        // explicit end / skip_end handling (existing behavior)
         if (a?.type === "end" || a?.type === "skip_end") {
           arr.push({
             id: `act-${logicId}-end-node-${idx}`,
@@ -508,7 +550,6 @@ export default function SurveyFlowView({
           return;
         }
 
-        // resolve primary and resolution helper (same usage as before)
         const primaryQ =
           (rule.conditions || []).find((c) => !!c.questionId)?.questionId ||
           null;
@@ -521,14 +562,11 @@ export default function SurveyFlowView({
           blocks: blocksResolved,
         });
 
-        // If action explicitly contains multiple questionIds (skip_questions), use them
         const explicitQuestionIds =
           Array.isArray(a.questionIds) && a.questionIds.length
             ? a.questionIds
             : null;
 
-        // Build a list of target ids to create edges for.
-        // Preference: explicit questionIds -> res.targetId (single) -> nothing
         const targetIds =
           explicitQuestionIds ?? (res?.targetId ? [res.targetId] : []);
 
@@ -539,8 +577,17 @@ export default function SurveyFlowView({
           const dash = isSkip ? "6 3" : undefined;
 
           targetIds.forEach((targetId, tIdx) => {
-            // ensure id is string and matches node ids (questions use questionId)
             const resolvedTargetId = String(targetId);
+
+            // Do not add edges that point to page-break placeholders or unassigned nodes
+            // (we only add edges for real question ids present in flow)
+            const targetIsPageBreak =
+              typeof resolvedTargetId === "string" &&
+              resolvedTargetId.startsWith("PB-");
+            const targetIsInFlow = !!globalQ.find(
+              (q) => q.questionId === resolvedTargetId
+            );
+            if (targetIsPageBreak || !targetIsInFlow) return;
 
             arr.push({
               id: `act-${logicId}-${resolvedTargetId}-${idx}-${tIdx}`,
@@ -583,42 +630,175 @@ export default function SurveyFlowView({
           return;
         }
 
-        // fallback single-target handling (keeps your original behavior with res.targetId)
         if (res?.targetId) {
           const isGoto = String(a.type || "").startsWith("goto");
           const isSkip = String(a.type || "").startsWith("skip");
           const stroke = isGoto ? "#10B981" : isSkip ? "#F59E0B" : "#EF4444";
-          arr.push({
-            id: `act-${logicId}-${res.targetId}-${idx}`,
-            source: logicId,
-            target: res.targetId,
-            type: "smoothstep",
-            animated: true,
-            style: {
-              stroke,
-              strokeWidth: isSkip ? 3 : 3,
-              strokeDasharray: isSkip ? "6 3" : undefined,
-            },
-            markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
-            label: actionEdgeLabel(a, res.targetId, blocksResolved, res.meta),
-            labelStyle: { fontSize: 11, fill: "#E5E7EB", fontWeight: 500 },
-            labelBgPadding: [6, 4],
-            labelBgBorderRadius: 8,
-            labelBgStyle: {
-              fill: isGoto
-                ? "rgba(6,78,59,.95)"
-                : isSkip
-                ? "rgba(120,53,15,.95)"
-                : "rgba(127,29,29,.95)",
-              stroke,
-            },
-          });
+          const resolvedTargetId = String(res.targetId);
+          const targetIsPageBreak = resolvedTargetId.startsWith("PB-");
+          const targetIsInFlow = !!globalQ.find(
+            (q) => q.questionId === resolvedTargetId
+          );
+          if (!targetIsPageBreak && targetIsInFlow) {
+            arr.push({
+              id: `act-${logicId}-${res.targetId}-${idx}`,
+              source: logicId,
+              target: res.targetId,
+              type: "smoothstep",
+              animated: true,
+              style: {
+                stroke,
+                strokeWidth: isSkip ? 3 : 3,
+                strokeDasharray: isSkip ? "6 3" : undefined,
+              },
+              markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
+              label: actionEdgeLabel(a, res.targetId, blocksResolved, res.meta),
+              labelStyle: { fontSize: 11, fill: "#E5E7EB", fontWeight: 500 },
+              labelBgPadding: [6, 4],
+              labelBgBorderRadius: 8,
+              labelBgStyle: {
+                fill: isGoto
+                  ? "rgba(6,78,59,.95)"
+                  : isSkip
+                  ? "rgba(120,53,15,.95)"
+                  : "rgba(127,29,29,.95)",
+                stroke,
+              },
+            });
+          }
         }
       });
     });
 
     return arr;
   }, [rules, blocksResolved, blockEntryMap, qToBlockId, globalQ]);
+
+  // ----------------------------
+  // Loop detection (question -> rule -> question graph)
+  // ----------------------------
+  const loops = useMemo(() => {
+    // Build adjacency of questionId -> [targetQuestionId]
+    const adj = new Map();
+    // Also track which rule(s) produce each edge (for reporting)
+    const edgeToRules = new Map();
+
+    (rules || []).forEach((rule) => {
+      const primaryQ =
+        (rule.conditions || []).find((c) => !!c.questionId)?.questionId || null;
+      if (!primaryQ) return;
+
+      (rule.actions || []).forEach((a) => {
+        const res = resolveActionOrSkipTargetId({
+          action: a,
+          primaryQuestionId: primaryQ,
+          blockEntryMap,
+          qToBlockId,
+          globalQ,
+          blocks: blocksResolved,
+        });
+
+        const explicitQuestionIds =
+          Array.isArray(a.questionIds) && a.questionIds.length
+            ? a.questionIds
+            : null;
+
+        const targetIds =
+          explicitQuestionIds ?? (res?.targetId ? [res.targetId] : []);
+
+        if (targetIds && targetIds.length) {
+          targetIds.forEach((t) => {
+            if (!t) return;
+            const tid = String(t);
+            // ignore page breaks and targets not in current globalQ (flow)
+            if (tid.startsWith("PB-")) return;
+            const exists = globalQ.find((q) => q.questionId === tid);
+            if (!exists) return;
+            if (!adj.has(primaryQ)) adj.set(primaryQ, new Set());
+            adj.get(primaryQ).add(tid);
+            const key = `${primaryQ}-->${tid}`;
+            if (!edgeToRules.has(key)) edgeToRules.set(key, []);
+            edgeToRules.get(key).push(rule);
+          });
+        } else if (res?.targetId) {
+          const tid = String(res.targetId);
+          if (tid.startsWith("PB-")) return;
+          const exists = globalQ.find((q) => q.questionId === tid);
+          if (!exists) return;
+          if (!adj.has(primaryQ)) adj.set(primaryQ, new Set());
+          adj.get(primaryQ).add(tid);
+          const key = `${primaryQ}-->${tid}`;
+          if (!edgeToRules.has(key)) edgeToRules.set(key, []);
+          edgeToRules.get(key).push(rule);
+        }
+      });
+    });
+
+    // DFS to find cycles. We'll collect simple cycles (not all possible permutations).
+    const visited = new Set();
+    const stack = new Set();
+    const cycles = [];
+    const path = [];
+
+    function dfs(u) {
+      if (stack.has(u)) {
+        // found a cycle: take path from first occurrence of u
+        const idx = path.indexOf(u);
+        const cyclePath = path.slice(idx).concat(u);
+        cycles.push(cyclePath);
+        return;
+      }
+      if (visited.has(u)) return;
+      visited.add(u);
+      stack.add(u);
+      path.push(u);
+
+      const neighbors = adj.get(u);
+      if (neighbors) {
+        for (const v of neighbors) {
+          dfs(v);
+        }
+      }
+
+      stack.delete(u);
+      path.pop();
+    }
+
+    for (const node of adj.keys()) {
+      if (!visited.has(node)) dfs(node);
+    }
+
+    // Map cycles to a readable format including involved rule names/ids
+    const readable = cycles.map((c) => {
+      // build edges in cycle
+      const edgesInCycle = [];
+      for (let i = 0; i < c.length - 1; i++) {
+        const a = c[i];
+        const b = c[i + 1];
+        const key = `${a}-->${b}`;
+        const rulesList = edgeToRules.get(key) || [];
+        edgesInCycle.push({ from: a, to: b, rules: rulesList });
+      }
+      // collect unique rule ids/names
+      const ruleInfos = [];
+      const seenRuleIds = new Set();
+      edgesInCycle.forEach((e) =>
+        e.rules.forEach((r) => {
+          if (!r || !r.ruleId) return;
+          if (seenRuleIds.has(r.ruleId)) return;
+          seenRuleIds.add(r.ruleId);
+          ruleInfos.push({ ruleId: r.ruleId, name: r.name || "" });
+        })
+      );
+
+      return {
+        path: c,
+        edges: edgesInCycle,
+        rules: ruleInfos,
+      };
+    });
+
+    return readable;
+  }, [rules, blockEntryMap, qToBlockId, globalQ, blocksResolved]);
 
   const onNodeClick = (_, node) => {
     if (!node?.id) return;
@@ -742,6 +922,31 @@ export default function SurveyFlowView({
           <Legend />
         </header>
 
+        {/* ---- Loop banner (if any cycles present) ---- */}
+        {loops && loops.length > 0 && (
+          <div className="mb-4 p-3 rounded-lg bg-yellow-50 border border-amber-300 text-sm text-amber-800">
+            <div className="font-semibold mb-1">Loop(s) detected in rules</div>
+            {loops.map((lp, i) => (
+              <div key={i} className="mb-2">
+                <div className="text-xs text-amber-700 mb-1">
+                  Path:{" "}
+                  <span className="font-medium">{lp.path.join(" → ")}</span>
+                </div>
+                <div className="text-xs">
+                  Rules involved:{" "}
+                  {lp.rules.length
+                    ? lp.rules.map((r) => `${r.name || r.ruleId}`).join(", ")
+                    : "Unknown"}
+                </div>
+              </div>
+            ))}
+            <div className="text-xs text-amber-700 mt-2">
+              Please review these rules — they create a cycle where a question
+              can lead back to itself via one or more rules.
+            </div>
+          </div>
+        )}
+
         <ReactFlow
           nodes={[
             ...blockNodes,
@@ -767,8 +972,6 @@ export default function SurveyFlowView({
                 ? "#991B1B"
                 : n.id.startsWith("msg-")
                 ? "#0f766e"
-                : n.id.startsWith("block-__unassigned__")
-                ? "#7F1D1D"
                 : n.id.startsWith("block-")
                 ? "#1f2937"
                 : n.id.startsWith("logic-")
@@ -827,6 +1030,7 @@ export default function SurveyFlowView({
 
 /* =============================================
    RULE EDITOR (right pane)
+   (unchanged code below, still uses blocksResolved so Unassigned block remains available in editor)
 ============================================= */
 function RuleEditor({
   rule,
@@ -1056,7 +1260,6 @@ function RuleEditor({
 
                       {/* derive options robustly from multiple possible fields */}
                       {(() => {
-                        // possible places where options might live
                         const rawOpts =
                           selectedQ.options ??
                           selectedQ.config?.options ??
@@ -1066,7 +1269,6 @@ function RuleEditor({
 
                         const opts = Array.isArray(rawOpts) ? rawOpts : [];
 
-                        // helper to normalize option into { value, label }
                         const normalize = (opt) => {
                           if (opt == null) return { value: "", label: "" };
                           if (
@@ -1075,7 +1277,6 @@ function RuleEditor({
                           ) {
                             return { value: String(opt), label: String(opt) };
                           }
-                          // object case
                           return {
                             value: String(
                               opt.value ?? opt.id ?? opt.key ?? opt.option ?? ""
@@ -1090,7 +1291,6 @@ function RuleEditor({
                           };
                         };
 
-                        // NPS special numeric input
                         if (selectedQ?.type === "nps") {
                           return (
                             <input
@@ -1114,7 +1314,6 @@ function RuleEditor({
                           );
                         }
 
-                        // if opts exist, render select
                         if (opts.length > 0) {
                           return (
                             <select
@@ -1139,7 +1338,6 @@ function RuleEditor({
                           );
                         }
 
-                        // fallback to a free-text / number input
                         return (
                           <input
                             type={
@@ -1297,11 +1495,13 @@ function RuleEditor({
                       blocksResolved.find(
                         (b) => b.blockId === act.targetBlockId
                       )?._questions || []
-                    ).map((q) => (
-                      <option key={q.questionId} value={q.questionId}>
-                        {q.label}
-                      </option>
-                    ))}
+                    )
+                      .filter((q) => !q.__isPageBreak)
+                      .map((q) => (
+                        <option key={q.questionId} value={q.questionId}>
+                          {q.label}
+                        </option>
+                      ))}
                   </select>
                 </div>
               )}
@@ -1320,11 +1520,13 @@ function RuleEditor({
                   {(
                     blocksResolved.find((b) => b.blockId === rule.blockId)
                       ?._questions || []
-                  ).map((q) => (
-                    <option key={q.questionId} value={q.questionId}>
-                      {q.label}
-                    </option>
-                  ))}
+                  )
+                    .filter((q) => !q.__isPageBreak)
+                    .map((q) => (
+                      <option key={q.questionId} value={q.questionId}>
+                        {q.label}
+                      </option>
+                    ))}
                 </select>
               )}
 
@@ -1367,11 +1569,13 @@ function RuleEditor({
                   {(
                     blocksResolved.find((b) => b.blockId === rule.blockId)
                       ?._questions || []
-                  ).map((q) => (
-                    <option key={q.questionId} value={q.questionId}>
-                      {q.label}
-                    </option>
-                  ))}
+                  )
+                    .filter((q) => !q.__isPageBreak)
+                    .map((q) => (
+                      <option key={q.questionId} value={q.questionId}>
+                        {q.label}
+                      </option>
+                    ))}
                 </select>
               )}
 
@@ -1500,7 +1704,7 @@ function RuleEditor({
 }
 
 /* =============================================
-   HELPERS
+   HELPERS (unchanged)
 ============================================= */
 function valuePreview(v) {
   if (v == null) return "null";
@@ -1672,10 +1876,10 @@ function Legend() {
         <i className="w-3 h-3 inline-block rounded-sm border-2 border-gray-500" />{" "}
         Block
       </span>
-      <span className="inline-flex items-center gap-2 text-gray-300">
+      {/* <span className="inline-flex items-center gap-2 text-gray-300">
         <i className="w-3 h-3 inline-block rounded-sm border-2 border-dashed border-red-500" />{" "}
-        Unassigned
-      </span>
+        Unassigned (hidden in flow)
+      </span> */}
       <span className="inline-flex items-center gap-2 text-gray-300">
         <i className="w-3 h-3 inline-block rounded-sm bg-indigo-600" />{" "}
         Condition
@@ -1689,6 +1893,10 @@ function Legend() {
       </span>
       <span className="inline-flex items-center gap-2 text-gray-300">
         <i className="w-3 h-3 inline-block rounded-sm bg-teal-600" /> Message
+      </span>
+      <span className="inline-flex items-center gap-2 text-gray-300">
+        <i className="w-3 h-3 inline-block rounded-sm border-2 border-dashed border-yellow-400" />{" "}
+        Page Break (visual)
       </span>
     </div>
   );
