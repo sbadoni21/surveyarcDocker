@@ -389,7 +389,7 @@ const fetchUserAndOrg = async (uid, firebaseUser = null) => {
               <p className="text-gray-600 text-sm">
                 Don't have an account?{" "}
                 <Link
-                  href={"/register"}
+                  href={"/postgres-register"}
                   className="text-orange-600 hover:text-orange-500 transition-colors duration-300 font-semibold hover:underline"
                 >
                   Sign up here
