@@ -86,8 +86,8 @@ export default function SurveyDemoPage() {
         console.error("Error fetching rules:", e);
       }
     };
-    Promise.all([fetchSurveyData(), fetchQuestions(), fetchRules()]).finally(() =>
-      setLoading(false)
+    Promise.all([fetchSurveyData(), fetchQuestions(), fetchRules()]).finally(
+      () => setLoading(false)
     );
   }, [orgId, projectId, surveyId]);
 
@@ -96,12 +96,15 @@ export default function SurveyDemoPage() {
       const ordered = [];
       blocks.forEach((b) =>
         b.questionOrder?.forEach((qid) => {
-          const q = questions.find((qq) => qq.id === qid || qq.questionId === qid);
+          const q = questions.find(
+            (qq) => qq.id === qid || qq.questionId === qid
+          );
           if (q) ordered.push(q);
         })
       );
       const remaining = questions.filter(
-        (q) => !ordered.find((o) => o.id === q.id || o.questionId === q.questionId)
+        (q) =>
+          !ordered.find((o) => o.id === q.id || o.questionId === q.questionId)
       );
       setQuestions([...ordered, ...remaining]);
     }
@@ -109,6 +112,43 @@ export default function SurveyDemoPage() {
   }, [blocks]);
 
   const handleSubmit = async () => alert("Survey submitted!");
+
+  const expandBlocksByPageBreaks = (blocks, questions) => {
+    const expanded = [];
+
+    blocks.forEach((block) => {
+      const order = block.questionOrder || [];
+      let currentPageQuestions = [];
+
+      order.forEach((qid) => {
+        if (qid.startsWith("PB-")) {
+          // Push the accumulated questions as one "page block"
+          if (currentPageQuestions.length > 0) {
+            expanded.push({
+              ...block,
+              blockId: `${block.blockId}-page-${expanded.length + 1}`,
+              questionOrder: [...currentPageQuestions],
+            });
+          }
+          // reset for next page
+          currentPageQuestions = [];
+        } else {
+          currentPageQuestions.push(qid);
+        }
+      });
+
+      // push the last set (after last page break)
+      if (currentPageQuestions.length > 0) {
+        expanded.push({
+          ...block,
+          blockId: `${block.blockId}-page-${expanded.length + 1}`,
+          questionOrder: [...currentPageQuestions],
+        });
+      }
+    });
+
+    return expanded.length ? expanded : blocks;
+  };
 
   if (loading) return <Loading />;
   if (!survey) return <p>Survey not found</p>;
@@ -127,7 +167,9 @@ export default function SurveyDemoPage() {
       >
         {/* ---------------- Phone Frame ---------------- */}
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 12, marginBottom: 8, color: "#555" }}>Phone</div>
+          <div style={{ fontSize: 12, marginBottom: 8, color: "#555" }}>
+            Phone
+          </div>
           <div
             style={{
               width: 300,
@@ -152,7 +194,7 @@ export default function SurveyDemoPage() {
             >
               <SurveyForm
                 questions={questions}
-                blocks={blocks}
+                blocks={expandBlocksByPageBreaks(blocks, questions)}
                 handleSubmit={handleSubmit}
                 rules={rules}
               />
@@ -162,7 +204,9 @@ export default function SurveyDemoPage() {
 
         {/* ---------------- Laptop Frame ---------------- */}
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 12, marginBottom: 8, color: "#555" }}>Laptop</div>
+          <div style={{ fontSize: 12, marginBottom: 8, color: "#555" }}>
+            Laptop
+          </div>
           <div
             style={{
               width: "100%",
@@ -186,7 +230,7 @@ export default function SurveyDemoPage() {
             >
               <SurveyForm
                 questions={questions}
-                blocks={blocks}
+                blocks={expandBlocksByPageBreaks(blocks, questions)}
                 handleSubmit={handleSubmit}
                 rules={rules}
               />

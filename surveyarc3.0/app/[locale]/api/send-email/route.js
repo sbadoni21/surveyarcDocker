@@ -12,7 +12,7 @@ export async function POST(request) {
       );
     }
 
-    const logoUrl = "https://surveyarc2-0.vercel.app/video/SURVEYARC%20LOGO-gif.gif";
+    const logoUrl = "https://surveyarc-docker.vercel.app/video/SURVEYARC%20LOGO-gif.gif";
 
     const transporter = nodemailer.createTransport({
       service: "gmail",

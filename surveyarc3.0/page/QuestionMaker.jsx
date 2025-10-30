@@ -10,7 +10,6 @@ import SurveyDemoPage from "./SurveyDemoPage";
 import TopTabsNavbar from "@/components/TopTabsNavbar";
 import DistributionPage from "./DistributionPage";
 import SurveyToolbar from "@/components/SurveyToolbar";
-import CampaignPage from "./CampaignPage";
 import Loading from "@/app/[locale]/loading";
 
 import { useQuestion } from "@/providers/questionPProvider";
@@ -18,6 +17,7 @@ import { useSurvey } from "@/providers/surveyPProvider";
 import QuestionModel from "@/models/questionModel";
 import SurveyModel from "@/models/surveyModel";
 import SurveyFlowView from "@/components/SurveyFlowView";
+import CampaignPage from "./CampaignPage";
 
 export default function Dist() {
   const [selectedType, setSelectedType] = useState(null);
@@ -32,7 +32,7 @@ export default function Dist() {
   const [activeTab, setActiveTab] = useState("questions");
   const [rules, setRules] = useState("<Logic>\n</Logic>");
   const [survey, setSurvey] = useState(null);
-  const [selectedBlock, setSelectedBlock] = useState(null); // must be a blockId
+  const [selectedBlock, setSelectedBlock] = useState(null);
   const [newBlockName, setNewBlockName] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -43,7 +43,7 @@ export default function Dist() {
   const surveyId = parts[7];
 
   const domain =
-    process.env.NEXT_PUBLIC_DOMAIN || "https://surveyarc2-0.vercel.app";
+    process.env.NEXT_PUBLIC_DOMAIN || "https://surveyarc-docker.vercel.app";
   const publicSurveyUrl = `${domain}/en/form?orgId=${orgId}&projects=${projectId}&survey=${surveyId}`;
 
   const { getAllQuestions } = useQuestion();
@@ -58,6 +58,15 @@ export default function Dist() {
     setNewQuestionData({ label: "", description: "", config: {} });
     setShowTypePopup(true);
     setNewQuestionSignal((n) => n + 1);
+  };
+
+  const openNewQuestionForBlock = (blockId) => {
+    if (!blockId) {
+      handleOpenNewQuestion();
+      return;
+    }
+    setSelectedBlock(blockId);
+    handleOpenNewQuestion();
   };
 
   const normalizeHashToTab = useCallback((hash) => {
@@ -342,13 +351,14 @@ export default function Dist() {
     return blk?.questionOrder?.length || 0;
   }, [survey?.blocks, selectedBlock]);
 
-  const handleAddBlock = async () => {
-    if (!newBlockName.trim()) return alert("Please enter block name");
+  const handleAddBlock = async (name) => {
+    const blockName = (name ?? newBlockName ?? "").trim();
+    if (!blockName) return alert("Please enter block name");
 
     const blockId = `B${Math.floor(1000 + Math.random() * 9000)}`;
     const newBlock = {
       blockId,
-      name: newBlockName.trim(),
+      name: blockName,
       questionOrder: [],
       randomization: { type: "none", subsetCount: null },
     };
@@ -394,10 +404,8 @@ export default function Dist() {
     });
   };
 
-  // ensure popup false on first load (defensive)
   useEffect(() => {
     setShowTypePopup(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (loading) return <Loading />;
@@ -436,7 +444,7 @@ export default function Dist() {
               showBlocks
               showCopy
               showQR
-              showNewQuestion
+              showNewQuestion={false}
             />
 
             <QuestionsTab
@@ -463,6 +471,9 @@ export default function Dist() {
                 setSurvey((prev) =>
                   prev ? { ...prev, blocks: newBlocks } : prev
                 )
+              }
+              onRequestNewQuestion={(blockId) =>
+                openNewQuestionForBlock(blockId)
               }
             />
           </>

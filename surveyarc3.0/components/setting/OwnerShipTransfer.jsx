@@ -24,7 +24,7 @@ export default function OwnerShipTransfer({ orgData }) {
       email: selectedEmail,
       role: "owner",
       displayName: user.displayName,
-      inviteLink: `https://surveyarc2-0.vercel.app/accept-transfer?orgId=${orgData?.uid}&email=${selectedEmail}`,
+      inviteLink: `https://surveyarc-docker.vercel.app/accept-transfer?orgId=${orgData?.uid}&email=${selectedEmail}`,
       orgId: orgData?.uid,
       currentOwnerEmail: user.email,
     };
