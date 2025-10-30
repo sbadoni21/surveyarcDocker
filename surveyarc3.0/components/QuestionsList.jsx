@@ -1,5 +1,14 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import {
+  FiEdit2,
+  FiCheck,
+  FiX,
+  FiTrash2,
+  FiPlusSquare,
+  FiInfo,
+} from "react-icons/fi";
+
 import { ICONS_MAP } from "@/utils/questionTypes";
 import {
   DndContext,
@@ -20,7 +29,6 @@ import { CSS } from "@dnd-kit/utilities";
 import { usePathname } from "next/navigation";
 import { useSurvey } from "@/providers/surveyPProvider";
 import { RiDeleteBin6Line } from "react-icons/ri";
-import { FiEdit2, FiCheck, FiX, FiTrash2 } from "react-icons/fi";
 
 const ICON_BG_CLASSES = {
   CONTACT_EMAIL: "bg-[#FFEEDF] dark:bg-[#483A2D]",
@@ -120,6 +128,7 @@ const BlockContainer = ({
   blockIndex,
   totalBlocks,
   children,
+  onRequestNewQuestion,
 }) => {
   const r =
     randomization ??
@@ -142,129 +151,211 @@ const BlockContainer = ({
       ? "bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-700"
       : "bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700";
 
+  const [infoOpen, setInfoOpen] = useState(false);
+
+  const showInfo = infoOpen;
+
   return (
-    <div className="mb-6 border p-4 rounded bg-white dark:bg-gray-900">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-3">
-          {isEditing ? (
-            <input
-              autoFocus
-              value={editValue}
-              onChange={(e) => onEditChange?.(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") onSaveEdit?.();
-                if (e.key === "Escape") onCancelEdit?.();
-              }}
-              className="text-xl font-semibold capitalize bg-transparent border-b border-slate-300 dark:border-slate-600 outline-none px-1"
-              placeholder="Block name"
-            />
-          ) : (
-            <>
-              <h3 className="text-xl font-semibold capitalize">{title}</h3>
+    <section className="mb-6 border p-4 rounded bg-white dark:bg-gray-900">
+      <div
+        className="relative group"
+        onMouseLeave={() => {
+          if (!infoOpen) return;
+        }}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3 min-w-0">
+            {isEditing ? (
+              <input
+                autoFocus
+                value={editValue}
+                onChange={(e) => onEditChange?.(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") onSaveEdit?.();
+                  if (e.key === "Escape") onCancelEdit?.();
+                }}
+                className="text-lg font-semibold truncate bg-transparent border-b border-slate-300 dark:border-slate-600 outline-none px-1"
+                placeholder="Block name"
+                aria-label="Edit block name"
+              />
+            ) : (
+              <>
+                <div className="flex items-center gap-2 min-w-0">
+                  <h3 className="text-lg font-semibold truncate" title={title}>
+                    {title}
+                  </h3>
 
-              {hasRand && (
-                <div
-                  className={`ml-2 inline-flex items-center gap-2 text-xs font-medium px-2 py-0.5 rounded-full border ${toneClass}`}
-                  title={
-                    r.type === "subset"
-                      ? `Randomize subset — show ${r.subsetCount ?? "N"}`
-                      : "Randomize all questions"
-                  }
-                >
-                  <svg
-                    className="w-3 h-3"
-                    viewBox="0 0 20 20"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    aria-hidden
+                  <button
+                    type="button"
+                    onMouseEnter={() => setInfoOpen(true)}
+                    onMouseLeave={() => setInfoOpen(false)}
+                    className="inline-flex items-center justify-center h-6 w-6 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
                   >
-                    <path
-                      d="M4 7h4l3 6h3"
-                      stroke="currentColor"
-                      strokeWidth="1.4"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      opacity="0.9"
-                    />
-                    <path
-                      d="M16 7v6"
-                      stroke="currentColor"
-                      strokeWidth="1.4"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      opacity="0.9"
-                    />
-                  </svg>
-                  <span className="whitespace-nowrap">{randLabel}</span>
+                    <FiInfo className="h-4 w-4" />
+                  </button>
+
+                  {hasRand && (
+                    <div
+                      className={`ml-2 inline-flex items-center gap-2 text-xs font-medium px-2 py-0.5 rounded-full border ${toneClass}`}
+                      aria-hidden
+                      title={randLabel}
+                    >
+                      <svg
+                        className="w-3 h-3"
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden
+                      >
+                        <path
+                          d="M4 7h4l3 6h3"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          opacity="0.9"
+                        />
+                        <path
+                          d="M16 7v6"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          opacity="0.9"
+                        />
+                      </svg>
+                      <span className="whitespace-nowrap">
+                        {r.type === "full"
+                          ? "All"
+                          : r.type === "subset"
+                          ? r.subsetCount
+                            ? `Subset (${r.subsetCount})`
+                            : "Subset"
+                          : "Random"}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              )}
-            </>
-          )}
+              </>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isEditing ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onSaveEdit}
+                  className="inline-flex items-center justify-center h-8 w-8 rounded-md bg-green-600 hover:bg-green-700 text-white text-sm"
+                  title="Save"
+                  aria-label="Save block name"
+                >
+                  <FiCheck className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={onCancelEdit}
+                  className="inline-flex items-center justify-center h-8 w-8 rounded-md bg-slate-200 dark:bg-slate-700 text-sm"
+                  title="Cancel"
+                  aria-label="Cancel rename"
+                >
+                  <FiX className="h-4 w-4" />
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onRequestNewQuestion?.(blockId)}
+                  className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-[#222] text-sm"
+                  title="Add new question to this block"
+                  aria-label="Add question"
+                >
+                  <FiPlusSquare className="h-4 w-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onStartEdit}
+                  className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-[#222] text-sm"
+                  title="Rename block"
+                  aria-label="Rename block"
+                >
+                  <FiEdit2 className="h-4 w-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-red-200 dark:border-red-700 hover:bg-red-50 dark:hover:bg-[#300] text-red-600"
+                  title="Delete block"
+                  aria-label="Delete block"
+                >
+                  <FiTrash2 className="h-4 w-4" />
+                </button>
+              </>
+            )}
+
+            <div className="flex flex-col ml-2">
+              <button
+                onClick={() => moveBlock(blockId, "up")}
+                disabled={blockIndex === 0}
+                className="px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs disabled:opacity-40"
+                title="Move Up"
+                aria-label="Move block up"
+              >
+                ↑
+              </button>
+              <button
+                onClick={() => moveBlock(blockId, "down")}
+                disabled={blockIndex === totalBlocks - 1}
+                className="px-2 py-1 mt-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs disabled:opacity-40"
+                title="Move Down"
+                aria-label="Move block down"
+              >
+                ↓
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {isEditing ? (
-            <>
-              <button
-                type="button"
-                onClick={onSaveEdit}
-                className="inline-flex items-center gap-1 rounded-md bg-green-600 hover:bg-green-700 text-white text-xs font-medium px-2 py-1"
-                title="Save"
-              >
-                <FiCheck className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={onCancelEdit}
-                className="inline-flex items-center gap-1 rounded-md bg-slate-200 dark:bg-slate-700 text-xs font-medium px-2 py-1"
-                title="Cancel"
-              >
-                <FiX className="h-4 w-4" />
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={onStartEdit}
-                className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1A1A1E] text-xs px-2 py-1 hover:bg-slate-50 dark:hover:bg-[#222]"
-                title="Rename block"
-              >
-                <FiEdit2 className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={onDelete}
-                className="inline-flex items-center gap-1 rounded-md border border-red-200 dark:border-red-700 bg-white dark:bg-[#1A1A1E] text-xs px-2 py-1 text-red-600 hover:bg-red-50 dark:hover:bg-[#300]"
-                title="Delete block"
-              >
-                <FiTrash2 className="h-4 w-4" />
-              </button>
-            </>
-          )}
-        </div>
+        <div
+          className={`absolute left-4 right-4 -bottom-0 translate-y-full transition-opacity duration-150 z-10 ${
+            showInfo ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          }`}
+          style={{ pointerEvents: showInfo ? "auto" : "none" }}
+        >
+          <div className="mx-auto w-fit bg-white dark:bg-[#0b0b0d] border border-slate-200 dark:border-slate-700 rounded-md shadow-md p-3 text-xs text-slate-600 dark:text-slate-300">
+            <div className="flex items-start gap-2">
+              <FiInfo className="mt-0.5 h-4 w-4 text-slate-400 dark:text-slate-400" />
+              <div className="max-w-xs">
+                <div className="font-medium text-sm text-slate-800 dark:text-slate-100">
+                  {title}
+                </div>
 
-        <div className="flex gap-1">
-          <button
-            onClick={() => moveBlock(blockId, "up")}
-            disabled={blockIndex === 0}
-            className="px-2 py-1 bg-slate-200 rounded"
-            title="Move Up"
-          >
-            ↑
-          </button>
-          <button
-            onClick={() => moveBlock(blockId, "down")}
-            disabled={blockIndex === totalBlocks - 1}
-            className="px-2 py-1 bg-slate-200 rounded"
-            title="Move Down"
-          >
-            ↓
-          </button>
+                {hasRand ? (
+                  <div className="mt-1 text-xs">
+                    <span className="font-medium">Randomization:</span>{" "}
+                    <span>{randLabel}</span>
+                  </div>
+                ) : (
+                  <div className="mt-1 text-xs text-slate-500">
+                    No randomization configured
+                  </div>
+                )}
+
+                <div className="mt-2 text-xs text-slate-500">
+                  Tip: Use the <strong>New</strong> icon to add a question
+                  directly to this block.
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      {children}
-    </div>
+
+      <div className="mt-2">{children}</div>
+    </section>
   );
 };
 
@@ -286,6 +377,7 @@ const SortableBlock = ({
   activeId,
   handleAddPageBreak,
   handleRemovePageBreak,
+  onRequestNewQuestion, // forwarded
 }) => {
   return (
     <BlockContainer
@@ -303,6 +395,7 @@ const SortableBlock = ({
       moveBlock={moveBlock}
       blockIndex={blockIndex}
       totalBlocks={totalBlocks}
+      onRequestNewQuestion={onRequestNewQuestion}
     >
       <Droppable id={block.blockId}>
         <SortableContext
@@ -394,6 +487,7 @@ const DraggableQuestionsList = ({
   setSelectedQuestionIndex,
   onBlocksChange,
   selectedBlockId,
+  onRequestNewQuestion, // NEW prop from QuestionsTab/Dist
 }) => {
   const pathname = usePathname();
   const pathParts = pathname.split("/");
@@ -821,6 +915,7 @@ const DraggableQuestionsList = ({
             activeId={activeId}
             handleAddPageBreak={handleAddPageBreak}
             handleRemovePageBreak={handleRemovePageBreak}
+            onRequestNewQuestion={onRequestNewQuestion}
           />
         ))}
 

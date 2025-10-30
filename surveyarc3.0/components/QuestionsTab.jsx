@@ -1,4 +1,3 @@
-// QuestionsTab.jsx
 "use client";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import DraggableQuestionsList from "./QuestionsList";
@@ -21,6 +20,7 @@ const QuestionsTab = ({
   addingQuestion,
   selectedBlockId,
   newQuestionSignal,
+  onRequestNewQuestion, 
 }) => {
   const [selectedQuestionId, setSelectedQuestionId] = useState(null);
   const [unsaved, setUnsaved] = useState(false);
@@ -142,6 +142,7 @@ const QuestionsTab = ({
             selectedBlockId={selectedBlockId}
             setSelectedQuestionIndex={attemptSelectQuestion}
             onBlocksChange={onBlocksChange}
+            onRequestNewQuestion={onRequestNewQuestion}
           />
         ) : (
           <div className="p-6 text-sm text-slate-500">
