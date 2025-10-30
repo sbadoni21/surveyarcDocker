@@ -107,6 +107,7 @@ const SortableItem = ({ q, index, onDelete, onSelect }) => {
 const BlockContainer = ({
   blockId,
   title,
+  randomization,
   randomizeQuestions,
   isEditing = false,
   editValue = "",
@@ -120,10 +121,31 @@ const BlockContainer = ({
   totalBlocks,
   children,
 }) => {
+  const r =
+    randomization ??
+    (randomizeQuestions
+      ? { type: "full", subsetCount: null }
+      : { type: "none", subsetCount: null });
+
+  const hasRand = r && r.type && r.type !== "none";
+
+  const randLabel = (() => {
+    if (!hasRand) return "";
+    if (r.type === "full") return "All";
+    if (r.type === "subset")
+      return r.subsetCount ? `Subset (${r.subsetCount})` : "Subset";
+    return "Randomized";
+  })();
+
+  const toneClass =
+    r.type === "subset"
+      ? "bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-700"
+      : "bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700";
+
   return (
     <div className="mb-6 border p-4 rounded bg-white dark:bg-gray-900">
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {isEditing ? (
             <input
               autoFocus
@@ -137,9 +159,46 @@ const BlockContainer = ({
               placeholder="Block name"
             />
           ) : (
-            <h3 className="text-xl font-semibold capitalize">
-              {title} {randomizeQuestions == true ? "🔀" : ""}
-            </h3>
+            <>
+              <h3 className="text-xl font-semibold capitalize">{title}</h3>
+
+              {hasRand && (
+                <div
+                  className={`ml-2 inline-flex items-center gap-2 text-xs font-medium px-2 py-0.5 rounded-full border ${toneClass}`}
+                  title={
+                    r.type === "subset"
+                      ? `Randomize subset — show ${r.subsetCount ?? "N"}`
+                      : "Randomize all questions"
+                  }
+                >
+                  <svg
+                    className="w-3 h-3"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    aria-hidden
+                  >
+                    <path
+                      d="M4 7h4l3 6h3"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity="0.9"
+                    />
+                    <path
+                      d="M16 7v6"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity="0.9"
+                    />
+                  </svg>
+                  <span className="whitespace-nowrap">{randLabel}</span>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -184,6 +243,7 @@ const BlockContainer = ({
             </>
           )}
         </div>
+
         <div className="flex gap-1">
           <button
             onClick={() => moveBlock(blockId, "up")}
@@ -231,7 +291,8 @@ const SortableBlock = ({
     <BlockContainer
       blockId={block.blockId}
       title={block.name}
-      randomizeQuestions={block.randomization.type !== "none" ? true : false}
+      randomization={block.randomization}
+      randomizeQuestions={block.randomization?.type !== "none" ? true : false}
       isEditing={isEditing}
       editValue={editValue}
       onEditChange={onEditChange}
@@ -249,18 +310,23 @@ const SortableBlock = ({
           strategy={verticalListSortingStrategy}
         >
           {(() => {
-            let qNumber = 0; 
-            return (block.questionOrder || []).map((qid) => {
-              if (qid.startsWith("PB-")) {
+            let visibleQIndex = 0;
+            return (questions || []).map((item, idx) => {
+              if (item && item.__isPageBreak) {
                 return (
-                  <div key={qid} className="my-3 text-center relative group">
+                  <div
+                    key={item.questionId}
+                    className="my-3 text-center relative group"
+                  >
                     <div className="border-t border-dashed border-gray-400 dark:border-gray-600 mb-2" />
                     <div className="text-xs text-gray-500 uppercase tracking-wider">
                       Page Break
                     </div>
                     <button
                       className="absolute top-1/2 right-2 -translate-y-1/2 text-red-500 text-xs opacity-0 group-hover:opacity-100 transition"
-                      onClick={() => handleRemovePageBreak(block.blockId, qid)}
+                      onClick={() =>
+                        handleRemovePageBreak(block.blockId, item.questionId)
+                      }
                     >
                       ✕
                     </button>
@@ -268,25 +334,25 @@ const SortableBlock = ({
                 );
               }
 
-              const q = questions.find((qq) => qq.questionId === qid);
-              if (!q) return null;
+              if (!item) return null;
 
-              qNumber += 1;
+              const displayIndex = visibleQIndex;
+              visibleQIndex += 1;
 
               return (
-                <React.Fragment key={q.questionId}>
+                <React.Fragment key={item.questionId}>
                   <SortableItem
-                    q={q}
-                    index={qNumber - 1} 
-                    onDelete={() => onDeleteQuestion(q.questionId)}
-                    onSelect={() => onSelectQuestion(q.questionId)}
-                    isDragging={activeId === q.questionId}
+                    q={item}
+                    index={displayIndex}
+                    onDelete={() => onDeleteQuestion(item.questionId)}
+                    onSelect={() => onSelectQuestion(item.questionId)}
+                    isDragging={activeId === item.questionId}
                   />
 
                   <div className="text-center mt-2 mb-4">
                     <button
                       onClick={() =>
-                        handleAddPageBreak(block.blockId, qNumber - 1)
+                        handleAddPageBreak(block.blockId, displayIndex)
                       }
                       className="text-xs text-blue-500 hover:underline"
                     >
@@ -297,12 +363,13 @@ const SortableBlock = ({
               );
             });
           })()}
+
+          {(!questions || questions.length === 0) && (
+            <div className="text-xs text-slate-400 py-2 text-center">
+              Drop questions here
+            </div>
+          )}
         </SortableContext>
-        {(!block.questionOrder || block.questionOrder.length === 0) && (
-          <div className="text-xs text-slate-400 py-2 text-center">
-            Drop questions here
-          </div>
-        )}
       </Droppable>
     </BlockContainer>
   );
@@ -348,23 +415,67 @@ const DraggableQuestionsList = ({
     return idx;
   }, [questions]);
 
-  useEffect(() => {
-    if (!renderBlocks.length && blocks?.length) {
-      setRenderBlocks(blocks);
+  const isPB = (id) => typeof id === "string" && id.startsWith("PB-");
+
+  const normalizeOrder = (order = []) => {
+    const out = [];
+    let prevWasPB = false;
+    const seenPB = new Set();
+
+    for (const id of order) {
+      if (!id) continue;
+      const pb = isPB(id);
+      if (pb) {
+        if (prevWasPB) continue;
+        if (seenPB.has(id)) continue;
+        out.push(id);
+        prevWasPB = true;
+        seenPB.add(id);
+      } else {
+        out.push(id);
+        prevWasPB = false;
+      }
     }
+
+    while (out.length && isPB(out[0])) out.shift();
+    while (out.length && isPB(out[out.length - 1])) out.pop();
+
+    return out;
+  };
+
+  const insertionIndexFromDisplayIndex = (questionOrder = [], displayIndex) => {
+    if (displayIndex == null) return questionOrder.length;
+    let visibleCount = -1;
+    for (let i = 0; i < questionOrder.length; i++) {
+      const id = questionOrder[i];
+      if (!isPB(id)) {
+        visibleCount += 1;
+        if (visibleCount === displayIndex) {
+          return i + 1;
+        }
+      }
+    }
+    return questionOrder.length;
+  };
+
+  const makePB = () => `PB-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
+
+  useEffect(() => {
+    const next = Array.isArray(blocks) ? blocks : [];
+    if (next === renderBlocks) return;
+    setRenderBlocks(next);
   }, [blocks]);
 
   useEffect(() => {
     const next = {};
     (renderBlocks || []).forEach((b) => {
-      let blockQuestions = (b.questionOrder || [])
-        .map((qid) => qIndex.get(qid))
+      const normalizedOrder = normalizeOrder(b.questionOrder || []);
+      const blockQuestions = normalizedOrder
+        .map((qid) => {
+          if (isPB(qid)) return { questionId: qid, __isPageBreak: true };
+          return qIndex.get(qid) || null;
+        })
         .filter(Boolean);
-
-      if (b.randomizationType === "randomizeQuestions") {
-        blockQuestions = [...blockQuestions].sort(() => Math.random() - 0.5);
-      }
-
       next[b.blockId] = blockQuestions;
     });
     setByBlock(next);
@@ -372,9 +483,17 @@ const DraggableQuestionsList = ({
 
   const persistBlocks = async (newBlocks) => {
     try {
-      const blockOrder = newBlocks.map((b) => b.blockId);
-      await updateSurvey(orgId, surveyId, { blocks: newBlocks, blockOrder });
-      onBlocksChange?.(newBlocks);
+      const cleanedBlocks = (newBlocks || []).map((b) => ({
+        ...b,
+        questionOrder: normalizeOrder(b.questionOrder || []),
+      }));
+
+      const blockOrder = cleanedBlocks.map((b) => b.blockId);
+      await updateSurvey(orgId, surveyId, {
+        blocks: cleanedBlocks,
+        blockOrder,
+      });
+      onBlocksChange?.(cleanedBlocks);
     } catch (e) {
       console.error("Failed to update blocks", e);
     }
@@ -397,19 +516,16 @@ const DraggableQuestionsList = ({
     const { active, over } = evt;
     setActiveId(null);
     if (!over) return;
-
-    const activeId = active.id;
+    const activeIdLocal = active.id;
     const overId = over.id;
-
-    const fromBlockId = findContainerOfQuestion(activeId);
+    const fromBlockId = findContainerOfQuestion(activeIdLocal);
     if (!fromBlockId) return;
-
     const toBlockId = findContainerOfQuestion(overId) || overId;
     if (!toBlockId) return;
 
     if (fromBlockId === toBlockId) {
       const oldIndex = byBlock[fromBlockId].findIndex(
-        (q) => q.questionId === activeId
+        (q) => q.questionId === activeIdLocal
       );
       const newIndex = byBlock[toBlockId].findIndex(
         (q) => q.questionId === overId
@@ -429,10 +545,9 @@ const DraggableQuestionsList = ({
       return;
     }
 
-    // Moving across blocks
     const fromArr = byBlock[fromBlockId];
     const toArr = byBlock[toBlockId] || [];
-    const moving = fromArr.find((q) => q.questionId === activeId);
+    const moving = fromArr.find((q) => q.questionId === activeIdLocal);
     if (!moving) return;
 
     const targetIndex = (() => {
@@ -442,7 +557,7 @@ const DraggableQuestionsList = ({
 
     const next = {
       ...byBlock,
-      [fromBlockId]: fromArr.filter((q) => q.questionId !== activeId),
+      [fromBlockId]: fromArr.filter((q) => q.questionId !== activeIdLocal),
       [toBlockId]: [
         ...toArr.slice(0, targetIndex),
         moving,
@@ -464,27 +579,26 @@ const DraggableQuestionsList = ({
     const { active, over } = evt;
     if (!over) return;
 
-    const activeId = active.id; // question id
-    const overId = over.id; // could be question id or block id
+    const activeIdLocal = active.id;
+    const overId = over.id;
 
-    const fromBlockId = findContainerOfQuestion(activeId);
-    const toBlockId = findContainerOfQuestion(overId) || overId; // if over a block container
+    const fromBlockId = findContainerOfQuestion(activeIdLocal);
+    const toBlockId = findContainerOfQuestion(overId) || overId;
 
     if (!fromBlockId || !toBlockId || fromBlockId === toBlockId) return;
 
     const fromArr = byBlock[fromBlockId] || [];
     const toArr = byBlock[toBlockId] || [];
 
-    const moving = fromArr.find((q) => q.questionId === activeId);
+    const moving = fromArr.find((q) => q.questionId === activeIdLocal);
     if (!moving) return;
 
-    // where in target?
-    const overIdx = toArr.findIndex((q) => q?.questionId === overId); // if over a question
+    const overIdx = toArr.findIndex((q) => q?.questionId === overId);
     const targetIndex = overIdx === -1 ? toArr.length : overIdx;
 
     const next = {
       ...byBlock,
-      [fromBlockId]: fromArr.filter((q) => q.questionId !== activeId),
+      [fromBlockId]: fromArr.filter((q) => q.questionId !== activeIdLocal),
       [toBlockId]: [
         ...toArr.slice(0, targetIndex),
         moving,
@@ -494,7 +608,6 @@ const DraggableQuestionsList = ({
 
     setByBlock(next);
 
-    // keep SortableContext `items` (questionOrder) in sync immediately
     const newBlocks = renderBlocks.map((b) => ({
       ...b,
       questionOrder: (next[b.blockId] || []).map((q) => q.questionId),
@@ -502,19 +615,28 @@ const DraggableQuestionsList = ({
     setRenderBlocks(newBlocks);
   };
 
-  // --- Page Break Handlers ---
-  const handleAddPageBreak = async (blockId, index) => {
+  const handleAddPageBreak = async (blockId, displayIndex) => {
     const newBlocks = renderBlocks.map((b) => {
       if (b.blockId !== blockId) return b;
-      const newOrder = [...(b.questionOrder || [])];
-      newOrder.splice(index + 1, 0, `PB-${Date.now()}`);
-      return { ...b, questionOrder: newOrder };
+
+      const currentOrder = Array.isArray(b.questionOrder)
+        ? [...b.questionOrder]
+        : [];
+      const insertAt = insertionIndexFromDisplayIndex(
+        currentOrder,
+        displayIndex
+      );
+      const pbId = makePB();
+
+      currentOrder.splice(insertAt, 0, pbId);
+
+      const normalized = normalizeOrder(currentOrder);
+      return { ...b, questionOrder: normalized };
     });
 
     setRenderBlocks(newBlocks);
     onBlocksChange?.(newBlocks);
 
-    // ✅ persist to DB
     await persistBlocks(newBlocks);
   };
 
@@ -523,8 +645,8 @@ const DraggableQuestionsList = ({
       b.blockId === blockId
         ? {
             ...b,
-            questionOrder: (b.questionOrder || []).filter(
-              (id) => id !== breakId
+            questionOrder: normalizeOrder(
+              (b.questionOrder || []).filter((id) => id !== breakId)
             ),
           }
         : b
@@ -533,7 +655,6 @@ const DraggableQuestionsList = ({
     setRenderBlocks(newBlocks);
     onBlocksChange?.(newBlocks);
 
-    // ✅ persist to DB
     await persistBlocks(newBlocks);
   };
 
@@ -595,7 +716,12 @@ const DraggableQuestionsList = ({
     const newByBlock = {};
     newBlocks.forEach((b) => {
       const arr = (b.questionOrder || [])
-        .map((qid) => updatedQuestions.find((qq) => qq.questionId === qid))
+        .map((qid) => {
+          if (typeof qid === "string" && qid.startsWith("PB-")) {
+            return { questionId: qid, __isPageBreak: true };
+          }
+          return updatedQuestions.find((qq) => qq.questionId === qid);
+        })
         .filter(Boolean);
       newByBlock[b.blockId] = arr;
     });
@@ -665,11 +791,10 @@ const DraggableQuestionsList = ({
   };
 
   return (
-    <div ref={scrollRef} className="rounded-lg mt-8 dark:bg-[#1A1A1E] pb-0.5">
+    <div ref={scrollRef} className="rounded-lg dark:bg-[#1A1A1E] p-0.5">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
-        // collisionDetection={rectIntersection}
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
@@ -707,7 +832,7 @@ const DraggableQuestionsList = ({
                   .find((q) => q.questionId === activeId);
                 return movingQ ? (
                   <div className="w-full px-4 py-3 rounded-lg bg-blue-100 dark:bg-blue-900 shadow-lg">
-                    {movingQ.label}
+                    {movingQ.__isPageBreak ? "Page Break" : movingQ.label}
                   </div>
                 ) : null;
               })()

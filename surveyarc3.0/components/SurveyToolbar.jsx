@@ -64,30 +64,86 @@ export default function SurveyToolbar({
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4">
         {showBlocks && (
           <>
-            {/* Block Selector */}
             <div className="flex items-center gap-2 rounded-lg border bg-white dark:bg-[#1A1A1E] dark:border-slate-700 p-3">
               <span className="text-xs text-slate-500 dark:text-slate-400">
                 Block
               </span>
-              <select
-                id="blockSelect"
-                value={selectedBlock || ""}
-                onChange={(e) => onSelectBlock?.(e.target.value)}
-                className="bg-transparent outline-none text-sm text-slate-700 capitalize dark:text-slate-200 pr-6"
-              >
-                <option value="" disabled>
-                  Choose…
-                </option>
-                {blocks?.map((b) => (
-                  <option key={b.blockId} value={b.blockId}>
-                    {b.name}{" "}
-                    {b.randomization?.type !== "none" ? "🔀" : ""}
+
+              <div className="flex items-center gap-2">
+                <select
+                  id="blockSelect"
+                  value={selectedBlock || ""}
+                  onChange={(e) => onSelectBlock?.(e.target.value)}
+                  className="bg-transparent outline-none text-sm text-slate-700 capitalize dark:text-slate-200 pr-6"
+                >
+                  <option value="" disabled>
+                    Choose…
                   </option>
-                ))}
-              </select>
+                  {blocks?.map((b) => (
+                    <option key={b.blockId} value={b.blockId}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+
+                {selectedBlockData &&
+                  selectedBlockData.randomization &&
+                  selectedBlockData.randomization.type !== "none" &&
+                  (() => {
+                    const r = selectedBlockData.randomization;
+                    const label =
+                      r.type === "full"
+                        ? "All"
+                        : r.type === "subset"
+                        ? r.subsetCount
+                          ? `Subset (${r.subsetCount})`
+                          : "Subset"
+                        : "Randomized";
+                    const toneClass =
+                      r.type === "subset"
+                        ? "bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-700"
+                        : "bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700";
+
+                    return (
+                      <div
+                        className={`ml-1 inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border ${toneClass}`}
+                        title={
+                          r.type === "subset"
+                            ? `Randomize subset — show ${r.subsetCount ?? "N"}`
+                            : "Randomize all questions"
+                        }
+                      >
+                        <svg
+                          className="w-3 h-3"
+                          viewBox="0 0 20 20"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                          aria-hidden
+                        >
+                          <path
+                            d="M4 7h4l3 6h3"
+                            stroke="currentColor"
+                            strokeWidth="1.4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            opacity="0.9"
+                          />
+                          <path
+                            d="M16 7v6"
+                            stroke="currentColor"
+                            strokeWidth="1.4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            opacity="0.9"
+                          />
+                        </svg>
+                        <span className="whitespace-nowrap">{label}</span>
+                      </div>
+                    );
+                  })()}
+              </div>
             </div>
 
-            {/* Add Block */}
             <span className="hidden sm:inline-block h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
             <div className="flex items-center gap-2 rounded-lg border bg-white dark:bg-[#1A1A1E] dark:border-slate-700 px-2 py-1.5">
               <input
@@ -95,9 +151,7 @@ export default function SurveyToolbar({
                 placeholder="New block name"
                 value={newBlockName}
                 onChange={(e) => setNewBlockName?.(e.target.value)}
-                onKeyDown={(e) =>
-                  e.key === "Enter" ? onAddBlock?.() : null
-                }
+                onKeyDown={(e) => (e.key === "Enter" ? onAddBlock?.() : null)}
                 className="w-[160px] sm:w-[200px] bg-transparent outline-none text-sm placeholder:text-slate-400 dark:text-slate-200"
               />
               <button
@@ -110,7 +164,6 @@ export default function SurveyToolbar({
               </button>
             </div>
 
-            {/* Randomization Button */}
             {selectedBlock && (
               <button
                 onClick={() => {
@@ -130,7 +183,6 @@ export default function SurveyToolbar({
           </>
         )}
 
-        {/* Right Side Buttons */}
         <div className="ml-auto flex items-center gap-2">
           {rightSlot}
           {showNewQuestion && (
