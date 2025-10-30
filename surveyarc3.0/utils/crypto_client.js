@@ -1,5 +1,5 @@
 import crypto from "crypto";
-const BASE = process.env.KEYSERVER_BASE_URL || "http://localhost:8001";
+const BASE = process.env.KEYSERVER_BASE_URL
 
 
 export function decryptAESGCM({ ciphertext, iv, tag }, aesKeyBase64) {
