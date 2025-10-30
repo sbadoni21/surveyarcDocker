@@ -15,7 +15,7 @@ import { db } from "@/firebase/firebase";
 import { useSurvey } from "@/providers/surveyPProvider";
 import Loading from "@/app/[locale]/loading";
 import { useRule } from "@/providers/rulePProvider";
-import { useContact } from "@/providers/postGresPorviders/ContactProvider";
+import { useContacts } from "@/providers/postGresPorviders/ContactProvider";
 import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
 import { useResponse } from "@/providers/postGresPorviders/responsePProvider";
 
@@ -48,7 +48,7 @@ export default function FormPage() {
   const { getSurvey } = useSurvey();
   const { rules = [], getAllRules } = useRule() || {};
   const { saveResponse } = useResponse();
-  const { updateContact } = useContact();
+  const { updateContact } = useContacts();
   const { organisation, update } = useOrganisation();
 
   const shuffleArray = (array) => {
