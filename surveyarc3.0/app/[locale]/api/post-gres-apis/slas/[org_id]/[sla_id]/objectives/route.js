@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { encryptPayload } from "@/utils/crypto_utils";
 import { decryptGetResponse } from "@/utils/crypto_client";
 
-const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
+const BASE = process.env.DEVELOPMENT_MODE ? "http://localhost:8000" : process.env.FASTAPI_BASE_URL;
 const ENC = process.env.ENCRYPT_SURVEYS === "1";
 
 async function forceDecryptResponse(res) {
@@ -38,6 +38,7 @@ export async function POST(req, { params }) {
   const { sla_id } = await params;
   try {
     const raw = await req.json();
+    console.log(raw)
     const payload = ENC ? await encryptPayload({ ...raw, sla_id }) : { ...raw, sla_id };
 
     const res = await fetch(`${BASE}/slas/${encodeURIComponent(sla_id)}/objectives`, {

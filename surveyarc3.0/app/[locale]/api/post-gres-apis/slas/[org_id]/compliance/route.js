@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { decryptGetResponse } from "@/utils/crypto_client";
 
-const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
+const BASE = process.env.DEVELOPMENT_MODE ? "http://localhost:8000" : process.env.FASTAPI_BASE_URL;
 
 async function forceDecryptResponse(res) {
   const txt = await res.text();

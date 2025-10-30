@@ -13,6 +13,10 @@ import {
   Science as TestIcon, Update as VersionIcon, Info as InfoIcon, CleaningServices as CleanupIcon
 } from "@mui/icons-material";
 import { useMakingSLA } from "@/providers/slaMakingProivder";
+import { SLAFormDialog } from "./SLADialogForm";
+import { SLATable } from "./SLATable";
+import ObjectivesDialog from "./SLAObjectiveForm";
+import CreditRulesDialog from "./SLA_CreditRuleForm";
 
 const PRIORITIES = ["low", "normal", "high", "urgent"];
 const SEVERITIES = ["sev4", "sev3", "sev2", "sev1"];
@@ -189,40 +193,96 @@ export default function SLAAdminPanel({ orgId }) {
     setOpenDeps(true);
   };
 
-  // --------------- Objectives ---------------
-  const openObjectiveFor = async (sla) => {
-    setEditingObjective({ sla });
-    setObjectiveForm({ objective: "first_response", target_minutes: 30, match: {}, breach_grades: {}, active: true });
-    await listObjectives(sla.sla_id);
-    setOpenObjective(true);
-  };
-  const editObjective = (sla, obj) => {
-    setEditingObjective({ sla, obj });
-    setObjectiveForm({
-      objective: obj.objective, target_minutes: obj.target_minutes,
-      match: obj.match || {}, breach_grades: obj.breach_grades || {}, active: obj.active !== false,
-    });
-    setOpenObjective(true);
-  };
-  const saveObjective = async () => {
-    const { sla, obj } = editingObjective || {};
-    const body = {
+// ---------------- Objectives ---------------
+const openObjectiveFor = async (sla) => {
+  setEditingObjective({ sla });
+  setObjectiveForm({ objective: "first_response", target_minutes: 30, match: {}, breach_grades: {}, active: true });
+  // pass orgId first (model expects orgId, slaId)
+  await listObjectives( sla.sla_id);
+  setOpenObjective(true);
+};
+
+const editObjective = (sla, obj) => {
+  setEditingObjective({ sla, obj });
+  setObjectiveForm({
+    objective: obj.objective,
+    target_minutes: obj.target_minutes ?? "",
+    match: obj.match || {},
+    breach_grades: obj.breach_grades || {},
+    active: obj.active !== false,
+  });
+  setOpenObjective(true);
+};
+
+// Save objective — accepts payload from the dialog (first arg) and sla (second arg)
+const saveObjective = async (payloadFromDialog, slaFromDialog) => {
+  // debugging: inspect what we received from the dialog
+  console.info("saveObjective called. payloadFromDialog:", payloadFromDialog, "slaFromDialog:", slaFromDialog, "editingObjective:", editingObjective);
+
+  // if dialog didn't pass anything (back-compat), try to fallback to parent state
+  const sla = slaFromDialog || editingObjective?.sla;
+  if (!sla) {
+    console.error("No SLA provided for objective save.");
+    return;
+  }
+
+  // If payloadFromDialog is not provided for some reason, build it from parent's objectiveForm
+  let payload = payloadFromDialog;
+  if (!payload) {
+    // normalize parent objectiveForm to expected shape
+    const normalizedBreach = Object.fromEntries(
+      Object.entries(objectiveForm.breach_grades || {})
+        .map(([k, v]) => {
+          if (v === "" || v === null || v === undefined) return [k, undefined];
+          const n = Number(v);
+          return [k, Number.isFinite(n) ? n : undefined];
+        })
+        .filter(([, v]) => v !== undefined)
+    );
+
+    payload = {
       objective: objectiveForm.objective,
       target_minutes: Number(objectiveForm.target_minutes),
       match: objectiveForm.match || {},
-      breach_grades: objectiveForm.breach_grades || {},
+      breach_grades: normalizedBreach,
       active: !!objectiveForm.active,
     };
-    if (!obj) await createObjective(sla.sla_id, body);
-    else await updateObjective(obj.objective_id, body);
-    await listObjectives(sla.sla_id);
+  }
+
+  // debug again: what we'll actually send to the model
+  console.info("Final objective payload ->", payload, "orgId:", orgId, "slaId:", sla.sla_id);
+
+  try {
+    const { obj } = editingObjective || {}; // existing objective if editing
+    if (!obj) {
+      // createObjective(orgId, slaId, payload)
+      await createObjective( sla.sla_id, payload);
+    } else {
+      // updateObjective(orgId, objectiveId, patch)
+      await updateObjective(obj.objective_id, payload);
+    }
+
+    // refresh the list (model expects orgId, slaId)
+    await listObjectives( sla.sla_id);
     setOpenObjective(false);
-  };
-  const deleteObjective = async (slaId, objectiveId) => {
-    if (!confirm("Delete this objective?")) return;
-    await removeObjective(objectiveId);
-    await listObjectives(slaId);
-  };
+  } catch (err) {
+    console.error("Failed saving objective:", err);
+    // show a toast/alert if you want
+  }
+};
+
+
+const deleteObjective = async (slaId, objectiveId) => {
+  if (!confirm("Delete this objective?")) return;
+  try {
+    // removeObjective(orgId, objectiveId)
+    await removeObjective( objectiveId);
+    await listObjectives( slaId);
+  } catch (err) {
+    console.error("Failed to delete objective:", err);
+  }
+};
+
 
   // --------------- Credit Rules ---------------
   const openCreditFor = async (sla) => {
@@ -239,20 +299,18 @@ export default function SLAAdminPanel({ orgId }) {
     });
     setOpenCredit(true);
   };
-  const saveCredit = async () => {
-    const { sla, rule } = editingCredit || {};
-    const body = {
-      objective: creditForm.objective, grade: creditForm.grade, credit_unit: creditForm.credit_unit,
-      credit_value: Number(creditForm.credit_value),
-      cap_per_period: creditForm.cap_per_period === "" ? null : Number(creditForm.cap_per_period),
-      period_days: creditForm.period_days === "" ? null : Number(creditForm.period_days),
-      active: !!creditForm.active,
-    };
-    if (!rule) await createCreditRule(sla.sla_id, body);
-    else await updateCreditRule(rule.rule_id, body);
-    await listCreditRules(sla.sla_id);
+const saveCredit = async (payloadFromDialog, slaFromDialog) => {
+  const sla = slaFromDialog || editingCredit?.sla;
+  if (!sla) { console.error("No SLA for saving credit"); return; }
+  const { rule } = editingCredit || {};
+  try {
+    if (!rule) await createCreditRule(orgId, sla.sla_id, payloadFromDialog);
+    else await updateCreditRule(orgId, rule.rule_id, payloadFromDialog);
+    await listCreditRules(orgId, sla.sla_id);
     setOpenCredit(false);
-  };
+  } catch (err) { console.error(err); }
+};
+
   const deleteCredit = async (slaId, ruleId) => {
     if (!confirm("Delete this credit rule?")) return;
     await removeCreditRule(ruleId);
@@ -348,198 +406,56 @@ export default function SLAAdminPanel({ orgId }) {
       {busy && <LinearProgress />}
 
       {/* table */}
-      <Paper variant="outlined" sx={{ borderRadius: 2 }}>
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell sx={{ width: 320 }}>Name</TableCell>
-              <TableCell>FR (min)</TableCell>
-              <TableCell>RES (min)</TableCell>
-              <TableCell>Overrides</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell align="right" sx={{ width: 560 }}>Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filtered.map((s) => (
-              <TableRow key={s.sla_id} hover>
-                <TableCell>
-                  <Stack spacing={0}>
-                    <Typography variant="subtitle2">{s.name}</Typography>
-                    <Typography variant="caption" color="text.secondary">{s.slug || "—"}</Typography>
-                  </Stack>
-                </TableCell>
-                <TableCell>{s.first_response_minutes ?? "—"}</TableCell>
-                <TableCell>{s.resolution_minutes ?? "—"}</TableCell>
-                <TableCell>
-                  <Stack direction="row" spacing={0.5} flexWrap="wrap">
-                    {Object.entries(s.rules?.priority_map || {}).filter(([,v]) => v != null && v !== "")
-                      .map(([k, v]) => <Chip key={`p-${k}`} label={`P:${k}→${v}`} size="small" />)}
-                    {Object.entries(s.rules?.severity_map || {}).filter(([,v]) => v != null && v !== "")
-                      .map(([k, v]) => <Chip key={`s-${k}`} label={`S:${k}→${v}`} size="small" />)}
-                    {(!s.rules?.priority_map && !s.rules?.severity_map) && <Typography variant="caption" color="text.secondary">—</Typography>}
-                  </Stack>
-                </TableCell>
-                <TableCell><Chip size="small" color={s.active ? "success" : "default"} label={s.active ? "ACTIVE" : "INACTIVE"} /></TableCell>
-                <TableCell align="right">
-                  <Stack direction="row" spacing={1} justifyContent="flex-end" flexWrap="wrap">
-                    <Tooltip title="Objectives"><Button variant="outlined" size="small" startIcon={<BoltIcon />} onClick={() => openObjectiveFor(s)}>Objectives</Button></Tooltip>
-                    <Tooltip title="Credit Rules"><Button variant="outlined" size="small" onClick={() => openCreditFor(s)}>Credits</Button></Tooltip>
-                    <Tooltip title="Edit"><IconButton size="small" onClick={() => handleOpenEdit(s)}><EditIcon fontSize="small" /></IconButton></Tooltip>
-                    <Tooltip title={s.active ? "Deactivate" : "Activate"}><Button size="small" onClick={() => onActivateToggle(s)}>{s.active ? "Deactivate" : "Activate"}</Button></Tooltip>
-                    <Tooltip title="Publish"><IconButton size="small" onClick={() => doPublish(s)}><PublishIcon fontSize="small" /></IconButton></Tooltip>
-                    <Tooltip title="Archive"><IconButton size="small" onClick={() => doArchive(s)}><ArchiveIcon fontSize="small" /></IconButton></Tooltip>
-                    <Tooltip title="Validate"><Button size="small" onClick={() => doValidate(s)}>Validate</Button></Tooltip>
-                    <Tooltip title="Duplicate"><IconButton size="small" onClick={() => onDuplicate(s)}><CopyIcon fontSize="small" /></IconButton></Tooltip>
-                    <Tooltip title="Versions"><Button size="small" startIcon={<VersionIcon />} onClick={() => openVersionList(s)}>Versions</Button></Tooltip>
-                    <Tooltip title="New Version"><Button size="small" onClick={() => makeNewVersion(s)}>+Version</Button></Tooltip>
-                    <Tooltip title="Dependencies"><Button size="small" onClick={() => openDepsDialog(s)}>Deps</Button></Tooltip>
-                    <Tooltip title="Delete"><IconButton size="small" color="error" onClick={() => onDeleteSLA(s)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
-                  </Stack>
-                </TableCell>
-              </TableRow>
-            ))}
-            {filtered.length === 0 && (
-              <TableRow><TableCell colSpan={6}><Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>No SLAs found.</Typography></TableCell></TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </Paper>
+      <SLATable slas={filtered} onAction={{
+        edit: handleOpenEdit,
+        duplicate: onDuplicate,
+        activateToggle: onActivateToggle,
+        delete: onDeleteSLA,
+        publish: doPublish,
+        archive: doArchive,
+        validate: doValidate,
+        versions: openVersionList,
+        newVersion: makeNewVersion,
+        dependencies: openDepsDialog,
+        objectives: openObjectiveFor,
+        creditRules: openCreditFor,
+      }} />
+        <SLAFormDialog
+        open={openSla}
+        onClose={() => setOpenSla(false)}
+        editing={editing}
+        formData={form}
+        onUpdate={update}
+        onSave={saveSla}
+        busy={busy}
+      />
+<ObjectivesDialog
+  open={openObjective}
+  onClose={() => setOpenObjective(false)}
+  editingObjective={editingObjective}
+  DIMENSIONS={DIMENSIONS}
+  BREACH_GRADES={BREACH_GRADES}
+  ObjectivesTable={ObjectivesTable}
+  onEditObjective={editObjective}
+  onDeleteObjective={deleteObjective}
+  onSaveObjective={saveObjective}
+/>
 
-      {/* Create/Edit SLA */}
-      <Dialog open={openSla} onClose={() => setOpenSla(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editing ? "Edit SLA" : "New SLA"}</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={1.5} sx={{ mt: 0.5 }}>
-            <TextField label="Name" fullWidth value={form.name} onChange={(e) => update("name", e.target.value)} />
-            <TextField label="Slug (optional, unique in org)" fullWidth value={form.slug} onChange={(e) => update("slug", e.target.value)} />
-            <TextField label="Description" fullWidth multiline minRows={2} value={form.description} onChange={(e) => update("description", e.target.value)} />
-            <FormControlLabel control={<Checkbox checked={!!form.active} onChange={(e) => update("active", e.target.checked)} />} label="Active" />
-            <Grid container spacing={1}>
-              <Grid item xs={6}><TextField label="First Response (minutes)" type="number" fullWidth value={form.first_response_minutes} onChange={(e) => update("first_response_minutes", e.target.value)} /></Grid>
-              <Grid item xs={6}><TextField label="Resolution (minutes)" type="number" fullWidth value={form.resolution_minutes} onChange={(e) => update("resolution_minutes", e.target.value)} /></Grid>
-            </Grid>
-            <Divider sx={{ my: 1 }} />
-            <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>Priority overrides (resolution mins)</Typography>
-              <Grid container spacing={1}>
-                {PRIORITIES.map((p) => (
-                  <Grid key={p} item xs={6}>
-                    <TextField
-                      label={p.toUpperCase()} type="number" fullWidth
-                      value={form.rules?.priority_map?.[p] ?? ""}
-                      onChange={(e) => update("rules", { ...form.rules, priority_map: { ...(form.rules?.priority_map || {}), [p]: e.target.value ? Number(e.target.value) : undefined } })}
-                      placeholder="leave blank" />
-                  </Grid>
-                ))}
-              </Grid>
-            </Box>
-            <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>Severity overrides (resolution mins)</Typography>
-              <Grid container spacing={1}>
-                {SEVERITIES.map((s) => (
-                  <Grid key={s} item xs={6}>
-                    <TextField
-                      label={s.toUpperCase()} type="number" fullWidth
-                      value={form.rules?.severity_map?.[s] ?? ""}
-                      onChange={(e) => update("rules", { ...form.rules, severity_map: { ...(form.rules?.severity_map || {}), [s]: e.target.value ? Number(e.target.value) : undefined } })}
-                      placeholder="leave blank" />
-                  </Grid>
-                ))}
-              </Grid>
-            </Box>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenSla(false)}>Cancel</Button>
-          <Button variant="contained" onClick={saveSla} disabled={busy}>{editing ? "Save" : "Create"}</Button>
-        </DialogActions>
-      </Dialog>
+     
 
-      {/* Objectives dialog */}
-      <Dialog open={openObjective} onClose={() => setOpenObjective(false)} maxWidth="md" fullWidth>
-        <DialogTitle>{editingObjective?.obj ? "Edit Objective" : "Objectives"} {editingObjective?.sla ? `• ${editingObjective.sla.name}` : ""}</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2}>
-            {editingObjective?.sla && (
-              <ObjectivesTable
-                slaId={editingObjective.sla.sla_id}
-                onEdit={(obj) => editObjective(editingObjective.sla, obj)}
-                onDelete={(objectiveId) => deleteObjective(editingObjective.sla.sla_id, objectiveId)}
-              />
-            )}
-            <Divider />
-            <Grid container spacing={1}>
-              <Grid item xs={12} sm={4}>
-                <TextField label="Objective" select fullWidth value={objectiveForm.objective} onChange={(e) => setObjectiveForm((f) => ({ ...f, objective: e.target.value }))}>
-                  {DIMENSIONS.map((d) => <MenuItem key={d.value} value={d.value}>{d.label}</MenuItem>)}
-                </TextField>
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <TextField label="Target Minutes" type="number" fullWidth value={objectiveForm.target_minutes} onChange={(e) => setObjectiveForm((f) => ({ ...f, target_minutes: e.target.value }))} />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <FormControlLabel control={<Checkbox checked={!!objectiveForm.active} onChange={(e) => setObjectiveForm((f) => ({ ...f, active: e.target.checked }))} />} label="Active" />
-              </Grid>
-            </Grid>
-            <Typography variant="subtitle2">Breach thresholds (minutes beyond target)</Typography>
-            <Grid container spacing={1}>
-              {BREACH_GRADES.map((g) => (
-                <Grid key={g} item xs={12} sm={4}>
-                  <TextField label={g} type="number" fullWidth value={objectiveForm.breach_grades?.[g] ?? ""}
-                    onChange={(e) => setObjectiveForm((f) => ({ ...f, breach_grades: { ...(f.breach_grades || {}), [g]: e.target.value ? Number(e.target.value) : undefined } }))} placeholder="leave blank" />
-                </Grid>
-              ))}
-            </Grid>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenObjective(false)}>Close</Button>
-          <Button variant="contained" onClick={saveObjective}>{editingObjective?.obj ? "Save" : "Add Objective"}</Button>
-        </DialogActions>
-      </Dialog>
+  <CreditRulesDialog
+  open={openCredit}
+  onClose={() => setOpenCredit(false)}
+  editingCredit={editingCredit}
+  DIMENSIONS={DIMENSIONS}
+  BREACH_GRADES={BREACH_GRADES}
+  CREDIT_UNITS={CREDIT_UNITS}
+  CreditRulesTable={CreditRulesTable}
+  onEditCredit={editCredit}
+  onDeleteCredit={deleteCredit}
+  onSaveCredit={saveCredit} // NOTE: must accept (payload, sla)
+ />
 
-      {/* Credit Rules dialog */}
-      <Dialog open={openCredit} onClose={() => setOpenCredit(false)} maxWidth="md" fullWidth>
-        <DialogTitle>{editingCredit?.rule ? "Edit Credit Rule" : "Credit Rules"} {editingCredit?.sla ? `• ${editingCredit.sla.name}` : ""}</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2}>
-            {editingCredit?.sla && (
-              <CreditRulesTable
-                slaId={editingCredit.sla.sla_id}
-                onEdit={(rule) => editCredit(editingCredit.sla, rule)}
-                onDelete={(ruleId) => deleteCredit(editingCredit.sla.sla_id, ruleId)}
-              />
-            )}
-            <Divider />
-            <Grid container spacing={1}>
-              <Grid item xs={12} sm={4}>
-                <TextField label="Objective" select fullWidth value={creditForm.objective} onChange={(e) => setCreditForm((f) => ({ ...f, objective: e.target.value }))}>
-                  {DIMENSIONS.map((d) => <MenuItem key={d.value} value={d.value}>{d.label}</MenuItem>)}
-                </TextField>
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <TextField label="Grade" select fullWidth value={creditForm.grade} onChange={(e) => setCreditForm((f) => ({ ...f, grade: e.target.value }))}>
-                  {BREACH_GRADES.map((g) => <MenuItem key={g} value={g}>{g}</MenuItem>)}
-                </TextField>
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <TextField label="Credit Unit" select fullWidth value={creditForm.credit_unit} onChange={(e) => setCreditForm((f) => ({ ...f, credit_unit: e.target.value }))}>
-                  {CREDIT_UNITS.map((u) => <MenuItem key={u.value} value={u.value}>{u.label}</MenuItem>)}
-                </TextField>
-              </Grid>
-              <Grid item xs={12} sm={4}><TextField label="Credit Value" type="number" fullWidth value={creditForm.credit_value} onChange={(e) => setCreditForm((f) => ({ ...f, credit_value: e.target.value }))} /></Grid>
-              <Grid item xs={12} sm={4}><TextField label="Cap per period" type="number" fullWidth value={creditForm.cap_per_period} onChange={(e) => setCreditForm((f) => ({ ...f, cap_per_period: e.target.value }))} placeholder="optional" /></Grid>
-              <Grid item xs={12} sm={4}><TextField label="Period days" type="number" fullWidth value={creditForm.period_days} onChange={(e) => setCreditForm((f) => ({ ...f, period_days: e.target.value }))} placeholder="optional" /></Grid>
-              <Grid item xs={12}><FormControlLabel control={<Checkbox checked={!!creditForm.active} onChange={(e) => setCreditForm((f) => ({ ...f, active: e.target.checked }))} />} label="Active" /></Grid>
-            </Grid>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenCredit(false)}>Close</Button>
-          <Button variant="contained" onClick={saveCredit}>{editingCredit?.rule ? "Save" : "Add Rule"}</Button>
-        </DialogActions>
-      </Dialog>
 
       {/* Import */}
       <Dialog open={openImport} onClose={() => setOpenImport(false)} maxWidth="sm" fullWidth>

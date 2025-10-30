@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { decryptGetResponse } from "@/utils/crypto_client";
 import { encryptPayload } from "@/utils/crypto_utils";
 
-const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
+const BASE = process.env.DEVELOPMENT_MODE ? "http://localhost:8000" : process.env.FASTAPI_BASE_URL;
 const ENC = process.env.ENCRYPT_SURVEYS === "1";
 
 async function forceDecryptResponse(res) {
@@ -21,9 +21,9 @@ async function forceDecryptResponse(res) {
 }
 
 export async function GET(_req, { params }) {
-  const { objective_id } = await params;
+  const { objectiveId } = await params;
   try {
-    const res = await fetch(`${BASE}/slas/objectives/${encodeURIComponent(objective_id)}`, {
+    const res = await fetch(`${BASE}/slas/objectives/${encodeURIComponent(objectiveId)}`, {
       signal: AbortSignal.timeout(30000),
       cache: "no-store",
     });
@@ -34,12 +34,12 @@ export async function GET(_req, { params }) {
 }
 
 export async function PATCH(req, { params }) {
-  const { objective_id } = await params;
+  const { objectiveId } = await params;
   try {
     const raw = await req.json();
     const payload = ENC ? await encryptPayload(raw) : raw;
 
-    const res = await fetch(`${BASE}/slas/objectives/${encodeURIComponent(objective_id)}`, {
+    const res = await fetch(`${BASE}/slas/objectives/${encodeURIComponent(objectiveId)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...(ENC ? { "x-encrypted": "1" } : {}) },
       body: JSON.stringify(payload),
@@ -53,9 +53,9 @@ export async function PATCH(req, { params }) {
 }
 
 export async function DELETE(_req, { params }) {
-  const { objective_id } = await params;
+  const { objectiveId } = await params;
   try {
-    const res = await fetch(`${BASE}/slas/objectives/${encodeURIComponent(objective_id)}`, {
+    const res = await fetch(`${BASE}/slas/objectives/${encodeURIComponent(objectiveId)}`, {
       method: "DELETE",
       signal: AbortSignal.timeout(30000),
       cache: "no-store",

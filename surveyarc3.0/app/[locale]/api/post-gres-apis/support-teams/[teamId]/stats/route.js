@@ -3,7 +3,7 @@
 import { NextResponse } from "next/server";
 import { decryptGetResponse } from "@/utils/crypto_client";
 
-const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
+const BASE = process.env.DEVELOPMENT_MODE ? "http://localhost:8000" : process.env.FASTAPI_BASE_URL;
 
 /** Decrypt-if-needed helper */
 async function forceDecryptResponse(res) {

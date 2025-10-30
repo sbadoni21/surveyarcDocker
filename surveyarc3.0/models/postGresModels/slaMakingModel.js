@@ -74,25 +74,25 @@ const SlaMakingModel = {
     return true;
   },
 
-  async activate(slaId) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/activate`, {
+  async activate(orgId,slaId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/${encodeURIComponent(slaId)}/activate`, {
       method: "POST",
       cache: "no-store",
     });
     return safeJson(res);
   },
 
-  async deactivate(slaId) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/deactivate`, {
+  async deactivate(orgId,slaId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/${encodeURIComponent(slaId)}/deactivate`, {
       method: "POST",
       cache: "no-store",
     });
     return safeJson(res);
   },
 
-  async publish(slaId, { effective_from } = {}) {
+  async publish(orgId,slaId, { effective_from } = {}) {
     const body = effective_from ? { effective_from: toISO(effective_from) } : {};
-    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/publish`, {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/${encodeURIComponent(slaId)}/publish`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -101,24 +101,24 @@ const SlaMakingModel = {
     return safeJson(res);
   },
 
-  async archive(slaId) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/archive`, {
+  async archive(orgId,slaId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/${encodeURIComponent(slaId)}/archive`, {
       method: "POST",
       cache: "no-store",
     });
     return safeJson(res);
   },
 
-  async validate(slaId) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/validate`, {
+  async validate(orgId,slaId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/${encodeURIComponent(slaId)}/validate`, {
       method: "POST",
       cache: "no-store",
     });
     return safeJson(res);
   },
 
-  async duplicate(slaId, overrides = {}) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/duplicate`, {
+  async duplicate(orgId,slaId, overrides = {}) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/${encodeURIComponent(slaId)}/duplicate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(overrides),
@@ -127,8 +127,8 @@ const SlaMakingModel = {
     return safeJson(res);
   },
 
-  async createNewVersion(slaId, changes = {}) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/version`, {
+  async createNewVersion(orgId,slaId, changes = {}) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/${encodeURIComponent(slaId)}/version`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(changes),
@@ -137,15 +137,15 @@ const SlaMakingModel = {
     return safeJson(res);
   },
 
-  async listVersions(slaId) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/versions`, { cache: "no-store" });
+  async listVersions(orgId,slaId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/${encodeURIComponent(slaId)}/versions`, { cache: "no-store" });
     return safeJson(res);
   },
 
   async dependencies(slaId, { limit } = {}) {
     const params = new URLSearchParams();
     if (limit != null) params.set("limit", String(limit));
-    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/dependencies?${params}`, {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/${encodeURIComponent(slaId)}/dependencies?${params}`, {
       cache: "no-store",
     });
     return safeJson(res);
@@ -257,13 +257,14 @@ const SlaMakingModel = {
   },
 
   // -------- Objectives --------
-  async listObjectives(slaId) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/objectives`, { cache: "no-store" });
+  async listObjectives(orgId,slaId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/${(slaId)}/objectives`, { cache: "no-store" });
     return safeJson(res);
   },
 
-  async createObjective(slaId, payload) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/objectives`, {
+  async createObjective(orgId,slaId, payload) {
+    console.log(payload)
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/${(slaId)}/objectives`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -272,13 +273,13 @@ const SlaMakingModel = {
     return safeJson(res);
   },
 
-  async getObjective(objectiveId) {
-    const res = await fetch(`${BASE}/objectives/${encodeURIComponent(objectiveId)}`, { cache: "no-store" });
+  async getObjective(orgId, objectiveId) {
+    const res = await fetch(`${BASE}/objectives/${(objectiveId)}`, { cache: "no-store" });
     return safeJson(res);
   },
 
-  async updateObjective(objectiveId, patch) {
-    const res = await fetch(`${BASE}/objectives/${encodeURIComponent(objectiveId)}`, {
+  async updateObjective(orgId, objectiveId, patch) {
+    const res = await fetch(`${BASE}/objectives/${(objectiveId)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
@@ -287,8 +288,8 @@ const SlaMakingModel = {
     return safeJson(res);
   },
 
-  async removeObjective(objectiveId) {
-    const res = await fetch(`${BASE}/objectives/${encodeURIComponent(objectiveId)}`, {
+  async removeObjective(orgId, objectiveId) {
+    const res = await fetch(`${BASE}/objectives/${(objectiveId)}`, {
       method: "DELETE",
       cache: "no-store",
     });
@@ -300,13 +301,13 @@ const SlaMakingModel = {
   },
 
   // -------- Credit Rules --------
-  async listCreditRules(slaId) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/credit-rules`, { cache: "no-store" });
+  async listCreditRules(orgId, slaId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/${encodeURIComponent(slaId)}/credit-rules`, { cache: "no-store" });
     return safeJson(res);
   },
 
-  async createCreditRule(slaId, payload) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(slaId)}/credit-rules`, {
+  async createCreditRule(orgId, slaId, payload) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/${encodeURIComponent(slaId)}/credit-rules`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -315,13 +316,13 @@ const SlaMakingModel = {
     return safeJson(res);
   },
 
-  async getCreditRule(ruleId) {
-    const res = await fetch(`${BASE}/credit-rules/${encodeURIComponent(ruleId)}`, { cache: "no-store" });
+  async getCreditRule(orgId, ruleId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/credit-rules/${encodeURIComponent(ruleId)}`, { cache: "no-store" });
     return safeJson(res);
   },
 
-  async updateCreditRule(ruleId, patch) {
-    const res = await fetch(`${BASE}/credit-rules/${encodeURIComponent(ruleId)}`, {
+  async updateCreditRule(orgId, ruleId, patch) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/credit-rules/${encodeURIComponent(ruleId)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
@@ -330,8 +331,8 @@ const SlaMakingModel = {
     return safeJson(res);
   },
 
-  async removeCreditRule(ruleId) {
-    const res = await fetch(`${BASE}/credit-rules/${encodeURIComponent(ruleId)}`, {
+  async removeCreditRule(orgId, ruleId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(orgId)}/credit-rules/${encodeURIComponent(ruleId)}`, {
       method: "DELETE",
       cache: "no-store",
     });

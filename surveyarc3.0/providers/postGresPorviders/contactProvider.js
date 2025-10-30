@@ -1,64 +1,362 @@
 "use client";
-import ContactModel from "@/models/postGresModels/contactModel";
-import React, { createContext, useContext, useState } from "react";
 
-const ContactContext = createContext();
+import React, {
+  createContext,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
+
+import ContactModel from "@/models/contactModel";
+import ContactSocialsModel from "@/models/contactSocialsModel";
+import ContactPhonesModel from "@/models/contactPhonesModel";
+import ContactEmailsModel from "@/models/contactEmailsModel";
+import ListModel from "@/models/listModel";
+
+const ContactCtx = createContext(null);
 
 export const ContactProvider = ({ children }) => {
   const [contacts, setContacts] = useState([]);
-  const [selectedContact, setSelectedContact] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [contactSocials, setContactSocials] = useState([]);
+  const [contactPhones, setContactPhones] = useState([]);
+  const [contactEmails, setContactEmails] = useState([]);
+  const [lists, setLists] = useState([]);
 
-  // 🔹 Fetch all contacts for an org
-  const getAllContacts = async (orgId) => {
+  const [loading, setLoading] = useState(false);
+  const cacheRef = useRef(new Map());
+
+  const invalidateCache = useCallback(() => {
+    cacheRef.current.clear();
+  }, []);
+
+  /* ============================================================
+      CONTACTS
+  ============================================================*/
+  const listContacts = useCallback(async (orgId) => {
+    if (!orgId) return [];
+    const key = `contacts:${orgId}`;
+    if (cacheRef.current.has(key)) return cacheRef.current.get(key);
+
     setLoading(true);
     try {
-      const list = await ContactModel.getAll(orgId);
-      setContacts(list || []);
-      return list;
+      const arr = await ContactModel.getAll(orgId);
+      cacheRef.current.set(key, arr);
+      setContacts(arr);
+      return arr;
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  // 🔹 Create new contact
-  const createContact = async (orgId, contactData) => {
-    const created = await ContactModel.create(orgId, contactData);
-    setContacts((prev) => [created, ...prev]);
-    return created;
-  };
+  const getContact = useCallback(async (contactId) => {
+    if (!contactId) return null;
+    const key = `contact:${contactId}`;
+    if (cacheRef.current.has(key)) return cacheRef.current.get(key);
 
-  // 🔹 Update existing contact
-  const updateContact = async (contactId, updateData) => {
-    const updated = await ContactModel.update(contactId, updateData);
-    setContacts((prev) =>
-      prev.map((c) => (c.contactId === contactId ? updated : c))
+    setLoading(true);
+    try {
+      const contact = await ContactModel.get(contactId);
+      cacheRef.current.set(key, contact);
+      return contact;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const createContact = useCallback(async (data) => {
+    setLoading(true);
+    try {
+      const created = await ContactModel.create(data);
+      setContacts((p) => [...p, created]);
+      invalidateCache();
+      return created;
+    } finally {
+      setLoading(false);
+    }
+  }, [invalidateCache]);
+
+  const updateContact = useCallback(async (contactId, data) => {
+    setLoading(true);
+    try {
+      const updated = await ContactModel.update(contactId, data);
+      setContacts((prev) =>
+        prev.map((c) => (c.contactId === contactId ? updated : c))
+      );
+      invalidateCache();
+      return updated;
+    } finally {
+      setLoading(false);
+    }
+  }, [invalidateCache]);
+
+  const deleteContact = useCallback(async (contactId) => {
+    setLoading(true);
+    try {
+      await ContactModel.delete(contactId);
+      setContacts((prev) => prev.filter((c) => c.contactId !== contactId));
+      invalidateCache();
+      return true;
+    } finally {
+      setLoading(false);
+    }
+  }, [invalidateCache]);
+
+  /* ============================================================
+      SOCIALS
+  ============================================================*/
+  const addContactSocial = useCallback(async (data) => {
+    setLoading(true);
+    try {
+      const created = await ContactSocialsModel.add(data);
+      setContactSocials((prev) => [...prev, created]);
+      invalidateCache();
+      return created;
+    } finally {
+      setLoading(false);
+    }
+  }, [invalidateCache]);
+
+  const deleteContactSocial = useCallback(async (id) => {
+    setLoading(true);
+    try {
+      await ContactSocialsModel.delete(id);
+      setContactSocials((prev) => prev.filter((i) => i.id !== id));
+      invalidateCache();
+      return true;
+    } finally {
+      setLoading(false);
+    }
+  }, [invalidateCache]);
+
+  /* ============================================================
+      PHONES
+  ============================================================*/
+  const addContactPhone = useCallback(async (data) => {
+    setLoading(true);
+    try {
+      const created = await ContactPhonesModel.add(data);
+      setContactPhones((prev) => [...prev, created]);
+      invalidateCache();
+      return created;
+    } finally {
+      setLoading(false);
+    }
+  }, [invalidateCache]);
+
+  const deleteContactPhone = useCallback(async (id) => {
+    setLoading(true);
+    try {
+      await ContactPhonesModel.delete(id);
+      setContactPhones((prev) => prev.filter((i) => i.id !== id));
+      invalidateCache();
+      return true;
+    } finally {
+      setLoading(false);
+    }
+  }, [invalidateCache]);
+
+  /* ============================================================
+      EMAILS
+  ============================================================*/
+  const addContactEmail = useCallback(async (data) => {
+    setLoading(true);
+    try {
+      const created = await ContactEmailsModel.add(data);
+      setContactEmails((prev) => [...prev, created]);
+      invalidateCache();
+      return created;
+    } finally {
+      setLoading(false);
+    }
+  }, [invalidateCache]);
+
+  const deleteContactEmail = useCallback(async (id) => {
+    setLoading(true);
+    try {
+      await ContactEmailsModel.delete(id);
+      setContactEmails((prev) => prev.filter((i) => i.id !== id));
+      invalidateCache();
+      return true;
+    } finally {
+      setLoading(false);
+    }
+  }, [invalidateCache]);
+
+  /* ============================================================
+      LISTS
+  ============================================================*/
+  const listLists = useCallback(async (orgId) => {
+    if (!orgId) return [];
+
+    const key = `lists:${orgId}`;
+    if (cacheRef.current.has(key)) return cacheRef.current.get(key);
+
+    setLoading(true);
+    try {
+      const arr = await ListModel.getAll(orgId);
+      cacheRef.current.set(key, arr);
+      setLists(arr);
+      return arr;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const createList = useCallback(async (data) => {
+    setLoading(true);
+    try {
+      const created = await ListModel.create(data);
+      setLists((p) => [...p, created]);
+      invalidateCache();
+      return created;
+    } finally {
+      setLoading(false);
+    }
+  }, [invalidateCache]);
+
+  const updateList = useCallback(async (listId, data) => {
+    setLoading(true);
+    try {
+      const updated = await ListModel.update(listId, data);
+      setLists((prev) =>
+        prev.map((l) => (l.listId === listId ? updated : l))
+      );
+      invalidateCache();
+      return updated;
+    } finally {
+      setLoading(false);
+    }
+  }, [invalidateCache]);
+const addContactsToList = useCallback(async (listId, contactIds) => {
+  setLoading(true);
+  try {
+    const updated = await ListModel.addContacts(listId, contactIds);
+    setLists((prev) =>
+      prev.map((l) => (l.listId === listId ? updated : l))
     );
+    invalidateCache();
     return updated;
-  };
+  } finally {
+    setLoading(false);
+  }
+}, [invalidateCache]);
 
-  // 🔹 Delete a contact
-  const deleteContact = async (contactId) => {
-    await ContactModel.delete(contactId);
-    setContacts((prev) => prev.filter((c) => c.contactId !== contactId));
-  };
+const removeContactsFromList = useCallback(async (listId, contactIds) => {
+  setLoading(true);
+  try {
+    await ListModel.removeContacts(listId, contactIds);
+    // Refresh the list to get updated contacts
+    const updated = await ListModel.get(listId);
+    setLists((prev) =>
+      prev.map((l) => (l.listId === listId ? updated : l))
+    );
+    invalidateCache();
+    return true;
+  } finally {
+    setLoading(false);
+  }
+}, [invalidateCache]);
 
-  return (
-    <ContactContext.Provider
-      value={{
-        contacts,
-        selectedContact,
-        loading,
-        setSelectedContact,
-        getAllContacts,
-        createContact,
-        updateContact,
-        deleteContact,
-      }}
-    >
-      {children}
-    </ContactContext.Provider>
+const getAvailableContacts = useCallback(async (listId, orgId) => {
+  setLoading(true);
+  try {
+    return await ListModel.getAvailableContacts(listId, orgId);
+  } finally {
+    setLoading(false);
+  }
+}, []);
+  const deleteList = useCallback(async (listId) => {
+    setLoading(true);
+    try {
+      await ListModel.delete(listId);
+      setLists((prev) => prev.filter((l) => l.listId !== listId));
+      invalidateCache();
+      return true;
+    } finally {
+      setLoading(false);
+    }
+  }, [invalidateCache]);
+
+  /* ============================================================
+      PROVIDER VALUE
+  ============================================================*/
+  const value = useMemo(
+    () => ({
+      loading,
+
+      // State
+      contacts,
+      contactSocials,
+      contactPhones,
+      contactEmails,
+      lists,
+
+      // Contacts
+      listContacts,
+      getContact,
+      createContact,
+      updateContact,
+      deleteContact,
+
+      // Socials
+      addContactSocial,
+      deleteContactSocial,
+
+      // Phones
+      addContactPhone,
+      deleteContactPhone,
+
+      // Emails
+      addContactEmail,
+      deleteContactEmail,
+addContactsToList,
+ removeContactsFromList,
+ getAvailableContacts,
+      // Lists
+      listLists,
+      createList,
+      updateList,
+      deleteList,
+
+      // Cache
+      invalidateCache,
+    }),
+    [
+      loading,
+      contacts,
+      contactSocials,
+      contactPhones,
+      contactEmails,
+      lists,
+      addContactsToList,
+      removeContactsFromList,
+      getAvailableContacts,
+      listContacts,
+      getContact,
+      createContact,
+      updateContact,
+      deleteContact,
+      addContactSocial,
+      deleteContactSocial,
+      addContactPhone,
+      deleteContactPhone,
+      addContactEmail,
+      deleteContactEmail,
+      listLists,
+      createList,
+      updateList,
+      deleteList,
+      invalidateCache,
+    ]
   );
+
+  return <ContactCtx.Provider value={value}>{children}</ContactCtx.Provider>;
 };
 
-export const useContact = () => useContext(ContactContext);
+export const useContacts = () => {
+  const ctx = useContext(ContactCtx);
+  if (!ctx) throw new Error("useContacts must be used inside ContactProvider");
+  return ctx;
+};

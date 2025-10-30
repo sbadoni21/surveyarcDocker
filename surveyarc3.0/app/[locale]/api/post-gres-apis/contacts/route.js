@@ -2,17 +2,24 @@ import { decryptGetResponse } from "@/utils/crypto_client";
 import { encryptPayload } from "@/utils/crypto_utils";
 import { NextResponse } from "next/server";
 
-const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
+const BASE = process.env.DEVELOPMENT_MODE ? "http://localhost:8000" : process.env.FASTAPI_BASE_URL;
 const ENC = process.env.ENCRYPT_RESPONSES === "1";
 
 const looksEnvelope = (o) =>
   o && typeof o === "object" && "key_id" in o && "encrypted_key" in o && "ciphertext" in o && "iv" in o && "tag" in o;
 
-const safeParse = (t) => { try { return { ok: true, json: JSON.parse(t) }; } catch { return { ok: false, raw: t }; } };
+const safeParse = (t) => { 
+  try { 
+    return { ok: true, json: JSON.parse(t) }; 
+  } catch { 
+    return { ok: false, raw: t }; 
+  } 
+};
 
 async function forceDecryptResponse(res) {
   const text = await res.text();
   const parsed = safeParse(text);
+
   if (!parsed.ok) return NextResponse.json({ status: "error", raw: parsed.raw }, { status: res.status });
 
   if (Array.isArray(parsed.json)) {
@@ -28,23 +35,43 @@ async function forceDecryptResponse(res) {
   return NextResponse.json(parsed.json, { status: res.status });
 }
 
-
+// GET /api/post-gres-apis/contacts?org_id=xxx
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const org_id = searchParams.get("org_id");
-  if (!org_id) return Response.json({ status: "error", message: "org_id is required" }, { status: 400 });
-  const res = await fetch(`${BASE}/contacts?org_id=${encodeURIComponent(org_id)}`, { signal: AbortSignal.timeout(30000) });
-  return forceDecryptResponse(res);
+  
+  if (!org_id) {
+    return NextResponse.json({ status: "error", message: "org_id is required" }, { status: 400 });
+  }
+
+  try {
+    const res = await fetch(`${BASE}/contacts?org_id=${org_id}`, { 
+      signal: AbortSignal.timeout(30000) 
+    });
+    return forceDecryptResponse(res);
+  } catch (error) {
+    return NextResponse.json({ status: "error", message: error.message }, { status: 500 });
+  }
 }
 
+// POST /api/post-gres-apis/contacts
 export async function POST(req) {
-  const body = await req.json();
-  const payload = await encryptPayload(body);
-  const res = await fetch(`${BASE}/contacts/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(ENC ? { "x-encrypted": "1" } : {}) },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(30000),
-  });
-  return forceDecryptResponse(res);
+  try {
+    const body = await req.json();
+    const payload = await encryptPayload(body);
+    console.log(body)
+    const res = await fetch(`${BASE}/contacts/`, {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json", 
+        ...(ENC ? { "x-encrypted": "1" } : {}) 
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30000),
+    });
+    
+    return forceDecryptResponse(res);
+  } catch (error) {
+    return NextResponse.json({ status: "error", message: error.message }, { status: 500 });
+  }
 }

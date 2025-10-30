@@ -4,12 +4,13 @@ import React from 'react';
 
 import { QuestionProvider } from '@/providers/questionPProvider';
 import { RuleProvider } from '@/providers/rulePProvider';
+import { ContactProvider } from '@/providers/postGresPorviders/ContactProvider';
 
 export default function Layout({ children }) {
   return (
     <div className="min-h-screen flex flex-col bg-[var(--background)] text-[var(--text-primary)]">
       {/* Header */}
-   
+   <ContactProvider>
 <QuestionProvider>
   <RuleProvider>
     {/* Main Content */}
@@ -18,7 +19,7 @@ export default function Layout({ children }) {
     </main>
   </RuleProvider>
 </QuestionProvider>
- 
+ </ContactProvider>
     </div>
   );
 }

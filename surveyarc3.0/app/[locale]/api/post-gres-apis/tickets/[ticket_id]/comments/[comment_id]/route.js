@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const BASE = process.env.FASTAPI_BASE_URL || "http://localhost:8000";
+const BASE = process.env.DEVELOPMENT_MODE ? "http://localhost:8000" : process.env.FASTAPI_BASE_URL;
 
 /** DELETE /api/post-gres-apis/tickets/:ticket_id/comments/:comment_id */
 export async function DELETE(_req, { params }) {

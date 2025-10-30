@@ -15,7 +15,7 @@ import { db } from "@/firebase/firebase";
 import { useSurvey } from "@/providers/surveyPProvider";
 import Loading from "@/app/[locale]/loading";
 import { useRule } from "@/providers/rulePProvider";
-import { useContact } from "@/providers/postGresPorviders/contactProvider";
+import { useContact } from "@/providers/postGresPorviders/ContactProvider";
 import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
 import { useResponse } from "@/providers/postGresPorviders/responsePProvider";
 

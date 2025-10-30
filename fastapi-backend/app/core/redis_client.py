@@ -11,14 +11,14 @@ class RedisClient:
     
     def __init__(self):
         """Initialize Redis client with configuration from environment"""
-        self.host = os.getenv("REDIS_HOST", "redis-17179.c89.us-east-1-3.ec2.redns.redis-cloud.com")
-        self.port = int(os.getenv("REDIS_PORT", "17179"))
-        self.password = os.getenv("REDIS_PASSWORD", "t2N5re4xZn773qSiI1kTlyGwwyv1eWtT")
+        self.host = os.getenv("REDIS_HOST", "127.0.0.1")
+        self.port = int(os.getenv("REDIS_PORT", "6379"))
+        self.password = os.getenv("REDIS_PASSWORD", "")
         self.db = int(os.getenv("REDIS_DB", "0"))
         self.socket_timeout = float(os.getenv("REDIS_SOCKET_TIMEOUT", "5.0"))
         self.socket_connect_timeout = float(os.getenv("REDIS_SOCKET_CONNECT_TIMEOUT", "5.0"))
         
-        # Connection pool settings
+        # Cvonnection pool settings
         self.max_connections = int(os.getenv("REDIS_MAX_CONNECTIONS", "50"))
         self.retry_on_timeout = os.getenv("REDIS_RETRY_ON_TIMEOUT", "true").lower() == "true"
         
@@ -37,7 +37,7 @@ class RedisClient:
             print(f"[RedisClient] cache_user_session failed: {e}")
             return False
 
-    def get_user_session(self, uid: str): 
+    def get_user_session(self, uid: str):
         """Get cached user session"""
         try:
             if not self.ping():
