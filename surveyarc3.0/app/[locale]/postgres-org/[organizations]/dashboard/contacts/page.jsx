@@ -20,10 +20,10 @@ import {
   UserPlus,
   X
 } from "lucide-react";
-import { useContacts } from "@/providers/postGresPorviders/ContactProvider";
 import { usePathname } from "next/navigation";
 import { UploadModal } from "@/components/email-page-components/UploadContacts";
 import ContactsList from "@/components/contacts/ContactsList";
+import { useContacts } from "@/providers/postGresPorviders/ContactProvider";
 
 export default function ListsPage() {
   const {
