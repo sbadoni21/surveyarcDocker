@@ -2,7 +2,7 @@
 
 import { CampaignProvider } from '@/providers/campaginProviders';
 import { CampaignResultProvider } from '@/providers/campaginResultProvider';
-import { ContactProvider } from '@/providers/postGresPorviders/ContactProvider';
+import { ContactProvider } from '@/providers/postGresPorviders/contactProvider';
 import { SurveyProvider } from '@/providers/surveyPProvider';
 import React from 'react';
 

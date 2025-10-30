@@ -5,8 +5,8 @@ import { QuestionProvider } from "@/providers/questionPProvider";
 import ThemeToggle from "@/components/ThemeToggle";
 import { RuleProvider } from "@/providers/rulePProvider";
 import { OrganisationProvider } from "@/providers/postGresPorviders/organisationProvider";
-import { ContactProvider } from "@/providers/postGresPorviders/ContactProvider";
 import { ResponseProvider } from "@/providers/postGresPorviders/responsePProvider";
+import { ContactProvider } from "@/providers/postGresPorviders/contactProvider";
 
 export default async function Layout(props) {
   const { children } = props;

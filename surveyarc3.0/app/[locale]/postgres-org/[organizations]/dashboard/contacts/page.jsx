@@ -23,7 +23,7 @@ import {
 import { usePathname } from "next/navigation";
 import { UploadModal } from "@/components/email-page-components/UploadContacts";
 import ContactsList from "@/components/contacts/ContactsList";
-import { useContacts } from "@/providers/postGresPorviders/ContactProvider";
+import { useContacts } from "@/providers/postGresPorviders/contactProvider";
 
 export default function ListsPage() {
   const {

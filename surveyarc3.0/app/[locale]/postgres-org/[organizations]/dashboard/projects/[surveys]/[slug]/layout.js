@@ -4,7 +4,7 @@ import React from 'react';
 
 import { QuestionProvider } from '@/providers/questionPProvider';
 import { RuleProvider } from '@/providers/rulePProvider';
-import { ContactProvider } from '@/providers/postGresPorviders/ContactProvider';
+import { ContactProvider } from '@/providers/postGresPorviders/contactProvider';
 
 export default function Layout({ children }) {
   return (
