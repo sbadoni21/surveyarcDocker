@@ -31,6 +31,7 @@ import {
 // Import PostgreSQL models instead of Firebase
 import ContactModel from "@/models/postGresModels/contactModel";
 import ContactListModel from "@/models/postGresModels/contactListModel";
+import { upsertListWithContacts } from "@/lib/contacts/upsertListWithContacts";
 
 import { useRouteParams } from "@/utils/getPaths";
 import { LoadingSpinner } from "@/utils/loadingSpinner";
@@ -38,7 +39,6 @@ import { ListCard } from "./email-page-components/ListCard";
 import { UploadModal } from "./email-page-components/UploadContacts";
 import { ContactRow } from "./email-page-components/ContactRow";
 import { LoadingOverlay } from "@/utils/loadingOverlay";
-import { useContacts } from "@/providers/postGresPorviders/ContactProvider";
 
 /* --------------------------- Helper Functions --------------------------- */
 const findContactByEmail = (contacts, email) => {
@@ -305,12 +305,7 @@ export default function EmailManagementPostgres() {
   const [dragOverListId, setDragOverListId] = useState(null);
   const [dragMode, setDragMode] = useState("move");
   const [isDragging, setIsDragging] = useState(false);
-const {
-    createContact,
-    createContactPhone,
-    createContactEmail,
-    createContactSocial,
-  } = useContacts();
+
   /* ------------------------------ Data fetching with PostgreSQL ------------------------------ */
   const fetchLists = useCallback(async (showLoading = true) => {
     if (showLoading) setIsListsLoading(true);
@@ -913,99 +908,28 @@ const {
     }
   };
 
-const handleUpload = async ({ orgId, listName, contacts }) => {
-  
-
-  const { createList, addContactToList, refreshLists } = useContactLists();
-
-  try {
-    if (!orgId) throw new Error("Missing orgId");
-    if (!listName) throw new Error("Missing list name");
-    if (!contacts?.length) throw new Error("No contacts provided");
-
-    // ✅ Validate list name
-    if (!/^[a-zA-Z0-9 _-]+$/.test(listName)) {
-      throw new Error("Invalid list name, remove special chars");
-    }
-
-    // ✅ Validate contacts
-    contacts.forEach((c, i) => {
-      if (!c.name) throw new Error(`Row ${i + 1} missing name`);
-      if (!c.email) throw new Error(`Row ${i + 1} missing email`);
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) {
-        throw new Error(`Row ${i + 1} invalid email: ${c.email}`);
+  const handleUpload = async ({ listName, contacts }) => {
+    try {
+      await upsertListWithContacts(orgId, listName, contacts);
+      await refreshData();
+      // Find the created list and select it
+      const createdList = listsRaw.find(l => l.name.toLowerCase() === listName.toLowerCase());
+      if (createdList) {
+        setSelectedListId(createdList.id);
       }
-    });
-
-    // ✅ 1. Create List
-    const list = await createList(orgId, {
-      name: listName,
-      status: "active",
-      meta: {},
-    });
-
-    // ✅ 2. Create Contacts + sub-data
-    for (const c of contacts) {
-      // ✅ Create Contact
-      const contact = await createContact(orgId, {
-        name: c.name,
-        email: c.email,
-        emailLower: c.email.toLowerCase(),
-        status: "active",
-        userId: null,
-        meta: c.meta || {},
+      setNotification({
+        message: `Successfully created list "${listName}" with ${contacts.length} contacts`,
+        type: "success"
       });
-
-      // ✅ add contact → list
-      await addContactToList(list.id, contact.contactId);
-
-      // ✅ Phones
-      if (c.phone) {
-        await createContactPhone(contact.contactId, {
-          phone: c.phone,
-          countryCode: c.countryCode || "+91",
-          status: "active",
-          meta: {},
-        });
-      }
-
-      // ✅ Emails
-      if (c.extraEmails?.length) {
-        for (const e of c.extraEmails) {
-          await createContactEmail(contact.contactId, {
-            email: e.toLowerCase(),
-            status: "active",
-            meta: {},
-          });
-        }
-      }
-
-      // ✅ Socials
-      if (c.socials?.length) {
-        for (const s of c.socials) {
-          await createContactSocial(contact.contactId, {
-            platform: s.platform,
-            value: s.value,
-            meta: s.meta || {},
-          });
-        }
-      }
+    } catch (error) {
+      console.error("Error uploading contacts:", error);
+      setNotification({
+        message: "Error uploading contacts. Please try again.",
+        type: "error"
+      });
+      throw error; // Re-throw to let the modal handle it
     }
-
-    await refreshLists();
-
-    return {
-      ok: true,
-      message: `Uploaded ${contacts.length} contacts into "${listName}"`,
-    };
-  } catch (err) {
-    console.error("UPLOAD FAILED:", err);
-    return {
-      ok: false,
-      message: err.message || "Upload failed",
-    };
-  }
-};
+  };
 
   const openCampaignModal = () => {
     alert("Hook your existing campaign modal here.");
