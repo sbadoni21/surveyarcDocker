@@ -23,7 +23,7 @@ init_models()
 Base.metadata.create_all(bind=engine)
 
 from app.routes import (
-    secure_crud, user, project, survey, questions, responses, tickets, webhook, answer,
+    quota, secure_crud, user, project, survey, questions, responses, tickets, webhook, answer,
     archive, audit_log, domains, integration, invite, invoice,
     marketplace, metric, order, organisation, payment, pricing_plan, rule, contacts, 
     support_groups, support_teams, support_routing, slas, business_calendars, tags, 
@@ -349,6 +349,7 @@ app.include_router(contact_lists.router, tags=["Contact Lists"])
 app.include_router(list_members.router, tags=["List Members"])
 app.include_router(contact_phone.router, tags=["Contact Phones"])
 app.include_router(contact_socials.router, tags=["Contact Socials"])
+app.include_router(quota.router, tags=["Quotas"])
 
 # Add encryption middleware with configuration
 app.add_middleware(
