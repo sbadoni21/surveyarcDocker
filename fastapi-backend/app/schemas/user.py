@@ -5,9 +5,9 @@ from ..models.user import OrgRole
 
 class UserBase(BaseModel):
     email: str
-    display_name: str = Field(..., alias="displayName")
+    display_name: str 
     role: OrgRole = OrgRole.member
-    org_ids: List[str] = Field(default=[], alias="orgId")
+    org_ids: List[str]
 
     class Config:
         orm_mode = True
@@ -17,7 +17,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     uid: str
     status: str = "active"
-    meta_data: dict = Field(default={}, alias="metadata")
+    meta_data: dict 
     
     class Config:
         orm_mode = True

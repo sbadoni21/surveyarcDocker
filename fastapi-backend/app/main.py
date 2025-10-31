@@ -145,6 +145,7 @@ async def shutdown_event():
 
 # Add middleware
 app.add_middleware(DecryptMiddleware)
+app.middleware("http")(request_context_middleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
