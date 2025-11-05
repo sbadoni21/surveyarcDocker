@@ -306,7 +306,7 @@ export default function SurveyForm({
                   />
                 </div>
                 <p className="text-xl lg:text-3xl font-bold text-white">
-                  {currentBlock.name}
+                  Survey ARC
                 </p>
               </div>
               {/* <div className="mb-4">
