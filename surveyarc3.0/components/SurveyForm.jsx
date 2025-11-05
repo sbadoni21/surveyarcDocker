@@ -271,7 +271,7 @@ export default function SurveyForm({
     return (
       <div className="h-screen flex items-center justify-center bg-white dark:bg-[#121214]">
         <p className="text-lg font-semibold text-gray-600 dark:text-[#CBC9DE]">
-          No blocks available
+          Loading survey...
         </p>
       </div>
     );

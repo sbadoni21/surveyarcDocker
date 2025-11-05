@@ -1,6 +1,7 @@
 "use client";
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import ResponseModel from "@/models/postGresModels/responseModel";
+import { usePathname } from "next/navigation";
 
 const ResponseContext = createContext();
 
@@ -8,6 +9,17 @@ export const ResponseProvider = ({ children }) => {
   const [responses, setResponses] = useState([]);
   const [selectedResponse, setSelectedResponse] = useState(null);
   const [loading, setLoading] = useState(false);
+  const path = usePathname();
+  const parts = (path || "").split("/"); // e.g. /en/postgres-org/{orgId}/dashboard/projects/{projectId}/{surveyId}
+  // Adjust index per your routing: you used 7 earlier; confirm with your actual path.
+  const inferredSurveyId = parts[7] || parts[parts.length - 1];
+
+useEffect(() => {
+    if (inferredSurveyId) {
+      getAllResponses(inferredSurveyId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path]);
 
   const getAllResponses = async (surveyId) => {
     setLoading(true);

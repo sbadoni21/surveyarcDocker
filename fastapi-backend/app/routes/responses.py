@@ -14,6 +14,14 @@ from ..services.redis_response_service import RedisResponseService
 router = APIRouter(prefix="/responses", tags=["Responses"])
 
 # helpers
+def normalize_response(row):
+    base = {
+        k: v.isoformat() if isinstance(v, datetime) else v
+        for k, v in row.__dict__.items()
+        if not k.startswith("_")
+    }
+    base["answers"] = row.answers_blob or []
+    return base
 
 def _write_answers(db, survey_id: str, response_id: str, answers: list, org_id: str):
     from ..models.answer import Answer
@@ -85,11 +93,22 @@ def list_responses(survey_id: str = Query(...), db: Session = Depends(get_db)):
     cached = RedisResponseService.get_list(survey_id)
     if cached is not None:
         return cached
-    rows = db.query(Response).filter(Response.survey_id == survey_id).order_by(Response.started_at.desc()).all()
-    if rows:
-        RedisResponseService.cache_list(survey_id, rows)
-        RedisResponseService.cache_count(survey_id, len(rows))
-    return rows
+
+    rows = (
+        db.query(Response)
+        .filter(Response.survey_id == survey_id)
+        .order_by(Response.started_at.desc())
+        .all()
+    )
+
+    normalized = [normalize_response(r) for r in rows]
+
+    RedisResponseService.cache_list(survey_id, normalized)
+    RedisResponseService.cache_count(survey_id, len(rows))
+
+    return normalized
+
+
 
 @router.get("/count")
 def count_responses(survey_id: str = Query(...), db: Session = Depends(get_db)):
@@ -105,6 +124,7 @@ def get_response(survey_id: str, response_id: str, db: Session = Depends(get_db)
     cached = RedisResponseService.get_response(response_id)
     if cached is not None:
         return cached
+
     row = (
         db.query(Response)
         .filter(Response.survey_id == survey_id, Response.response_id == response_id)
@@ -112,8 +132,11 @@ def get_response(survey_id: str, response_id: str, db: Session = Depends(get_db)
     )
     if not row:
         raise HTTPException(status_code=404, detail="Response not found")
-    RedisResponseService.cache_response(row)
-    return row
+
+    formatted = normalize_response(row)
+    RedisResponseService.cache_response(formatted)
+    return formatted
+
 
 @router.patch("/{survey_id}/{response_id}", response_model=ResponseOut)
 def update_response(survey_id: str, response_id: str, data: ResponseUpdate, db: Session = Depends(get_db)):

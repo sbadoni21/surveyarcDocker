@@ -52,7 +52,7 @@ const ResponseModel = {
    * GET /responses/survey/{survey_id}
    */
   async getAllBySurvey(surveyId) {
-    const res = await fetch(`${BASE}/survey/${encodeURIComponent(surveyId)}`, {
+    const res = await fetch(`${BASE}?survey_id=${encodeURIComponent(surveyId)}`, {
       method: "GET",
       cache: "no-store",
     });

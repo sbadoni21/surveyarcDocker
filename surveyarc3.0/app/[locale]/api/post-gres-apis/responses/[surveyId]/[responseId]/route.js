@@ -22,7 +22,7 @@ async function forceDecryptResponse(res) {
 }
 
 export async function GET(_req, { params }) {
-  const { surveyId, responseId } = params;
+  const { surveyId, responseId } = await params;
   try {
     const res = await fetch(`${BASE}/responses/${encodeURIComponent(surveyId)}/${encodeURIComponent(responseId)}`, {
       signal: AbortSignal.timeout(30000),

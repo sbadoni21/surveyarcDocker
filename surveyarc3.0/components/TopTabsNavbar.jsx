@@ -10,6 +10,8 @@ export default function TopTabsNavbar({ activeTab, setActiveTab }) {
     { id: "flow", label: "Survey flow", icon: <TbSettingsCog className="w-5 h-5" /> },
     // { id: "distribution", label: "Distribution", icon: <TbLayoutDistributeHorizontal width="20" height="20" /> },
     { id: "demo", label: "Demo survey", icon: <Icon icon="solar:play-linear" width="20" height="20" /> },
+    { id: "responses", label: "Responses", icon: <Icon icon="ri:survey-line" width="20" height="20" /> },
+
     // { id: "campaign", label: "campaign", icon: <Icon icon="solar:play-linear" width="20" height="20" /> },
   ];
 

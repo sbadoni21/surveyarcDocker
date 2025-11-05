@@ -14,18 +14,8 @@ class RedisResponseService:
 
     @classmethod
     def _ser(cls, obj: Any) -> str:
-        def default(o):
-            if isinstance(o, datetime):
-                return o.isoformat()
-            if hasattr(o, "__dict__"):
-                d = {k: v for k, v in o.__dict__.items() if not k.startswith("_")}
-                for k, v in d.items():
-                    if isinstance(v, datetime): d[k] = v.isoformat()
-                return json.dumps(d, default=default)
-            return json.dumps(o, default=default)
-        if hasattr(obj, "model_dump"):
-            return json.dumps(obj.model_dump(), default=default)
-        return default(obj)
+        return json.dumps(obj, default=str)
+
 
     @classmethod
     def _deser(cls, s: str) -> Dict[str, Any]:

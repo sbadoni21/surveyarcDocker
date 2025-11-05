@@ -1,23 +1,14 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogActions,
-  Button,
-  Tabs,
-  Tab,
-  Box,
-  Typography,
-  Paper,
-} from "@mui/material";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "@/firebase/firebase";
+import { useRouter } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 
 import { calculateAnalytics } from "@/utils/analytics/calculateAnalytics";
 import { formatAnswer } from "@/utils/analytics/formatAnswer";
 import { AnalyticsCard } from "./analytics/AnalyticsCard";
+import { useQuestion } from "@/providers/questionPProvider";
+import { useResponse } from "@/providers/postGresPorviders/responsePProvider";
 
 const EXCLUDED_KEYS = ["id", "projectId", "__v", "orgId", "surveyId"];
 
@@ -35,31 +26,15 @@ const ANALYTICS_SUPPORTED_TYPES = new Set([
   "number",
 ]);
 
-const SurveyResponsePopup = ({ open, onClose, responses, orgId, surveyId }) => {
-  const [questions, setQuestions] = useState([]);
+const SurveyResponsesPage = () => {
+  const router = useRouter();
   const [tab, setTab] = useState(0);
   const [analytics, setAnalytics] = useState({});
-
-  useEffect(() => {
-    const fetchQuestions = async () => {
-      if (!surveyId || !orgId) return;
-      try {
-        const docRef = doc(db, "organizations", orgId, "questions", surveyId);
-        const snapshot = await getDoc(docRef);
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          setQuestions(data.questions || []);
-        } else {
-          console.warn("No questions found for surveyId:", surveyId);
-          setQuestions([]);
-        }
-      } catch (error) {
-        console.error("Error fetching questions:", error);
-      }
-    };
-
-    fetchQuestions();
-  }, [surveyId, orgId]);
+  
+  const { questions } = useQuestion();
+  const { responses } = useResponse();
+  
+  console.log(responses);
 
   useEffect(() => {
     if (questions.length > 0 && responses.length > 0) {
@@ -70,79 +45,78 @@ const SurveyResponsePopup = ({ open, onClose, responses, orgId, surveyId }) => {
     }
   }, [questions, responses]);
 
-  const handleChange = (event, newValue) => {
-    setTab(newValue);
+  const handleBack = () => {
+    router.back();
   };
 
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      maxWidth="lg"
-      fullWidth
-      scroll="paper"
-    >
-      <Box
-        sx={{
-          position: "sticky",
-          top: 0,
-          backgroundColor: "background.paper",
-          zIndex: 1300,
-          borderBottom: 1,
-          borderColor: "divider",
-          p: 2,
-          display: "flex",
-          flexDirection: "column",
-          gap: 1,
-        }}
-      >
-        <Typography variant="h6" fontWeight="bold">
-          Survey Responses — {responses.length}{" "}
-          {responses.length === 1 ? "response" : "responses"}
-        </Typography>
+    <div className=" mx-auto py-8 px-4">
+      {/* Header Section */}
+      <div className="sticky top-0 z-50 pb-4 mb-6">
+        <div className="flex items-center gap-4 mb-4">
+         
+          
+          <h1 className="text-3xl font-bold">Survey Responses</h1>
+          
+          <div className="ml-auto">
+            <span className="text-xl text-gray-600">
+              {responses.length} {responses.length === 1 ? "response" : "responses"}
+            </span>
+          </div>
+        </div>
 
-        <Tabs value={tab} onChange={handleChange} aria-label="Response tabs">
-          <Tab label="Responses" />
-          <Tab label="Analytics" />
-        </Tabs>
-      </Box>
+        <div className="bg-white rounded-lg shadow">
+          <div className="flex border-b">
+            <button
+              onClick={() => setTab(0)}
+              className={`flex-1 px-8 py-4 font-medium transition-colors ${
+                tab === 0
+                  ? "text-blue-600 border-b-2 border-blue-600"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              Responses
+            </button>
+            <button
+              onClick={() => setTab(1)}
+              className={`flex-1 px-8 py-4 font-medium transition-colors ${
+                tab === 1
+                  ? "text-blue-600 border-b-2 border-blue-600"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              Analytics
+            </button>
+          </div>
+        </div>
+      </div>
 
-      <DialogContent dividers sx={{ pt: 2, minHeight: 400 }}>
+      {/* Content Section */}
+      <div className="min-h-[60vh]">
         {tab === 0 && (
           <>
             {responses.length === 0 ? (
-              <Typography color="text.secondary">
-                No responses found.
-              </Typography>
+              <div className="bg-white rounded-lg p-16 text-center">
+                <h2 className="text-xl font-semibold text-gray-600 mb-2">
+                  No responses found.
+                </h2>
+                <p className="text-sm text-gray-500">
+                  Responses will appear here once participants submit the survey.
+                </p>
+              </div>
             ) : (
-              <Box
-                sx={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 3,
-                  maxHeight: "60vh",
-                  overflowY: "auto",
-                }}
-              >
+              <div className="flex flex-col gap-6">
                 {responses.map((response, idx) => (
-                  <Paper
+                  <div
                     key={idx}
-                    elevation={2}
-                    sx={{ p: 3, borderRadius: 2 }}
+                    className="bg-white rounded-lg shadow-md p-6"
                     aria-label={`Response number ${idx + 1}`}
                   >
-                    <Typography variant="h6" gutterBottom>
+                    <h2 className="text-xl font-semibold mb-4">
                       Response {idx + 1}
-                    </Typography>
+                    </h2>
 
-                    <Box
-                      component="table"
-                      sx={{
-                        width: "100%",
-                        borderCollapse: "collapse",
-                        mb: 2,
-                      }}
-                    >
+                    <table className="w-full mb-4">
                       <tbody>
                         {Object.entries(response)
                           .filter(
@@ -150,58 +124,33 @@ const SurveyResponsePopup = ({ open, onClose, responses, orgId, surveyId }) => {
                               key !== "answers" && !EXCLUDED_KEYS.includes(key)
                           )
                           .map(([key, value]) => (
-                            <tr
-                              key={key}
-                              style={{ borderBottom: "1px solid #ddd" }}
-                            >
-                              <th
-                                style={{
-                                  textAlign: "left",
-                                  padding: "8px",
-                                  fontWeight: "600",
-                                  width: "25%",
-                                  verticalAlign: "top",
-                                }}
-                              >
+                            <tr key={key} className="border-b border-gray-200">
+                              <th className="text-left py-3 px-2 font-semibold w-1/4 align-top">
                                 {key
                                   .replace(/_/g, " ")
                                   .replace(/\b\w/g, (c) => c.toUpperCase())}
                               </th>
-                              <td style={{ padding: "8px" }}>
+                              <td className="py-3 px-2">
                                 {formatAnswer(value)}
                               </td>
                             </tr>
                           ))}
                       </tbody>
-                    </Box>
+                    </table>
 
                     {response.answers && Array.isArray(response.answers) && (
                       <>
-                        <Typography variant="subtitle1" gutterBottom>
+                        <h3 className="text-lg font-semibold mt-6 mb-4">
                           Answers:
-                        </Typography>
+                        </h3>
 
-                        <Box
-                          component="table"
-                          sx={{ width: "100%", borderCollapse: "collapse" }}
-                        >
+                        <table className="w-full">
                           <thead>
-                            <tr
-                              style={{
-                                backgroundColor: "#f5f5f5",
-                                borderBottom: "1px solid #ddd",
-                              }}
-                            >
-                              <th
-                                style={{
-                                  padding: "8px",
-                                  textAlign: "left",
-                                  width: "40%",
-                                }}
-                              >
+                            <tr className="bg-gray-100 border-b-2 border-gray-300">
+                              <th className="py-3 px-2 text-left w-2/5 font-semibold">
                                 Question
                               </th>
-                              <th style={{ padding: "8px", textAlign: "left" }}>
+                              <th className="py-3 px-2 text-left font-semibold">
                                 Answer
                               </th>
                             </tr>
@@ -220,62 +169,53 @@ const SurveyResponsePopup = ({ open, onClose, responses, orgId, surveyId }) => {
                               return (
                                 <tr
                                   key={`${ans.questionId}-${i}`}
-                                  style={{ borderBottom: "1px solid #eee" }}
+                                  className="border-b border-gray-100"
                                 >
-                                  <td
-                                    style={{
-                                      padding: "8px",
-                                      verticalAlign: "top",
-                                    }}
-                                  >
+                                  <td className="py-3 px-2 align-top">
                                     {`${label} (${ans.questionId})`}
                                   </td>
-                                  <td style={{ padding: "8px" }}>
+                                  <td className="py-3 px-2">
                                     {formatAnswer(ans.answer)}
                                   </td>
                                 </tr>
                               );
                             })}
                           </tbody>
-                        </Box>
+                        </table>
                       </>
                     )}
-                  </Paper>
+                  </div>
                 ))}
-              </Box>
+              </div>
             )}
           </>
         )}
 
         {tab === 1 && (
-          <Box sx={{ maxHeight: "70vh", overflowY: "auto" }}>
-            {Object.entries(analytics).length === 0 && (
-              <Typography color="text.secondary">
-                No analytics data available.
-              </Typography>
+          <div>
+            {Object.entries(analytics).length === 0 ? (
+              <div className="bg-white rounded-lg p-16 text-center">
+                <h2 className="text-xl font-semibold text-gray-600 mb-2">
+                  No analytics data available.
+                </h2>
+                <p className="text-sm text-gray-500">
+                  Analytics will be generated once responses are collected.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-6">
+                {Object.entries(analytics)
+                  .filter(([_, data]) => ANALYTICS_SUPPORTED_TYPES.has(data.type))
+                  .map(([qId, data]) => (
+                    <AnalyticsCard key={qId} question={qId} data={data} />
+                  ))}
+              </div>
             )}
-
-            {Object.entries(analytics)
-              .filter(([_, data]) => ANALYTICS_SUPPORTED_TYPES.has(data.type))
-              .map(([qId, data]) => (
-                <AnalyticsCard key={qId} question={qId} data={data} />
-              ))}
-          </Box>
+          </div>
         )}
-      </DialogContent>
-
-      <DialogActions>
-        <Button
-          onClick={onClose}
-          variant="contained"
-          color="primary"
-          aria-label="Close dialog"
-        >
-          Close
-        </Button>
-      </DialogActions>
-    </Dialog>
+      </div>
+    </div>
   );
 };
 
-export default SurveyResponsePopup;
+export default SurveyResponsesPage;
