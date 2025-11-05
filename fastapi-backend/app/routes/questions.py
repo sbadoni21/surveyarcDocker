@@ -37,19 +37,27 @@ def create_question(data: QuestionCreate, db: Session = Depends(get_db)):
 
 @router.get("/{survey_id}", response_model=List[QuestionOut])
 def get_all_questions(survey_id: str, db: Session = Depends(get_db)):
+    # Try to get from cache
     cached = RedisQuestionService.get_questions_for_survey(survey_id)
-    if cached:
+    if cached is not None:  # Explicitly check for None, not just falsy
+        print(f"[API] Returning {len(cached)} questions from cache for survey {survey_id}")
         return cached
 
+    # Cache miss or expired - fetch from DB
+    print(f"[API] Cache miss for survey {survey_id}, fetching from DB")
     rows = db.query(Question).filter(Question.survey_id == survey_id).all()
+    
+    # Cache the results if we got any
     if rows:
+        print(f"[API] Caching {len(rows)} questions for survey {survey_id}")
         RedisQuestionService.cache_questions_list(survey_id, rows)
+    
     return rows
 
 @router.get("/{survey_id}/{question_id}", response_model=QuestionOut)
 def get_question(survey_id: str, question_id: str, db: Session = Depends(get_db)):
     cached = RedisQuestionService.get_question(survey_id, question_id)
-    if cached:
+    if cached is not None:
         return cached
 
     q = (

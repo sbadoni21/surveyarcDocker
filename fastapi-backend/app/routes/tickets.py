@@ -536,7 +536,7 @@ def get_ticket(ticket_id: str, db: Session = Depends(get_db)):
     Fetch a single ticket (with SLA status and tags). Uses Redis cache if present.
     """
     cached = RedisTicketService.get_ticket(ticket_id)
-    if cached:
+    if cached is not None:
         return cached
 
     t = (
@@ -606,19 +606,19 @@ def list_tickets(
     # Org-wide simple list cache
     if all(v is None for v in [status, assignee_id, team_id, agent_id, q, group_id]) and offset == 0:
         cached = RedisTicketService.get_org_list(org_id)
-        if cached:
+        if cached is not None:
             return cached
 
     # Team-specific cache
     if team_id and all(v is None for v in [status, assignee_id, agent_id, q, group_id]) and offset == 0:
         cached = RedisTicketService.get_team_list(org_id, team_id)
-        if cached:
+        if cached is not None:
             return cached
 
     # Agent-specific cache
     if agent_id and all(v is None for v in [status, assignee_id, team_id, q, group_id]) and offset == 0:
         cached = RedisTicketService.get_agent_list(org_id, agent_id)
-        if cached:
+        if cached is not None:
             return cached
 
     stmt = (

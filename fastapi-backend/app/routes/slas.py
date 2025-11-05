@@ -64,7 +64,7 @@ def get_sla(sla_id: str, db: Session = Depends(get_db)):
     """Get a single SLA by ID"""
     # try redis first (best-effort)
     cached = cache_get_sla(sla_id)
-    if cached:
+    if cached is not None:
         return SLAOut.model_validate(cached)
     row = db.get(SLA, sla_id)
     if not row:

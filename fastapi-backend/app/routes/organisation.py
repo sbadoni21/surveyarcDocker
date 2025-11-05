@@ -221,7 +221,7 @@ def get_organisation(
     """Get organisation with Redis caching"""
 
     cached = _redis_get_json(redis, f"org:{org_id}")
-    if cached:
+    if cached is not None:
         return OrganisationResponse(**_deserialize_organisation(cached))
 
     db_org = db.query(Organisation).filter(Organisation.org_id == org_id).first()

@@ -3,6 +3,13 @@ from typing import List, Optional, Dict
 from datetime import datetime
 from enum import Enum
 
+class ListBasic(BaseModel):  # Simplified list info to avoid circular imports
+    list_id: str
+    list_name: str
+    status: str
+    
+    class Config:
+        from_attributes = True
 class ContactType(str, Enum):
     email = "email"
     whatsapp = "whatsapp"
@@ -77,6 +84,8 @@ class ContactOut(BaseModel):
     emails: Optional[List[ContactEmail]] = []
     phones: Optional[List[ContactPhone]] = []
     socials: Optional[List[ContactSocial]] = []
+    lists: List[ListBasic] = []  # ✅ ADD THIS LINE
+
 
 
     model_config = ConfigDict(from_attributes=True)

@@ -42,7 +42,7 @@ def create_rule(data: RuleCreate, db: Session = Depends(get_db)):
 @router.get("/{survey_id}", response_model=List[RuleOut])
 def list_rules(survey_id: str, db: Session = Depends(get_db)):
     cached = RedisRuleService.get_rules_for_survey(survey_id)
-    if cached:
+    if cached is not None:
         return cached
     rows = db.query(Rule).filter(Rule.survey_id == survey_id).all()
     if rows:
@@ -52,7 +52,7 @@ def list_rules(survey_id: str, db: Session = Depends(get_db)):
 @router.get("/{survey_id}/{rule_id}", response_model=RuleOut)
 def get_rule(survey_id: str, rule_id: str, db: Session = Depends(get_db)):
     cached = RedisRuleService.get_rule(survey_id, rule_id)
-    if cached:
+    if cached is not None:
         return cached
     row = (
         db.query(Rule)

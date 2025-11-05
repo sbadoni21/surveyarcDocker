@@ -169,7 +169,7 @@ def get_team(
 ):
     # Try cache first
     cached = RedisSupportService.get_team(team_id, include_calendar)
-    if cached:
+    if cached is not None:
         return cached
         
     team = db.get(SupportTeam, team_id)

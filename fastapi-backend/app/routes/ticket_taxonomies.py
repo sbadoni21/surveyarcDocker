@@ -26,10 +26,10 @@ def list_features(org_id: str = Query(...), product_id: Optional[str] = Query(No
     if not include_inactive:
         if product_id:
             cached = RedisTaxonomyService.get_features_by_product(product_id)
-            if cached: return cached
+            if cached is not None: return cached
         else:
             cached = RedisTaxonomyService.get_features_by_org(org_id)
-            if cached: return cached
+            if cached is not None: return cached
 
     q = select(TicketFeature).where(TicketFeature.org_id == org_id)
     if not include_inactive:
@@ -50,7 +50,7 @@ def list_features(org_id: str = Query(...), product_id: Optional[str] = Query(No
 @router.get("/features/{feature_id}", response_model=FeatureOut)
 def get_feature(feature_id: str, db: Session = Depends(get_db)):
     cached = RedisTaxonomyService.get_feature(feature_id)
-    if cached: return cached
+    if cached is not None: return cached
     row = db.get(TicketFeature, feature_id)
     if not row: raise HTTPException(404, "Feature not found")
     out = FeatureOut.model_validate(row, from_attributes=True).model_dump()
@@ -100,7 +100,7 @@ def list_impacts(org_id: str = Query(...), include_inactive: bool = Query(False)
                  db: Session = Depends(get_db)):
     if not include_inactive:
         cached = RedisTaxonomyService.get_impacts_by_org(org_id)
-        if cached: return cached
+        if cached is not None: return cached
     q = select(TicketImpactArea).where(TicketImpactArea.org_id == org_id)
     if not include_inactive:
         q = q.where(TicketImpactArea.active == True)
@@ -114,7 +114,7 @@ def list_impacts(org_id: str = Query(...), include_inactive: bool = Query(False)
 @router.get("/impacts/{impact_id}", response_model=ImpactAreaOut)
 def get_impact(impact_id: str, db: Session = Depends(get_db)):
     cached = RedisTaxonomyService.get_impact(impact_id)
-    if cached: return cached
+    if cached is not None: return cached
     row = db.get(TicketImpactArea, impact_id)
     if not row: raise HTTPException(404, "Impact area not found")
     out = ImpactAreaOut.model_validate(row, from_attributes=True).model_dump()
@@ -166,7 +166,7 @@ def list_root_causes(org_id: str = Query(...), include_inactive: bool = Query(Fa
                      db: Session = Depends(get_db)):
     if not include_inactive:
         cached = RedisTaxonomyService.get_rca_by_org(org_id)
-        if cached: return cached
+        if cached is not None: return cached
     q = select(TicketRootCauseType).where(TicketRootCauseType.org_id == org_id)
     if not include_inactive:
         q = q.where(TicketRootCauseType.active == True)
@@ -180,7 +180,7 @@ def list_root_causes(org_id: str = Query(...), include_inactive: bool = Query(Fa
 @router.get("/root-causes/{rca_id}", response_model=RootCauseOut)
 def get_root_cause(rca_id: str, db: Session = Depends(get_db)):
     cached = RedisTaxonomyService.get_rca(rca_id)
-    if cached: return cached
+    if cached is not None: return cached
     row = db.get(TicketRootCauseType, rca_id)
     if not row: raise HTTPException(404, "Root cause not found")
     out = RootCauseOut.model_validate(row, from_attributes=True).model_dump()

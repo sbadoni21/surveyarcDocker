@@ -84,7 +84,9 @@ def list_contacts(org_id: str = Query(...), db: Session = Depends(get_db)):
         .options(
             joinedload(Contact.emails),
             joinedload(Contact.phones),
-            joinedload(Contact.socials)
+            joinedload(Contact.socials),
+            joinedload(Contact.lists)  # ✅ ADD THIS LINE
+
         )
         .filter(Contact.org_id == org_id)
         .order_by(Contact.created_at.desc())
@@ -205,7 +207,9 @@ def get_contact(contact_id: str, db: Session = Depends(get_db)):
         .options(
             joinedload(Contact.emails),
             joinedload(Contact.phones),
-            joinedload(Contact.socials)
+            joinedload(Contact.socials),
+            joinedload(Contact.lists)  # ✅ ADD THIS LINE
+
         )
         .filter(Contact.contact_id == contact_id)
         .first()
@@ -283,7 +287,9 @@ def update_contact(contact_id: str, data: ContactUpdate, db: Session = Depends(g
         .options(
             joinedload(Contact.emails),
             joinedload(Contact.phones),
-            joinedload(Contact.socials)
+            joinedload(Contact.socials),
+            joinedload(Contact.lists)  # ✅ ADD THIS LINE
+
         )
         .filter(Contact.contact_id == contact_id)
         .first()

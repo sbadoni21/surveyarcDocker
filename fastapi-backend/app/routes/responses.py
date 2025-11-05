@@ -103,7 +103,7 @@ def count_responses(survey_id: str = Query(...), db: Session = Depends(get_db)):
 @router.get("/{survey_id}/{response_id}", response_model=ResponseOut)
 def get_response(survey_id: str, response_id: str, db: Session = Depends(get_db)):
     cached = RedisResponseService.get_response(response_id)
-    if cached:
+    if cached is not None:
         return cached
     row = (
         db.query(Response)

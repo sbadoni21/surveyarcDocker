@@ -31,7 +31,7 @@ def list_categories(
     # Try cache first
     if not include_inactive:
         cached = RedisCategoryService.get_categories_by_org(org_id)
-        if cached:
+        if cached is not None:
             return cached
     
     query = select(TicketCategory).where(TicketCategory.org_id == org_id)
@@ -75,11 +75,11 @@ def get_category(
     # Try cache first
     if include_subcategories:
         cached = RedisCategoryService.get_category_with_subcategories(category_id)
-        if cached:
+        if cached is not None:
             return cached
     else:
         cached = RedisCategoryService.get_category(category_id)
-        if cached:
+        if cached is not None:
             return cached
     
     if include_subcategories:
@@ -238,11 +238,11 @@ def list_subcategories(
     if not include_inactive:
         if category_id:
             cached = RedisCategoryService.get_subcategories_by_category(category_id)
-            if cached:
+            if cached is not None:
                 return cached
         elif org_id:
             cached = RedisCategoryService.get_subcategories_by_org(org_id)
-            if cached:
+            if cached is not None:
                 return cached
     
     query = select(TicketSubcategory)
@@ -275,7 +275,7 @@ def get_subcategory(subcategory_id: str, db: Session = Depends(get_db)):
     """Get a single subcategory"""
     # Try cache first
     cached = RedisCategoryService.get_subcategory(subcategory_id)
-    if cached:
+    if cached is not None:
         return cached
     
     subcategory = db.get(TicketSubcategory, subcategory_id)
@@ -384,7 +384,7 @@ def list_products(
     # Try cache first
     if not include_inactive and not platform:
         cached = RedisCategoryService.get_products_by_org(org_id)
-        if cached:
+        if cached is not None:
             return cached
     
     query = select(TicketProduct).where(TicketProduct.org_id == org_id)
@@ -412,7 +412,7 @@ def get_product(product_id: str, db: Session = Depends(get_db)):
     """Get a single product"""
     # Try cache first
     cached = RedisCategoryService.get_product(product_id)
-    if cached:
+    if cached is not None:
         return cached
     
     product = db.get(TicketProduct, product_id)

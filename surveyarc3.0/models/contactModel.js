@@ -21,6 +21,7 @@ const toCamel = (c) => ({
   emails: c.emails || [],
   phones: c.phones || [],
   socials: c.socials || [],
+  lists: c.lists || [],
 });
 
 //

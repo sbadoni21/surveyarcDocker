@@ -113,9 +113,11 @@ async def get_all_projects(
     try:
         if use_cache:
             cached = await RedisProjectService.get_cached_org_projects(org_id)
-            if cached:
+            if cached is not None:  # FIXED: explicit None check
+                print(f"[API] Returning {len(cached)} projects from cache for org {org_id}")
                 return [ProjectGetBase(**p) for p in cached]
 
+        print(f"[API] Cache miss for org {org_id}, fetching from DB")
         projects = db.query(Project).filter(Project.org_id == org_id).all()
         if projects:
             await RedisProjectService.cache_org_projects(org_id, projects)
@@ -125,31 +127,29 @@ async def get_all_projects(
         print(f"[ProjectRoutes] Failed to get projects: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve projects")
 
-
-@router.get("/{org_id}/{project_id}", response_model=ProjectGetBase)
-async def get_project(
+@router.get("/{org_id}", response_model=List[ProjectGetBase])
+async def get_all_projects(
     org_id: str,
-    project_id: str,
     db: Session = Depends(get_db),
     use_cache: bool = Query(True, description="Whether to use Redis cache")
 ):
-    """Get one project (cached)."""
+    """Get all projects for an organization (cached)."""
     try:
         if use_cache:
-            cached = await RedisProjectService.get_cached_project(org_id, project_id)
-            if cached:
-                return ProjectGetBase(**cached)
+            cached = await RedisProjectService.get_cached_org_projects(org_id)
+            if cached is not None:  # FIXED: explicit None check
+                print(f"[API] Returning {len(cached)} projects from cache for org {org_id}")
+                return [ProjectGetBase(**p) for p in cached]
 
-        project = _ensure_project(db, org_id, project_id)
-        await RedisProjectService.cache_project(project)
-        return project
+        print(f"[API] Cache miss for org {org_id}, fetching from DB")
+        projects = db.query(Project).filter(Project.org_id == org_id).all()
+        if projects:
+            await RedisProjectService.cache_org_projects(org_id, projects)
+        return projects
 
-    except HTTPException:
-        raise
     except Exception as e:
-        print(f"[ProjectRoutes] Failed to get project: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve project")
-
+        print(f"[ProjectRoutes] Failed to get projects: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve projects")
 
 @router.patch("/{org_id}/{project_id}", response_model=ProjectBase)
 async def update_project(
@@ -261,15 +261,16 @@ async def get_recent_activity(
         print(f"[ProjectRoutes] Failed to get recent activity: {e}")
         return {"org_id": org_id, "recent_activities": [], "count": 0, "error": "Failed to retrieve recent activity"}
 
-
 @router.get("/{org_id}/{project_id}/stats")
 async def get_project_stats(org_id: str, project_id: str, db: Session = Depends(get_db)):
     """Compute and cache basic stats."""
     try:
         cached = await RedisProjectService.get_cached_project_stats(project_id)
-        if cached:
+        if cached is not None:  # FIXED: explicit None check
+            print(f"[API] Returning stats from cache for project {project_id}")
             return cached
 
+        print(f"[API] Cache miss for stats, computing for project {project_id}")
         project = _ensure_project(db, org_id, project_id)
         stats = {
             "project_id": project_id,
@@ -291,7 +292,6 @@ async def get_project_stats(org_id: str, project_id: str, db: Session = Depends(
     except Exception as e:
         print(f"[ProjectRoutes] Failed to get project stats: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve project statistics")
-
 
 @router.post("/{org_id}/cache/invalidate")
 async def invalidate_org_cache(org_id: str):
@@ -744,7 +744,7 @@ async def favorite_list(org_id: str, user_id: str, db: Session = Depends(get_db)
     items = []
     for pid in ids:
         cached = await RedisProjectService.get_cached_project(org_id, pid)
-        if cached:
+        if cached is not None:
             items.append(cached)
             continue
         p = db.query(Project).filter(Project.org_id == org_id, Project.project_id == pid).first()

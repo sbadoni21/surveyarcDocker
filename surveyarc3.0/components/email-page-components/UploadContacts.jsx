@@ -1,106 +1,29 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import Papa from "papaparse";
-import * as XLSX from "xlsx";
 import { X } from "lucide-react";
 import { LoadingOverlay } from "@/utils/loadingOverlay";
+import { parseFile } from "@/utils/parseFile";
+import { normalizeRow } from "@/utils/normalizeRow";
+import { validateUploadedContacts } from "@/utils/validateContacts";
 
-/* ----------------------------- PARSE HELPERS ----------------------------- */
-
-const parseFile = (file) =>
-  new Promise((resolve, reject) => {
-    const ext = file.name.split(".").pop().toLowerCase();
-
-    if (ext === "csv") {
-      Papa.parse(file, {
-        header: true,
-        skipEmptyLines: true,
-        dynamicTyping: false,
-        transformHeader: (header) => header.trim(),
-        complete: (res) => resolve(res.data),
-        error: reject,
-      });
-    } else if (ext === "xlsx" || ext === "xls") {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const wb = XLSX.read(e.target.result, { type: "binary" });
-          const sheet = wb.Sheets[wb.SheetNames[0]];
-          const data = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-          resolve(data);
-        } catch (error) {
-          reject(error);
-        }
-      };
-      reader.onerror = () => reject(new Error("Failed to read file"));
-      reader.readAsBinaryString(file);
-    } else {
-      reject(new Error("Unsupported file type"));
-    }
-  });
-
-/** ✅ Normalizer */
-const normalizeRow = (row) => {
-  const name =
-    row.Name ??
-    row.name ??
-    row.FullName ??
-    row["Full Name"] ??
-    row.NAME ??
-    "";
-
-  const email =
-    row.Email ??
-    row.email ??
-    row["E-mail"] ??
-    row.EMAIL ??
-    "";
-
-  const phone =
-    row.Phone ??
-    row.phone ??
-    row["Phone Number"] ??
-    row.Mobile ??
-    "";
-
-  const platform =
-    row.Platform ??
-    row.platform ??
-    row["Social Platform"] ??
-    "";
-
-  const handle =
-    row.Handle ??
-    row.handle ??
-    row["Social Handle"] ??
-    row.Username ??
-    "";
-
-  const link =
-    row.Link ??
-    row.link ??
-    row.URL ??
-    row["Profile URL"] ??
-    "";
-
-  return {
-    raw: row,
-    name: String(name).trim(),
-    email: String(email).trim(),
-    phone: String(phone).trim(),
-    platform: String(platform).trim(),
-    handle: String(handle).trim(),
-    link: String(link).trim(),
-  };
+/* ✅ SAFE UUID */
+const uuid = () => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID)
+    return crypto.randomUUID();
+  return Math.random().toString(36).slice(2) + Date.now();
 };
 
-/* ------------------------------ Upload Modal ------------------------------ */
-export const UploadModal = ({ 
-  isOpen, 
-  onClose, 
-  onUpload, 
+export const UploadModal = ({
+  isOpen,
+  onClose,
+  onUpload,
   existingListName = "",
-  isAddingToList = false 
+  isAddingToList = false,
+  targetListId,
+  existingContacts = [],
+  existingEmails = [],
+  existingPhones = [],
+  existingSocials = [],
 }) => {
   const [listName, setListName] = useState("");
   const [parsedContacts, setParsedContacts] = useState([]);
@@ -110,27 +33,14 @@ export const UploadModal = ({
   const [isUploading, setIsUploading] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
 
-  // Set list name when adding to existing list
   useEffect(() => {
-    if (isAddingToList && existingListName) {
-      setListName(existingListName);
-    } else {
-      setListName("");
-    }
-  }, [isAddingToList, existingListName, isOpen]);
+    setListName(isAddingToList ? existingListName : "");
+  }, [isOpen, isAddingToList, existingListName]);
 
-  const isValidEmail = (val) => {
-    if (!val) return false;
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
-  };
+  const isValidEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v || "");
+  const isValidPhone = (v) => /^[+]?[0-9]{8,15}$/.test(String(v || "").replace(/[ \-()]/g, ""));
 
-  const isValidPhone = (val) => {
-    if (!val) return false;
-    const cleaned = String(val).replace(/[\s\-()]/g, "");
-    return /^[+]?[0-9]{8,15}$/.test(cleaned);
-  };
-
-  /* ✅ Parse + validate + de-dupe */
+  /* ================== FILE PARSE ================== */
   const handleFileSelect = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -139,225 +49,263 @@ export const UploadModal = ({
 
     try {
       const rows = await parseFile(file);
-
-      if (!rows || rows.length === 0) {
+      if (!rows?.length) {
         alert("No data found in file");
         setIsParsing(false);
         return;
       }
 
-      const normalized = [];
+      const valid = [];
       const skipped = [];
 
-      for (const r of rows) {
-        const obj = normalizeRow(r);
+      for (const raw of rows) {
+        const r = normalizeRow(raw);
 
-        // Skip empty rows
-        if (!obj.name && !obj.email && !obj.phone && !obj.handle) {
+        if (!r.name && !r.email && !r.phone && !r.handle) continue;
+        if (!r.name) {
+          skipped.push(raw);
           continue;
         }
 
-        // Name is required
-        if (!obj.name) {
-          skipped.push(r);
+        let okEmail = r.email && isValidEmail(r.email);
+        let okPhone = r.phone && isValidPhone(r.phone);
+        let okSocial = r.platform && r.handle;
+
+        if (
+          (uploadType === "email" && !okEmail) ||
+          (uploadType === "phone" && !okPhone) ||
+          (uploadType === "social" && !okSocial)
+        ) {
+          skipped.push(raw);
           continue;
         }
 
-        // Type-specific validation
-        if (uploadType === "email") {
-          if (!obj.email || !isValidEmail(obj.email)) {
-            skipped.push(r);
-            continue;
-          }
-        } else if (uploadType === "phone") {
-          if (!obj.phone || !isValidPhone(obj.phone)) {
-            skipped.push(r);
-            continue;
-          }
-        } else if (uploadType === "social") {
-          if (!obj.platform || !obj.handle) {
-            skipped.push(r);
-            continue;
-          }
-        } else if (uploadType === "auto") {
-          const hasValidEmail = obj.email && isValidEmail(obj.email);
-          const hasValidPhone = obj.phone && isValidPhone(obj.phone);
-          const hasValidSocial = obj.platform && obj.handle;
-
-          if (!hasValidEmail && !hasValidPhone && !hasValidSocial) {
-            skipped.push(r);
-            continue;
-          }
+        if (uploadType === "auto" && !okEmail && !okPhone && !okSocial) {
+          skipped.push(raw);
+          continue;
         }
 
-        normalized.push(obj);
+        valid.push(r);
       }
 
-      // ✅ Dedupe based on email, phone, or social handle
+      // ✅ DEDUPE
       const seen = new Set();
-      const deduped = [];
+      const dedup = [];
 
-      for (const row of normalized) {
+      valid.forEach((c) => {
         const keys = [];
-        
-        if (row.email && isValidEmail(row.email)) {
-          keys.push(`email:${row.email.toLowerCase()}`);
-        }
-        if (row.phone && isValidPhone(row.phone)) {
-          const cleaned = row.phone.replace(/[\s\-()]/g, "");
-          keys.push(`phone:${cleaned}`);
-        }
-        if (row.platform && row.handle) {
-          keys.push(`social:${row.platform.toLowerCase()}:${row.handle.toLowerCase()}`);
-        }
 
-        if (keys.length === 0) continue;
+        if (c.email && isValidEmail(c.email)) keys.push("email:" + c.email.toLowerCase());
+        if (c.phone && isValidPhone(c.phone)) keys.push("phone:" + c.phone.replace(/[ \-()]/g, ""));
+        if (c.platform && c.handle)
+          keys.push("social:" + c.platform.toLowerCase() + ":" + c.handle.toLowerCase());
 
-        const isDuplicate = keys.some(key => seen.has(key));
-        
-        if (!isDuplicate) {
-          keys.forEach(key => seen.add(key));
-          deduped.push(row);
+        if (!keys.length) return;
+        const dup = keys.some((k) => seen.has(k));
+        if (!dup) {
+          keys.forEach((k) => seen.add(k));
+          dedup.push(c);
         }
-      }
+      });
 
-      setParsedContacts(deduped);
+      setParsedContacts(dedup);
       setSkippedRows(skipped);
       setStep(2);
-    } catch (err) {
-      console.error(err);
-      alert(`Error parsing file: ${err.message}`);
-    } finally {
-      setIsParsing(false);
+    } catch (e) {
+      alert("Parsing failed: " + e.message);
     }
+
+    setIsParsing(false);
   };
 
-  /* ✅ Prepare payload for upload */
-  const prepareAndUpload = async () => {
-    if (!listName.trim() && !isAddingToList) {
-      alert("Please enter a list name");
-      return;
-    }
+
+
+/* ================== PREP + UPLOAD ================== */
+const prepareAndUpload = async () => {
+  try {
+    console.log("🚀 Starting prepareAndUpload");
 
     setIsUploading(true);
 
-    try {
-      const contacts = [];
-      const phones = [];
-      const emails = [];
-      const socials = [];
+    /* Build local contact data */
+    const contacts = [];
+    const contactEmails = [];
+    const contactPhones = [];
+    const contactSocials = [];
 
-      parsedContacts.forEach((c) => {
-        const contactId = crypto.randomUUID();
+    console.log("📦 parsedContacts:", parsedContacts);
 
-        let primaryIdentifier = null;
-        let contactType = null;
+    parsedContacts.forEach((c, i) => {
+      console.log(`\n==============================`);
+      console.log(`📍 Processing Row #${i + 1}`, c);
 
-        // Determine primary contact method
-        if (uploadType === "email" && c.email) {
-          primaryIdentifier = c.email;
-          contactType = "email";
-        } else if (uploadType === "phone" && c.phone) {
-          primaryIdentifier = c.phone;
-          contactType = "phone";
-        } else if (uploadType === "social" && c.handle) {
-          primaryIdentifier = c.handle;
-          contactType = c.platform?.toLowerCase() || "unknown";
-        } else if (uploadType === "auto") {
-          if (c.email && isValidEmail(c.email)) {
-            primaryIdentifier = c.email;
-            contactType = "email";
-          } else if (c.phone && isValidPhone(c.phone)) {
-            primaryIdentifier = c.phone;
-            contactType = "phone";
-          } else if (c.handle && c.platform) {
-            primaryIdentifier = c.handle;
-            contactType = c.platform?.toLowerCase() || "unknown";
-          }
-        }
+      const contactId = uuid();
+      let primary = null;
+      let type = null;
 
-        contacts.push({
-          contactId,
-          name: c.name,
-          primaryIdentifier,
-          contactType,
-          status: "active",
-          meta: {},
-        });
-
-        // ✅ Add emails
+      if (uploadType === "email" && c.email) {
+        primary = c.email;
+        type = "email";
+      } else if (uploadType === "phone" && c.phone) {
+        primary = c.phone;
+        type = "phone";
+      } else if (uploadType === "social" && c.handle) {
+        primary = c.handle;
+        type = c.platform?.toLowerCase() || "social";
+      } else {
         if (c.email && isValidEmail(c.email)) {
-          emails.push({
-            id: crypto.randomUUID(),
-            contactId,
-            email: c.email,
-            emailLower: c.email.toLowerCase(),
-            isPrimary: primaryIdentifier === c.email,
-            isVerified: false,
-            status: "active",
-            isBlocked: false,
-          });
+          primary = c.email;
+          type = "email";
+        } else if (c.phone && isValidPhone(c.phone)) {
+          primary = c.phone;
+          type = "phone";
+        } else if (c.handle && c.platform) {
+          primary = c.handle;
+          type = c.platform?.toLowerCase() || "social";
         }
+      }
 
-        // ✅ Add phones
-        if (c.phone && isValidPhone(c.phone)) {
-          const cleaned = c.phone.replace(/[\s\-()]/g, "");
-          let countryCode = "+91"; // Default
-          let phoneNumber = cleaned;
+      console.log("➡️ primary:", primary, " type:", type);
 
-          if (cleaned.startsWith("+")) {
-            const match = cleaned.match(/^(\+\d{1,3})(\d+)$/);
-            if (match) {
-              countryCode = match[1];
-              phoneNumber = match[2];
-            }
+      /* MAIN CONTACT OBJ */
+      const contactObj = {
+        contactId,
+        name: c.name,
+        primaryIdentifier: primary,
+        contactType: type,
+        status: "active",
+        meta: {},
+      };
+
+      contacts.push(contactObj);
+      console.log("✅ Contact Added:", contactObj);
+
+      /* EMAIL RECORD */
+      if (c.email && isValidEmail(c.email)) {
+        const emailObj = {
+          id: uuid(),
+          contactId,
+          email: c.email,
+          emailLower: c.email.toLowerCase(),
+          isPrimary: primary === c.email,
+          isVerified: false,
+          status: "active",
+          isBlocked: false,
+        };
+
+        contactEmails.push(emailObj);
+        console.log("📨 Email Added:", emailObj);
+      }
+
+      /* PHONE RECORD */
+      if (c.phone && isValidPhone(c.phone)) {
+        let cleaned = c.phone.replace(/[ \-()]/g, "");
+        let countryCode = "+91";
+        let number = cleaned;
+
+        if (cleaned.startsWith("+")) {
+          const match = cleaned.match(/^(\+\d{1,3})(\d+)$/);
+          if (match) {
+            countryCode = match[1];
+            number = match[2];
           }
-
-          phones.push({
-            id: crypto.randomUUID(),
-            contactId,
-            countryCode,
-            phoneNumber,
-            isPrimary: primaryIdentifier === c.phone,
-            isWhatsapp: false,
-            isVerified: false,
-            isBlocked: false,
-          });
         }
 
-        // ✅ Add socials
-        if (c.platform && c.handle) {
-          socials.push({
-            id: crypto.randomUUID(),
-            contactId,
-            platform: c.platform.toLowerCase(),
-            handle: c.handle,
-            link: c.link || "",
-            isPrimary: primaryIdentifier === c.handle,
-            isBlocked: false,
-          });
-        }
-      });
+        const phoneObj = {
+          id: uuid(),
+          contactId,
+          countryCode,
+          phoneNumber: number,
+          isPrimary: primary === c.phone,
+          isWhatsapp: false,
+          isVerified: false,
+          isBlocked: false,
+        };
 
-      await onUpload({
-        listName: listName.trim(),
-        uploadType,
-        contacts,
-        contactPhones: phones,
-        contactEmails: emails,
-        contactSocials: socials,
-      });
+        contactPhones.push(phoneObj);
+        console.log("📞 Phone Added:", phoneObj);
+      }
 
-      // Reset and close
-      handleClose();
-    } catch (error) {
-      console.error("Upload error:", error);
-      alert(error.message || "Upload failed");
-    } finally {
-      setIsUploading(false);
-    }
-  };
+      /* SOCIAL RECORD */
+      if (c.platform && c.handle) {
+        const socialObj = {
+          id: uuid(),
+          contactId,
+          platform: c.platform.toLowerCase(),
+          handle: c.handle,
+          link: c.link || "",
+          isPrimary: primary === c.handle,
+          isBlocked: false,
+        };
 
+        contactSocials.push(socialObj);
+        console.log("🌐 Social Added:", socialObj);
+      }
+    });
+
+    /* ================== LOG BUILT DATA ================== */
+    console.log("\n==============================");
+    console.log("✅ FINAL BUILT STRUCTURES");
+    console.log("contacts:", contacts);
+    console.log("contactEmails:", contactEmails);
+    console.log("contactPhones:", contactPhones);
+    console.log("contactSocials:", contactSocials);
+
+
+    /* ✅ RUN VALIDATOR */
+    console.log("\n🔍 Running validateUploadedContacts...");
+    const { toCreate, toUpdate, toSkip } = validateUploadedContacts({
+      existingContacts,
+      existingEmails,
+      existingPhones,
+      existingSocials,
+      uploadedContacts: contacts,
+    });
+
+    console.log("\n✅ Validator Result:");
+    console.log("🟢 toCreate:", toCreate);
+    console.log("🟠 toUpdate:", toUpdate);
+    console.log("🔵 toSkip:", toSkip);
+
+
+    /* ✅ FINAL PAYLOAD */
+    const payload = {
+      listId: isAddingToList ? targetListId : null,
+      listName,
+      uploadType,
+
+      contacts: toCreate,
+      contactEmails,
+      contactPhones,
+      contactSocials,
+
+      toUpdate,
+      toSkip,
+
+      isAddingToList,
+    };
+
+    console.log("\n📦 Final Payload to Backend:");
+    console.log(payload);
+
+
+    /* ✅ SEND TO BACKEND */
+    await onUpload(payload);
+
+    console.log("✅ Upload Completed");
+    handleClose();
+  } catch (e) {
+    console.error("❌ Upload Failed:", e);
+    alert(e.message);
+  }
+
+  setIsUploading(false);
+  console.log("✅ Upload Finished");
+};
+
+
+
+  /* ================== CLOSE ================== */
   const handleClose = () => {
     if (isUploading || isParsing) return;
     onClose();
@@ -548,7 +496,7 @@ Bob Wilson,bob@example.com,+917654321098,twitter,@bobwilson,https://twitter.com/
 
           {step === 2 && (
             <button
-              onClick={prepareAndUpload}
+              onClick={() => {console.log(targetListId), prepareAndUpload()}}
               disabled={isUploading || parsedContacts.length === 0 || (!isAddingToList && !listName.trim())}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
             >

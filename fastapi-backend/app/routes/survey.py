@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models.survey import Survey
-from ..schemas.survey import SurveyCreate, SurveyUpdate, SurveyOut  # define SurveyOut similar to SurveyCreate but as response schema
+from ..schemas.survey import SurveyCreate, SurveyUpdate, SurveyOut
 from ..services.redis_survey_service import RedisSurveyService
 
 router = APIRouter(prefix="/surveys", tags=["Surveys"])
@@ -46,9 +46,11 @@ def create_survey(data: SurveyCreate, db: Session = Depends(get_db)):
 @router.get("/{survey_id}", response_model=SurveyOut)
 def get_survey(survey_id: str, db: Session = Depends(get_db)):
     cached = RedisSurveyService.get_survey(survey_id)
-    if cached:
+    if cached is not None:  # FIXED: explicit None check
+        print(f"[API] Returning survey {survey_id} from cache")
         return cached
 
+    print(f"[API] Cache miss for survey {survey_id}, fetching from DB")
     survey = db.query(Survey).filter(Survey.survey_id == survey_id).first()
     if not survey:
         raise HTTPException(status_code=404, detail="Survey not found")
@@ -60,10 +62,14 @@ def get_survey(survey_id: str, db: Session = Depends(get_db)):
 def list_surveys(project_id: Optional[str] = Query(None), db: Session = Depends(get_db)):
     if project_id:
         cached_list = RedisSurveyService.get_project_surveys(project_id)
-        if cached_list:
+        if cached_list is not None:  # FIXED: explicit None check
+            print(f"[API] Returning {len(cached_list)} surveys from cache for project {project_id}")
             return cached_list
+        
+        print(f"[API] Cache miss for project {project_id}, fetching from DB")
         surveys = db.query(Survey).filter(Survey.project_id == project_id).all()
-        RedisSurveyService.set_project_surveys_exact(project_id, surveys)
+        if surveys:
+            RedisSurveyService.set_project_surveys_exact(project_id, surveys)
         return surveys    
     # If no project_id passed, return empty or all (choose your policy)
     return []
@@ -71,13 +77,15 @@ def list_surveys(project_id: Optional[str] = Query(None), db: Session = Depends(
 @router.get("/project/{project_id}", response_model=List[SurveyOut])
 def get_all_surveys(project_id: str, db: Session = Depends(get_db)):
     cached_list = RedisSurveyService.get_project_surveys(project_id)
-    if cached_list:
+    if cached_list is not None:  # FIXED: explicit None check
+        print(f"[API] Returning {len(cached_list)} surveys from cache for project {project_id}")
         return cached_list
+    
+    print(f"[API] Cache miss for project {project_id}, fetching from DB")
     surveys = db.query(Survey).filter(Survey.project_id == project_id).all()
-    RedisSurveyService.set_project_surveys_exact(project_id, surveys)
+    if surveys:
+        RedisSurveyService.set_project_surveys_exact(project_id, surveys)
     return surveys
-
-# app/routes/survey.py
 
 @router.patch("/{survey_id}", response_model=SurveyOut)
 def update_survey(survey_id: str, data: SurveyUpdate, db: Session = Depends(get_db)):
@@ -133,7 +141,7 @@ def delete_survey(survey_id: str, db: Session = Depends(get_db)):
 def get_responses_count(survey_id: str, db: Session = Depends(get_db)):
     # If you have a real responses table, query it. Here, we try cache only.
     cached = RedisSurveyService.get_responses_count(survey_id)
-    if cached is not None:
+    if cached is not None:  # FIXED: explicit None check
         return {"count": cached}
     # Fallback (no table): 0
     RedisSurveyService.cache_responses_count(survey_id, 0)
@@ -142,7 +150,7 @@ def get_responses_count(survey_id: str, db: Session = Depends(get_db)):
 @router.get("/{survey_id}/responses")
 def list_responses(survey_id: str, db: Session = Depends(get_db)):
     cached = RedisSurveyService.get_responses(survey_id)
-    if cached is not None:
+    if cached is not None:  # FIXED: explicit None check
         return cached
     # Fallback empty list if you haven't implemented responses storage yet
     RedisSurveyService.cache_responses(survey_id, [])
