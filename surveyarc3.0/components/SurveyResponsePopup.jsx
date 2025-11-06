@@ -33,7 +33,7 @@ const SurveyResponsesPage = () => {
   
   const { questions } = useQuestion();
   const { responses } = useResponse();
-  
+  console.log(questions)
 
   useEffect(() => {
     if (questions.length > 0 && responses.length > 0) {
@@ -92,103 +92,115 @@ const SurveyResponsesPage = () => {
 
       {/* Content Section */}
       <div className="min-h-[60vh]">
-        {tab === 0 && (
-          <>
-            {responses.length === 0 ? (
-              <div className="bg-white rounded-lg p-16 text-center">
-                <h2 className="text-xl font-semibold text-gray-600 mb-2">
-                  No responses found.
-                </h2>
-                <p className="text-sm text-gray-500">
-                  Responses will appear here once participants submit the survey.
-                </p>
+    
+{tab === 0 && (
+  <>
+    {responses.length === 0 ? (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <svg 
+            className=" h-16 mx-auto mb-4 text-gray-300" 
+            fill="none" 
+            stroke="currentColor" 
+            viewBox="0 0 24 24"
+          >
+            <path 
+              strokeLinecap="round" 
+              strokeLinejoin="round" 
+              strokeWidth={1.5} 
+              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" 
+            />
+          </svg>
+          <h2 className="text-lg font-medium text-gray-800 mb-2">
+            No responses yet
+          </h2>
+          <p className="text-sm text-gray-500">
+            Responses will appear here once participants submit the survey
+          </p>
+        </div>
+      </div>
+    ) : (
+      <div className="space-y-6">
+        {responses.map((response, idx) => (
+          <div
+            key={idx}
+            className="bg-white border border-gray-200 rounded-lg overflow-hidden"
+            aria-label={`Response number ${idx + 1}`}
+          >
+            <div className="px-6 py-4 border-b border-gray-100">
+              <h2 className="text-base font-semibold text-gray-800">
+                Response #{idx + 1}
+              </h2>
+            </div>
+
+            <div className="px-6 py-4">
+              {/* Metadata section */}
+              <div className="space-y-3 pb-6 border-b border-gray-100">
+                {Object.entries(response)
+                  .filter(
+                    ([key]) =>
+                      key !== "answers" && !EXCLUDED_KEYS.includes(key)
+                  )
+                  .map(([key, value]) => (
+                    <div key={key} className="flex gap-4">
+                      <div className="font-medium text-gray-700 min-w-[140px] text-sm">
+                        {key
+                          .replace(/_/g, " ")
+                          .replace(/\b\w/g, (c) => c.toUpperCase())}
+                      </div>
+                      <div className="text-gray-600 text-sm flex-1">
+                        {formatAnswer(value)}
+                      </div>
+                    </div>
+                  ))}
               </div>
-            ) : (
-              <div className="flex flex-col gap-6">
-                {responses.map((response, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-white rounded-lg shadow-md p-6"
-                    aria-label={`Response number ${idx + 1}`}
-                  >
-                    <h2 className="text-xl font-semibold mb-4">
-                      Response {idx + 1}
-                    </h2>
 
-                    <table className="w-full mb-4">
-                      <tbody>
-                        {Object.entries(response)
-                          .filter(
-                            ([key]) =>
-                              key !== "answers" && !EXCLUDED_KEYS.includes(key)
-                          )
-                          .map(([key, value]) => (
-                            <tr key={key} className="border-b border-gray-200">
-                              <th className="text-left py-3 px-2 font-semibold w-1/4 align-top">
-                                {key
-                                  .replace(/_/g, " ")
-                                  .replace(/\b\w/g, (c) => c.toUpperCase())}
-                              </th>
-                              <td className="py-3 px-2">
-                                {formatAnswer(value)}
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
+              {/* Answers section */}
+              {response.answers && Array.isArray(response.answers) && (
+                <div className="mt-6">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-4">
+                    Survey Answers
+                  </h3>
 
-                    {response.answers && Array.isArray(response.answers) && (
-                      <>
-                        <h3 className="text-lg font-semibold mt-6 mb-4">
-                          Answers:
-                        </h3>
-
-                        <table className="w-full">
-                          <thead>
-                            <tr className="bg-gray-100 border-b-2 border-gray-300">
-                              <th className="py-3 px-2 text-left w-2/5 font-semibold">
-                                Question
-                              </th>
-                              <th className="py-3 px-2 text-left font-semibold">
-                                Answer
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {response.answers.map((ans, i) => {
-                              const found = questions.find(
-                                (q) => q.questionId === ans.questionId
-                              );
-                              const label =
-                                found?.label ||
-                                found?.config?.label ||
-                                ans.questionId
-                                  .replace(/_/g, " ")
-                                  .replace(/\b\w/g, (c) => c.toUpperCase());
-                              return (
-                                <tr
-                                  key={`${ans.questionId}-${i}`}
-                                  className="border-b border-gray-100"
-                                >
-                                  <td className="py-3 px-2 align-top">
-                                    {`${label} (${ans.questionId})`}
-                                  </td>
-                                  <td className="py-3 px-2">
-                                    {formatAnswer(ans.answer)}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </>
-                    )}
+                  <div className="space-y-4">
+                    {response.answers.map((ans, i) => {
+                      const found = questions.find(
+                        (q) => q.questionId === ans.questionId
+                      );
+                      const label =
+                        found?.label ||
+                        found?.config?.label ||
+                        ans.questionId
+                          .replace(/_/g, " ")
+                          .replace(/\b\w/g, (c) => c.toUpperCase());
+                      
+                      return (
+                        <div
+                          key={`${ans.questionId}-${i}`}
+                          className="pb-4 border-b border-gray-100 last:border-0"
+                        >
+                          <div className="text-sm font-medium text-gray-700 mb-2">
+                            {label}
+                            <span className="text-xs text-gray-400 ml-2">
+                              ({ans.questionId})
+                            </span>
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            {formatAnswer(ans.answer)}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </>
+)}
 
         {tab === 1 && (
           <div>

@@ -1,26 +1,28 @@
 const EXCLUDED_KEYS = ["id", "projectId", "__v", "orgId", "surveyId"];
 
 export const formatAnswer = (val) => {
-  if (!val) return "-";
+  if (!val) return <span className="text-gray-400 text-sm">No answer</span>;
 
   if (typeof val === "object" && val?.type === "matrix" && val?.value) {
     return (
-      <table className="border w-full text-sm">
-        <thead>
-          <tr className="bg-gray-100">
-            <th className="border px-2 py-1 text-left">Service</th>
-            <th className="border px-2 py-1 text-left">Rating</th>
-          </tr>
-        </thead>
-        <tbody>
-          {Object.entries(val.value).map(([key, value]) => (
-            <tr key={key}>
-              <td className="border px-2 py-1">{key}</td>
-              <td className="border px-2 py-1">{value}</td>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="border-b">
+              <th className="px-3 py-2 text-left font-medium text-gray-700">Service</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-700">Rating</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {Object.entries(val.value).map(([key, value], idx) => (
+              <tr key={key} className={idx % 2 === 0 ? "bg-gray-50/50" : ""}>
+                <td className="px-3 py-2 text-gray-800">{key}</td>
+                <td className="px-3 py-2 text-gray-600">{value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     );
   }
 
@@ -30,67 +32,77 @@ export const formatAnswer = (val) => {
     val.includes("firebase")
   ) {
     return (
-      <a href={val} target="_blank" rel="noopener noreferrer">
-        <img src={val} alt="uploaded" className="w-20 h-20 object-contain" />
+      <a 
+        href={val} 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="inline-block hover:opacity-80 transition-opacity"
+      >
+        <img 
+          src={val} 
+          alt="uploaded" 
+          className="w-24 h-24 object-cover rounded border border-gray-200" 
+        />
       </a>
     );
   }
 
   if (val?.seconds && val?.nanoseconds) {
     const date = new Date(val.seconds * 1000);
-    return date.toLocaleString();
+    return <span className="text-sm text-gray-700">{date.toLocaleString()}</span>;
   }
 
-if (
-  Array.isArray(val) &&
-  val.length > 0 &&
-  val.every((item) => item && typeof item === "object")
-) {
-  const keys = Object.keys(val[0]).filter((k) => !EXCLUDED_KEYS.includes(k));
-  return (
-    <table className="border w-full text-sm mt-1">
-      <thead>
-        <tr className="bg-gray-50">
-          {keys.map((key) => (
-            <th key={key} className="border px-2 py-1 capitalize text-left">
-              {key}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {val.map((item, i) => (
-          <tr key={i}>
-            {keys.map((key) => (
-              <td key={key} className="border px-2 py-1">
-                {formatAnswer(item[key])}
-              </td>
+  if (
+    Array.isArray(val) &&
+    val.length > 0 &&
+    val.every((item) => item && typeof item === "object")
+  ) {
+    const keys = Object.keys(val[0]).filter((k) => !EXCLUDED_KEYS.includes(k));
+    return (
+      <div className="overflow-x-auto mt-2">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="border-b">
+              {keys.map((key) => (
+                <th key={key} className="px-3 py-2 text-left font-medium text-gray-700 capitalize">
+                  {key.replace(/_/g, " ")}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {val.map((item, i) => (
+              <tr key={i} className={i % 2 === 0 ? "bg-gray-50/50" : ""}>
+                {keys.map((key) => (
+                  <td key={key} className="px-3 py-2 text-gray-600">
+                    {formatAnswer(item[key])}
+                  </td>
+                ))}
+              </tr>
             ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
+          </tbody>
+        </table>
+      </div>
+    );
+  }
 
   if (typeof val === "object") {
     const entries = Object.entries(val).filter(
       ([key]) => !EXCLUDED_KEYS.includes(key)
     );
     return (
-      <table className="border w-full text-sm mt-1">
-        <tbody>
-          {entries.map(([key, value]) => (
-            <tr key={key}>
-              <td className="border px-2 py-1 font-semibold">{key}</td>
-              <td className="border px-2 py-1">{formatAnswer(value)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="space-y-1 text-sm">
+        {entries.map(([key, value]) => (
+          <div key={key} className="flex gap-2">
+            <span className="font-medium text-gray-700 min-w-[100px]">
+              {key.replace(/_/g, " ")}:
+            </span>
+            <span className="text-gray-600">{formatAnswer(value)}</span>
+          </div>
+        ))}
+      </div>
     );
-  } 
+  }
 
-  return val.toString();
+  return <span className="text-gray-800">{val.toString()}</span>;
 };
