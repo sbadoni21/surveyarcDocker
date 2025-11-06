@@ -1,11 +1,5 @@
-import {
-  BarChartComponent,
-  PictureChoiceBarChart,
-  PieChartComponent,
-  RatingBarChart,
-  VerticalMatrixBarChart,
-  YesNoProgressBar,
-} from "@/utils/analytics/graphs";
+
+import {  NpsAnalytics, BarChartComponent, CheckboxAnalyticsFull, PictureChoiceBarChart, PieChartComponent, RatingBarChart, VerticalMatrixBarChart, YesNoProgressBar } from "@/utils/analytics/graphs";
 import { Divider, Paper, Typography } from "@mui/material";
 
 export const AnalyticsCard = ({ data }) => {
@@ -31,8 +25,12 @@ export const AnalyticsCard = ({ data }) => {
       {type === "yes_no" && chartData ? (
         <YesNoProgressBar data={chartData} />
       ) : null}
+      {type ==='nps' && chartData ? (
+<NpsAnalytics data={chartData} onBucketClick={(score) => console.log("Clicked score", score)} />
 
-      {(type === "multiple_choice" || type === "select") && chartData ? (
+      ):null}
+
+      {(type === "multiple_choice" || type === "select" ) && chartData ? (
         <PieChartComponent data={chartData} />
       ) : null}
 
@@ -40,13 +38,26 @@ export const AnalyticsCard = ({ data }) => {
         <RatingBarChart data={chartData} />
       ) : null}
 
-      {type === "number" && chartData ? (
+      {(type === "number"  )&& chartData ? (
         <BarChartComponent data={chartData} />
       ) : null}
 
       {type === "picture_choice" && chartData ? (
         <PictureChoiceBarChart data={chartData} />
       ) : null}
+
+      {type === "dropdown" && chartData ? (
+        <PieChartComponent data={chartData} />
+      ) : null}
+
+ {type === "checkbox" && chartData ? (
+  <CheckboxAnalyticsFull
+    question={{ label, data: chartData }} // Construct the expected structure
+    top={8}
+    Chart={BarChartComponent}
+    options={{ splitCombined: true, distribution: "full" }}
+  />
+) : null}
 
       {type === "matrix" && chartData && data.cols ? (
         <>

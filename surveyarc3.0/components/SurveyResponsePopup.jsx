@@ -34,7 +34,6 @@ const SurveyResponsesPage = () => {
   const { questions } = useQuestion();
   const { responses } = useResponse();
   
-  console.log(responses);
 
   useEffect(() => {
     if (questions.length > 0 && responses.length > 0) {
