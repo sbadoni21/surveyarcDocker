@@ -14,7 +14,8 @@ export function normalizeName(n) {
  *  - separators: regex (default /[,;]+/)
  */
 export function aggregateCheckboxResponses(rows = [], options = {}) {
-  const { splitCombined = true, distribution = "full", separators = /[,;]+/ } = options;
+  const { splitCombined = true, distribution = "full", separators = /,(?![^(]*\))/
+ } = options;
   const byName = new Map();
   let totalRows = 0;
   let totalSelections = 0; // sum of values
