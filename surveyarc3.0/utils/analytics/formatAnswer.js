@@ -41,33 +41,38 @@ export const formatAnswer = (val) => {
     return date.toLocaleString();
   }
 
-  if (Array.isArray(val) && val.every((item) => typeof item === "object")) {
-    const keys = Object.keys(val[0]).filter((k) => !EXCLUDED_KEYS.includes(k));
-    return (
-      <table className="border w-full text-sm mt-1">
-        <thead>
-          <tr className="bg-gray-50">
+if (
+  Array.isArray(val) &&
+  val.length > 0 &&
+  val.every((item) => item && typeof item === "object")
+) {
+  const keys = Object.keys(val[0]).filter((k) => !EXCLUDED_KEYS.includes(k));
+  return (
+    <table className="border w-full text-sm mt-1">
+      <thead>
+        <tr className="bg-gray-50">
+          {keys.map((key) => (
+            <th key={key} className="border px-2 py-1 capitalize text-left">
+              {key}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {val.map((item, i) => (
+          <tr key={i}>
             {keys.map((key) => (
-              <th key={key} className="border px-2 py-1 capitalize text-left">
-                {key}
-              </th>
+              <td key={key} className="border px-2 py-1">
+                {formatAnswer(item[key])}
+              </td>
             ))}
           </tr>
-        </thead>
-        <tbody>
-          {val.map((item, i) => (
-            <tr key={i}>
-              {keys.map((key) => (
-                <td key={key} className="border px-2 py-1">
-                  {formatAnswer(item[key])}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    );
-  }
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 
   if (typeof val === "object") {
     const entries = Object.entries(val).filter(
