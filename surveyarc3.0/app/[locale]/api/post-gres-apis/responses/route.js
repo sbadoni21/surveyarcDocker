@@ -30,6 +30,7 @@ async function forceDecryptResponse(res) {
 
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
+  console.log(searchParams)
   const survey_id = searchParams.get("survey_id");
   if (!survey_id) {
     return NextResponse.json({ status: "error", message: "survey_id is required" }, { status: 400 });

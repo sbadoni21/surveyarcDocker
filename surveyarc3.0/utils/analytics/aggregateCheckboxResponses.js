@@ -56,7 +56,7 @@ export function aggregateCheckboxResponses(rows = [], options = {}) {
  * For each input row, counts how many choices are present (after splitting, if enabled)
  */
 export function countSelectionsPerRow(rows = [], options = {}) {
-  const { splitCombined = true, separators = /[,;]+/ } = options;
+  const { splitCombined = true, separators = /,(?![^(]*\))/} = options;
   const dist = new Map(); // count -> rows
   let totalRows = 0;
   if (!Array.isArray(rows)) rows = [];
@@ -102,7 +102,7 @@ export function topCombinations(rows = [], topN = 10) {
  * counts are computed using splitCombined=true and distribution = full
  */
 export function cooccurrenceMatrix(rows = [], options = {}) {
-  const { splitCombined = true, separators = /[,;]+/ } = options;
+  const { splitCombined = true, separators = /,(?![^(]*\))/ } = options;
   const labelsSet = new Set();
   const rowChoices = [];
 

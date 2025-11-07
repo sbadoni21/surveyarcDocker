@@ -10,19 +10,18 @@ export const ResponseProvider = ({ children }) => {
   const [selectedResponse, setSelectedResponse] = useState(null);
   const [loading, setLoading] = useState(false);
   const path = usePathname();
-  const parts = (path || "").split("/"); // e.g. /en/postgres-org/{orgId}/dashboard/projects/{projectId}/{surveyId}
-  // Adjust index per your routing: you used 7 earlier; confirm with your actual path.
+  const parts = (path || "").split("/"); 
   const inferredSurveyId = parts[7] || parts[parts.length - 1];
 
 useEffect(() => {
     if (inferredSurveyId) {
       getAllResponses(inferredSurveyId);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
 
   const getAllResponses = async (surveyId) => {
     setLoading(true);
+    console.log(surveyId)
     try {
       const list = await ResponseModel.getAllBySurvey(surveyId);
       setResponses(list || []);

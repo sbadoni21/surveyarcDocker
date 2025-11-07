@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 import { calculateAnalytics } from "@/utils/analytics/calculateAnalytics";
@@ -9,7 +9,10 @@ import { formatAnswer } from "@/utils/analytics/formatAnswer";
 import { AnalyticsCard } from "./analytics/AnalyticsCard";
 import { useQuestion } from "@/providers/questionPProvider";
 import { useResponse } from "@/providers/postGresPorviders/responsePProvider";
-
+import { findDuplicateSurveys } from "@/utils/analytics/duplicateDetection";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
+import { Button } from "@mui/material";
 const EXCLUDED_KEYS = ["id", "projectId", "__v", "orgId", "surveyId"];
 
 const ANALYTICS_SUPPORTED_TYPES = new Set([
@@ -27,13 +30,12 @@ const ANALYTICS_SUPPORTED_TYPES = new Set([
 ]);
 
 const SurveyResponsesPage = () => {
-  const router = useRouter();
+  const router = usePathname();
   const [tab, setTab] = useState(0);
   const [analytics, setAnalytics] = useState({});
   
   const { questions } = useQuestion();
-  const { responses } = useResponse();
-  console.log(questions)
+  const { responses, deleteResponse } = useResponse();
 
   useEffect(() => {
     if (questions.length > 0 && responses.length > 0) {
@@ -44,10 +46,44 @@ const SurveyResponsesPage = () => {
     }
   }, [questions, responses]);
 
-  const handleBack = () => {
-    router.back();
-  };
+  const surveyId = router.split('/')[7];
+console.log(responses)
+const downloadPDF = async () => {
+  const element = document.getElementById("analytics-page");
+  const canvas = await html2canvas(element, { 
+    scale: 1,  // Reduced from 2 to 1
+    useCORS: true,
+    logging: false,
+    allowTaint: true
+  });
+  
+  // Use JPEG with compression instead of PNG
+  const imgData = canvas.toDataURL("image/jpeg", 0.7);  // 0.7 = 70% quality
 
+  const pdf = new jsPDF("p", "mm", "a4");
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+
+  const imgWidth = pageWidth;
+  const imgHeight = (canvas.height * pageWidth) / canvas.width;
+
+  let heightLeft = imgHeight;
+  let position = 0;
+
+  // First Page
+  pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight, undefined, 'FAST');
+  heightLeft -= pageHeight;
+
+  // Add multi-pages if needed
+  while (heightLeft > 0) {
+    position = heightLeft - imgHeight;
+    pdf.addPage();
+    pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight, undefined, 'FAST');
+    heightLeft -= pageHeight;
+  }
+
+  pdf.save("analytics.pdf");
+};
   return (
     <div className=" mx-auto py-8 px-4">
       {/* Header Section */}
@@ -131,6 +167,9 @@ const SurveyResponsesPage = () => {
               <h2 className="text-base font-semibold text-gray-800">
                 Response #{idx + 1}
               </h2>
+                                    <button onClick={()=>(deleteResponse(surveyId, response.response_id)
+                                    )}>  Delete</button>
+
             </div>
 
             <div className="px-6 py-4">
@@ -213,14 +252,18 @@ const SurveyResponsesPage = () => {
                   Analytics will be generated once responses are collected.
                 </p>
               </div>
-            ) : (
-              <div className="flex flex-col gap-6">
+            ) : (<div><Button variant="contained" onClick={downloadPDF}>
+  Download Page PDF
+</Button>
+    <div id="analytics-page" className="flex flex-col gap-6">
                 {Object.entries(analytics)
                   .filter(([_, data]) => ANALYTICS_SUPPORTED_TYPES.has(data.type))
                   .map(([qId, data]) => (
                     <AnalyticsCard key={qId} question={qId} data={data} />
                   ))}
               </div>
+</div>
+          
             )}
           </div>
         )}
