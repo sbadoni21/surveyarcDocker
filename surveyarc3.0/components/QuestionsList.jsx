@@ -29,6 +29,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { usePathname } from "next/navigation";
 import { useSurvey } from "@/providers/surveyPProvider";
 import { RiDeleteBin6Line } from "react-icons/ri";
+import { useQuestion } from "@/providers/questionPProvider";
 
 const ICON_BG_CLASSES = {
   CONTACT_EMAIL: "bg-[#FFEEDF] dark:bg-[#483A2D]",
@@ -495,7 +496,7 @@ const DraggableQuestionsList = ({
   const surveyId = pathParts[7];
   const scrollRef = useRef(null);
   const { updateSurvey } = useSurvey();
-
+  const { deleteQuestion } = useQuestion();
   const [renderBlocks, setRenderBlocks] = useState(blocks || []);
   const [byBlock, setByBlock] = useState({});
   const [activeId, setActiveId] = useState(null);
@@ -775,18 +776,21 @@ const DraggableQuestionsList = ({
       .map((q) => q.questionId);
 
     try {
+      await deleteQuestion(orgId, surveyId, questionId);
+
       const blockOrder = newBlocks.map((b) => b.blockId);
       await updateSurvey(orgId, surveyId, {
         blocks: newBlocks,
         blockOrder,
         questionOrder: updatedQuestionOrder,
       });
+
       onBlocksChange?.(newBlocks);
+      setSelectedQuestionIndex?.(null);
     } catch (e) {
       console.error("Failed to delete question", e);
+      alert("Error deleting question. Please try again.");
     }
-
-    setSelectedQuestionIndex?.(null);
   };
 
   const handleDeleteBlock = async (blockId) => {

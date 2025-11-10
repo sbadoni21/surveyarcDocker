@@ -1139,24 +1139,101 @@ function getConditionValueOptions(question) {
       { label: "Equals", value: "equals" },
       { label: "Not Equals", value: "not_equals" },
     ];
-    if (type === "number")
-      base.push(
-        { label: "Greater Than", value: "greater_than" },
-        { label: "Less Than", value: "less_than" }
-      );
-    if (type === "nps") {
-      return [
-        { label: "Is Promoter (9–10)", value: "nps_is_promoter" },
-        { label: "Is Passive (6–8)", value: "nps_is_passive" },
-        { label: "Is Detractor (0–5)", value: "nps_is_detractor" },
-        { label: "Equals", value: "equals" },
-        { label: "Not Equals", value: "not_equals" },
-        { label: "≥ (at least)", value: "nps_gte" },
-        { label: "≤ (at most)", value: "nps_lte" },
-        { label: "Between (inclusive)", value: "nps_between" },
-      ];
+
+    switch (type) {
+      case "contact_email":
+      case "contact_phone":
+      case "contact_address":
+      case "contact_website":
+      case "short_text":
+      case "long_text":
+        return [
+          ...base,
+          { label: "Contains", value: "contains" },
+          { label: "Does Not Contain", value: "not_contains" },
+          { label: "Starts With", value: "starts_with" },
+          { label: "Ends With", value: "ends_with" },
+          { label: "Is Empty", value: "is_empty" },
+          { label: "Is Not Empty", value: "is_not_empty" },
+        ];
+
+      case "number":
+      case "rating":
+      case "opinion_scale":
+        return [
+          ...base,
+          { label: "Greater Than", value: "greater_than" },
+          { label: "Less Than", value: "less_than" },
+          { label: "≥ (At Least)", value: "gte" },
+          { label: "≤ (At Most)", value: "lte" },
+          { label: "Between (Inclusive)", value: "between" },
+          { label: "Is Empty", value: "is_empty" },
+          { label: "Is Not Empty", value: "is_not_empty" },
+        ];
+
+      case "date":
+        return [
+          ...base,
+          { label: "Before", value: "before" },
+          { label: "After", value: "after" },
+          { label: "On", value: "on" },
+          { label: "Between", value: "between" },
+          { label: "Is Empty", value: "is_empty" },
+          { label: "Is Not Empty", value: "is_not_empty" },
+        ];
+
+      case "multiple_choice":
+      case "dropdown":
+      case "picture_choice":
+      case "checkbox":
+      case "ranking":
+      case "matrix":
+        return [
+          ...base,
+          { label: "Contains", value: "contains" },
+          { label: "Does Not Contain", value: "not_contains" },
+          { label: "Includes Any Of", value: "includes_any" },
+          { label: "Includes All Of", value: "includes_all" },
+          { label: "Is Empty", value: "is_empty" },
+          { label: "Is Not Empty", value: "is_not_empty" },
+        ];
+
+      case "yes_no":
+      case "legal":
+        return [
+          { label: "Equals", value: "equals" },
+          { label: "Not Equals", value: "not_equals" },
+        ];
+
+      case "file_upload":
+      case "google_drive":
+      case "video":
+      case "calendly":
+        return [
+          { label: "Is Uploaded / Present", value: "is_present" },
+          { label: "Is Not Uploaded", value: "is_not_present" },
+        ];
+
+      case "nps":
+        return [
+          { label: "Is Promoter (9–10)", value: "nps_is_promoter" },
+          { label: "Is Passive (6–8)", value: "nps_is_passive" },
+          { label: "Is Detractor (0–5)", value: "nps_is_detractor" },
+          { label: "Equals", value: "equals" },
+          { label: "Not Equals", value: "not_equals" },
+          { label: "≥ (At Least)", value: "nps_gte" },
+          { label: "≤ (At Most)", value: "nps_lte" },
+          { label: "Between (Inclusive)", value: "nps_between" },
+        ];
+
+      case "welcome_screen":
+      case "end_screen":
+      case "redirect_url":
+        return [];
+
+      default:
+        return base;
     }
-    return base;
   };
 
   return (

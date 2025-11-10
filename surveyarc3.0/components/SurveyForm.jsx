@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo, useEffect, act } from "react";
+import { useState, useMemo, useEffect } from "react";
 import defaultConfigMap from "@/enums/defaultConfigs";
 import { FileText } from "lucide-react";
 import RenderQuestion from "./AnswerUI";
@@ -19,13 +19,10 @@ export default function SurveyForm({
   const [submitting, setSubmitting] = useState(false);
 
   const ruleEngine = useMemo(() => new RuleEngine(rules), [rules]);
-  useEffect(() => {
-    setCurrentPageIndex(0);
-    setJumpToQuestion(null);
-  }, [currentBlockIndex]);
 
+  // derive blocksWithQuestions from incoming props initially and when props change
   const [blocksWithQuestions, setBlocksWithQuestions] = useState(() =>
-    blocks
+    (blocks || [])
       .map((block) => ({
         ...block,
         questions: (block.questionOrder || [])
@@ -38,10 +35,9 @@ export default function SurveyForm({
       )
   );
 
-  // 🧠 Keep it updated if blocks or questions change
   useEffect(() => {
     setBlocksWithQuestions(
-      blocks
+      (blocks || [])
         .map((block) => ({
           ...block,
           questions: (block.questionOrder || [])
@@ -54,8 +50,13 @@ export default function SurveyForm({
             !block.blockId.startsWith("unassigned_")
         )
     );
+    // reset navigation positions when blocks or questions change
+    setCurrentBlockIndex(0);
+    setCurrentPageIndex(0);
+    setJumpToQuestion(null);
   }, [blocks, questions]);
 
+  // Helper: compute pages for the currentBlock from its questionOrder
   const currentBlock = blocksWithQuestions[currentBlockIndex];
 
   const blockPages = useMemo(() => {
@@ -64,48 +65,134 @@ export default function SurveyForm({
     const pages = [];
     let currentPage = [];
 
-    currentBlock.questionOrder.forEach((qid) => {
-      if (qid.startsWith("PB-")) {
+    const qOrder = Array.isArray(currentBlock.questionOrder)
+      ? currentBlock.questionOrder
+      : (currentBlock.questions || []).map((q) => q.questionId);
+
+    qOrder.forEach((qid) => {
+      if (String(qid).startsWith("PB-")) {
         if (currentPage.length > 0) {
           pages.push(currentPage);
-
           currentPage = [];
         }
       } else {
-        const question = questions.find((q) => q.questionId === qid);
+        const question = (currentBlock.questions || []).find(
+          (q) => q.questionId === qid
+        );
         if (question) currentPage.push(question);
       }
     });
 
-    if (currentPage.length > 0) {
-      pages.push(currentPage);
-    }
+    if (currentPage.length > 0) pages.push(currentPage);
 
     return pages;
-  }, [currentBlock, questions]);
+  }, [currentBlock, questions, blocksWithQuestions]);
+
+  // EFFECT: evaluate rules whenever answers change, compute pendingActions,
+  // and synchronously prepare sets of skipped questions/blocks but DO NOT navigate here.
+  useEffect(() => {
+    if (!Object.keys(answers).length) {
+      setPendingActions([]);
+      return;
+    }
+
+    const actions = ruleEngine.evaluate(answers) || [];
+    setPendingActions(actions);
+
+    // Build skip sets to apply eagerly to blocksWithQuestions so UI hides skipped items immediately
+    const skipQuestionIds = new Set();
+    const skipBlockIds = new Set();
+
+    actions.forEach((action) => {
+      if (action?.type === "skip_questions" && Array.isArray(action.questionIds)) {
+        action.questionIds.forEach((id) => skipQuestionIds.add(id));
+      }
+      if (action?.type === "skip_block" && Array.isArray(action.blockIds)) {
+        action.blockIds.forEach((id) => skipBlockIds.add(id));
+      }
+    });
+
+    if (skipQuestionIds.size === 0 && skipBlockIds.size === 0) {
+      return;
+    }
+
+    // Apply skips synchronously using updater
+    setBlocksWithQuestions((prev) => {
+      // remove blocked blocks first
+      const filtered = prev.filter((b) => !skipBlockIds.has(b.blockId));
+
+      // remove skipped questions from each remaining block (both questionOrder and questions)
+      const updated = filtered.map((b) => {
+        const qOrder =
+          Array.isArray(b.questionOrder) && b.questionOrder.length
+            ? b.questionOrder
+            : (b.questions || []).map((q) => q.questionId);
+
+        const newQuestionOrder = qOrder.filter((qid) => !skipQuestionIds.has(qid));
+        const newQuestions = (b.questions || []).filter(
+          (q) => !skipQuestionIds.has(q.questionId)
+        );
+
+        return {
+          ...b,
+          questionOrder: newQuestionOrder,
+          questions: newQuestions,
+        };
+      });
+
+      return updated;
+    });
+
+    // If current block was removed, clamp the index (updater form)
+    setCurrentBlockIndex((prev) => Math.max(0, Math.min(prev, Math.max(0, blocksWithQuestions.length - 1))));
+    // keep page index in-bounds: an effect below will clamp if needed
+  }, [answers, ruleEngine]);
+
+  // Ensure currentPageIndex is in bounds when pages change
+  useEffect(() => {
+    if (blockPages.length && currentPageIndex >= blockPages.length) {
+      setCurrentPageIndex(Math.max(0, blockPages.length - 1));
+    }
+  }, [blockPages, currentPageIndex]);
+
+  // When the current page has zero questions, auto-advance (this handles empty pages after skips)
+  useEffect(() => {
+    if (!currentBlock || !blockPages.length) return;
+
+    const currentPageQuestions = blockPages[currentPageIndex] || [];
+    if (currentPageQuestions.length === 0) {
+      if (currentPageIndex < blockPages.length - 1) {
+        setCurrentPageIndex((prev) => prev + 1);
+      } else {
+        // page empty and last page in this block, try moving to next block
+        if (currentBlockIndex < blocksWithQuestions.length - 1) {
+          setCurrentBlockIndex((prev) => prev + 1);
+          setCurrentPageIndex(0);
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blockPages, currentPageIndex, currentBlock, blocksWithQuestions]);
 
   const handleChange = (questionId, value) => {
-    const updatedAnswers = { ...answers, [questionId]: value };
-    setAnswers(updatedAnswers);
-    // console.log(updatedAnswers);
-    const actions = ruleEngine.evaluate(updatedAnswers);
-    // console.log(actions);
-    setPendingActions(actions || []);
+    const questionType = questions.find((q) => q.questionId === questionId)?.type;
+
+    const finalValue = ["number", "rating", "opinion_scale", "nps"].includes(
+      questionType
+    )
+      ? Number(value)
+      : value;
+
+    setAnswers((prev) => {
+      return { ...prev, [questionId]: finalValue };
+    });
   };
 
   const isLastBlock = currentBlockIndex === blocksWithQuestions.length - 1;
 
+  // Improved handleNextBlock: build updatedBlocks locally and decide navigation based on that
   const handleNextBlock = () => {
     const isLastPage = currentPageIndex === blockPages.length - 1;
-
-    let skipBlockIds = new Set();
-    let skipQuestionIds = new Set();
-    let gotoTargetBlock = null;
-    let gotoTargetQuestion = null;
-    let shouldEnd = false;
-    let messageToShow = null;
-    const variablesToSet = {};
-    const calculations = {};
 
     const actionsArray = Array.isArray(pendingActions)
       ? pendingActions
@@ -113,55 +200,46 @@ export default function SurveyForm({
       ? [pendingActions]
       : [];
 
+    const skipQuestionIds = new Set();
+    const skipBlockIds = new Set();
+    let gotoTargetBlock = null;
+    let gotoTargetQuestion = null;
+    let shouldEnd = false;
+    let messageToShow = null;
+
     actionsArray.forEach((action) => {
       if (!action) return;
-
       switch (action.type) {
         case "skip_block":
-          (Array.isArray(action.blockIds) ? action.blockIds : []).forEach(
-            (id) => skipBlockIds.add(id)
+          (Array.isArray(action.blockIds) ? action.blockIds : []).forEach((id) =>
+            skipBlockIds.add(id)
           );
           break;
-
         case "skip_questions":
-          (Array.isArray(action.questionIds) ? action.questionIds : []).forEach(
-            (id) => skipQuestionIds.add(id)
+          (Array.isArray(action.questionIds) ? action.questionIds : []).forEach((id) =>
+            skipQuestionIds.add(id)
           );
           break;
-
         case "goto_question":
           gotoTargetQuestion = action.questionId;
           break;
-
         case "goto_block":
           gotoTargetBlock = action.blockId;
           break;
-
         case "goto_block_question":
           gotoTargetBlock = action.targetBlockId;
           gotoTargetQuestion = action.targetQuestionId;
           break;
-
         case "end":
           shouldEnd = true;
           break;
-
         case "show_message":
           messageToShow = action.message;
           break;
-
         case "set_variable":
-          if (action.target && action.parameters?.value !== undefined) {
-            variablesToSet[action.target] = action.parameters.value;
-          }
-          break;
-
         case "calculate":
-          if (action.target) {
-            calculations[action.target] = action.parameters?.value;
-          }
+          // preserve original behavior if you plan to implement variables/calculations
           break;
-
         default:
           console.warn("Unknown action type:", action.type);
       }
@@ -173,91 +251,90 @@ export default function SurveyForm({
       return;
     }
 
-    // 🧠 Update skipped questions within the current block immediately
-    if (skipQuestionIds.size > 0) {
-      setBlocksWithQuestions((prev) =>
-        prev.map((block, idx) => {
-          if (idx !== currentBlockIndex) return block;
-          return {
-            ...block,
-            questions: block.questions.filter(
-              (q) => !skipQuestionIds.has(q.questionId)
-            ),
-            questionOrder: block.questionOrder.filter(
-              (qid) => !skipQuestionIds.has(qid)
-            ),
-          };
-        })
-      );
-    }
+    // Build updated blocks synchronously (local) so decisions are made from the new structure
+    const updatedBlocks = blocksWithQuestions
+      .filter((b) => !skipBlockIds.has(b.blockId))
+      .map((b) => {
+        const qOrder =
+          Array.isArray(b.questionOrder) && b.questionOrder.length
+            ? b.questionOrder
+            : (b.questions || []).map((q) => q.questionId);
 
-    // 🔹 Handle goto logic
+        const newQOrder = qOrder.filter((qid) => !skipQuestionIds.has(qid));
+        const newQuestions = (b.questions || []).filter(
+          (q) => !skipQuestionIds.has(q.questionId)
+        );
+
+        return {
+          ...b,
+          questionOrder: newQOrder,
+          questions: newQuestions,
+        };
+      });
+
+    // If goto is requested, resolve indices and set jump
     if (gotoTargetBlock || gotoTargetQuestion) {
       let targetBlockIndex = currentBlockIndex;
-
       if (gotoTargetBlock) {
-        const idx = blocksWithQuestions.findIndex(
-          (b) => b.blockId === gotoTargetBlock
-        );
+        const idx = updatedBlocks.findIndex((b) => b.blockId === gotoTargetBlock);
         if (idx !== -1) targetBlockIndex = idx;
       }
 
       if (gotoTargetQuestion) {
-        const targetBlock = blocksWithQuestions[targetBlockIndex];
-        const questionIdx = targetBlock.questions.findIndex(
-          (q) => q.questionId === gotoTargetQuestion
-        );
-        if (questionIdx !== -1) {
-          setJumpToQuestion({
-            blockId: targetBlock.blockId,
-            questionId: gotoTargetQuestion,
-          });
+        const targetBlock = updatedBlocks[targetBlockIndex];
+        if (targetBlock) {
+          const qIdx = (targetBlock.questions || []).findIndex(
+            (q) => q.questionId === gotoTargetQuestion
+          );
+          if (qIdx !== -1) {
+            setJumpToQuestion({
+              blockId: targetBlock.blockId,
+              questionId: gotoTargetQuestion,
+            });
+          } else {
+            setJumpToQuestion(null);
+          }
         }
+      } else {
+        setJumpToQuestion(null);
       }
 
-      setCurrentBlockIndex(targetBlockIndex);
-      setPendingActions([]);
+      // Commit updates and move
+      setBlocksWithQuestions(updatedBlocks);
+      setCurrentBlockIndex(Math.min(targetBlockIndex, Math.max(0, updatedBlocks.length - 1)));
       setCurrentPageIndex(0);
+      setPendingActions([]);
       return;
     }
 
-    // 🔹 Move to next page or block
+    // If no goto, commit updatedBlocks and proceed
+    setBlocksWithQuestions(updatedBlocks);
+
     if (!isLastPage) {
-      setCurrentPageIndex(currentPageIndex + 1);
+      setCurrentPageIndex((prev) => prev + 1);
+      setJumpToQuestion(null);
+      setPendingActions([]);
+      return;
+    }
+
+    // find next non-empty block after the currentBlockIndex
+    let nextBlockIndex = currentBlockIndex + 1;
+    while (
+      nextBlockIndex < updatedBlocks.length &&
+      (!updatedBlocks[nextBlockIndex] ||
+        (updatedBlocks[nextBlockIndex].questions || []).length === 0)
+    ) {
+      nextBlockIndex++;
+    }
+
+    if (nextBlockIndex < updatedBlocks.length) {
+      setCurrentBlockIndex(nextBlockIndex);
+      setCurrentPageIndex(0);
+      setPendingActions([]);
       setJumpToQuestion(null);
     } else {
-      let nextBlockIndex = currentBlockIndex + 1;
-
-      // Skip entire blocks if required
-      while (nextBlockIndex < blocksWithQuestions.length) {
-        if (skipBlockIds.has(blocksWithQuestions[nextBlockIndex].blockId))
-          nextBlockIndex++;
-        else break;
-      }
-
-      if (nextBlockIndex < blocksWithQuestions.length) {
-        const updatedBlocks = [...blocksWithQuestions];
-        const nextBlock = { ...updatedBlocks[nextBlockIndex] };
-
-        if (skipQuestionIds.size > 0 && Array.isArray(nextBlock.questions)) {
-          nextBlock.questions = nextBlock.questions.filter(
-            (q) => !skipQuestionIds.has(q.questionId)
-          );
-          nextBlock.questionOrder = nextBlock.questionOrder.filter(
-            (qid) => !skipQuestionIds.has(qid)
-          );
-        }
-
-        updatedBlocks[nextBlockIndex] = nextBlock;
-        setBlocksWithQuestions(updatedBlocks);
-
-        setCurrentBlockIndex(nextBlockIndex);
-        setCurrentPageIndex(0);
-        setPendingActions([]);
-        setJumpToQuestion(null);
-      } else {
-        handleSubmit(answers);
-      }
+      // nothing left — submit
+      handleSubmit(answers);
     }
   };
 
@@ -309,53 +386,21 @@ export default function SurveyForm({
                   Survey ARC
                 </p>
               </div>
-              {/* <div className="mb-4">
-                <div className="flex justify-between text-white/80 text-sm mb-2">
-                  <span>
-                    Block {currentBlockIndex + 1} of{" "}
-                    {blocksWithQuestions.length}
-                  </span>
-                  <span>
-                    {Math.round(
-                      ((currentBlockIndex + 1) / blocksWithQuestions.length) *
-                        100
-                    )}
-                    %
-                  </span>
-                </div>
-                <div className="w-full bg-white/20 rounded-full h-2">
-                  <div
-                    className="bg-white dark:bg-[#CD7323] h-2 rounded-full transition-all duration-500"
-                    style={{
-                      width: `${
-                        ((currentBlockIndex + 1) / blocksWithQuestions.length) *
-                        100
-                      }%`,
-                    }}
-                  />
-                </div>
-              </div> */}
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-8 lg:px-8 bg-white dark:bg-[#1A1A1E]">
               {questionsToShow.map((question, idx) => (
                 <div key={question.questionId} className="mb-8">
-                  {!["end_screen", "welcome_screen"].includes(
-                    question.type
-                  ) && (
+                  {!["end_screen", "welcome_screen"].includes(question.type) && (
                     <p className="text-sm lg:text-2xl font-semibold mb-6 text-gray-800 dark:text-[#CBC9DE]">
                       {idx + 1}. {question.label}
                     </p>
                   )}
                   <RenderQuestion
                     question={question}
-                    value={answers[question.questionId] || ""}
-                    onChange={(value) =>
-                      handleChange(question.questionId, value)
-                    }
-                    config={
-                      question.config || defaultConfigMap[question.type] || {}
-                    }
+                    value={answers[question.questionId] ?? ""}
+                    onChange={(value) => handleChange(question.questionId, value)}
+                    config={question.config || defaultConfigMap[question.type] || {}}
                     inputClasses={getInputClasses()}
                   />
                 </div>
@@ -416,44 +461,6 @@ export default function SurveyForm({
                 </button>
               ) : (
                 <>
-                  {/* <button
-                    disabled={currentBlockIndex === 0 && currentPageIndex === 0}
-                    onClick={() => {
-                      if (currentPageIndex > 0) {
-                        setCurrentPageIndex(currentPageIndex - 1);
-                      } else if (currentBlockIndex > 0) {
-                        const prevBlockIndex = currentBlockIndex - 1;
-                        setCurrentBlockIndex(prevBlockIndex);
-
-                        // Recalculate pages for previous block
-                        const prevBlockPages = blocksWithQuestions[
-                          prevBlockIndex
-                        ].questionOrder
-                          .reduce(
-                            (pages, qid) => {
-                              if (qid.startsWith("PB-")) {
-                                if (pages[pages.length - 1].length > 0)
-                                  pages.push([]);
-                              } else {
-                                const question = questions.find(
-                                  (q) => q.questionId === qid
-                                );
-                                if (question)
-                                  pages[pages.length - 1].push(question);
-                              }
-                              return pages;
-                            },
-                            [[]]
-                          )
-                          .filter((p) => p.length > 0);
-
-                        setCurrentPageIndex(prevBlockPages.length - 1); // go to last page
-                      }
-                    }}
-                  >
-                    Previous
-                  </button> */}
-
                   <button
                     onClick={handleNextBlock}
                     className="flex items-center justify-end w-fit text-sm lg:text-lg gap-2 px-12 py-2 lg:px-8 lg:py-3 rounded-xl font-medium lg:font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg bg-gradient-to-r from-orange-400 to-orange-500 dark:from-orange-500 dark:to-orange-600 text-white"
