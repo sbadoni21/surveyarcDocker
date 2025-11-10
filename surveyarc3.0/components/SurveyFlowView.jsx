@@ -1065,7 +1065,75 @@ function RuleEditor({
     blocksResolved.forEach((b) => (m[b.blockId] = b._questions));
     return m;
   }, [blocksResolved]);
+function getConditionValueOptions(question) {
+  if (!question) return null;
 
+  const type = question.type?.toLowerCase();
+
+  // Yes/No questions
+  if (type === 'yes_no' || type === 'yesno' || type === 'boolean') {
+    return [
+      { value: 'yes', label: 'Yes' },
+      { value: 'no', label: 'No' }
+    ];
+  }
+
+  // Multiple choice, single select, radio, dropdown
+  if (
+    type === 'multiple_choice' ||
+    type === 'single_select' ||
+    type === 'radio' ||
+    type === 'dropdown' ||
+    type === 'select'
+  ) {
+    const rawOpts =
+      question.options ??
+      question.config?.options ??
+      question.choices ??
+      question.answers ??
+      [];
+
+    if (Array.isArray(rawOpts) && rawOpts.length > 0) {
+      return rawOpts.map((opt) => {
+        if (opt == null) return { value: '', label: '' };
+        if (typeof opt === 'string' || typeof opt === 'number') {
+          return { value: String(opt), label: String(opt) };
+        }
+        return {
+          value: String(opt.value ?? opt.id ?? opt.key ?? opt.option ?? ''),
+          label: String(opt.label ?? opt.text ?? opt.name ?? opt.value ?? '')
+        };
+      });
+    }
+  }
+
+  // Checkbox (multiple selection)
+  if (type === 'checkbox' || type === 'multi_select') {
+    const rawOpts =
+      question.options ??
+      question.config?.options ??
+      question.choices ??
+      question.answers ??
+      [];
+
+    if (Array.isArray(rawOpts) && rawOpts.length > 0) {
+      return rawOpts.map((opt) => {
+        if (opt == null) return { value: '', label: '' };
+        if (typeof opt === 'string' || typeof opt === 'number') {
+          return { value: String(opt), label: String(opt) };
+        }
+        return {
+          value: String(opt.value ?? opt.id ?? opt.key ?? opt.option ?? ''),
+          label: String(opt.label ?? opt.text ?? opt.name ?? opt.value ?? '')
+        };
+      });
+    }
+  }
+
+  // NPS is handled separately in the component
+  // Number, text, etc. will return null and show input field
+  return null;
+}
   const getOperatorsForType = (type) => {
     const base = [
       { label: "Equals", value: "equals" },
@@ -1259,101 +1327,71 @@ function RuleEditor({
                       </select>
 
                       {/* derive options robustly from multiple possible fields */}
-                      {(() => {
-                        const rawOpts =
-                          selectedQ.options ??
-                          selectedQ.config?.options ??
-                          selectedQ.choices ??
-                          selectedQ.answers ??
-                          [];
+              {/* Condition value input based on question type */}
+{(() => {
+  const qType = selectedQ?.type?.toLowerCase();
+  
+  // NPS - number input 0-10
+  if (qType === "nps") {
+    return (
+      <input
+        type="number"
+        min={0}
+        max={10}
+        className="w-full border-2 border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 p-2.5 rounded-lg text-sm transition-all outline-none"
+        placeholder="0–10"
+        value={cond.value ?? ""}
+        onWheel={(e) => e.target.blur()}
+        onChange={(e) => {
+          const val = e.target.value === "" ? "" : Number(e.target.value);
+          const copy = [...rule.conditions];
+          copy[index].value = val;
+          setRule({ ...rule, conditions: copy });
+        }}
+      />
+    );
+  }
 
-                        const opts = Array.isArray(rawOpts) ? rawOpts : [];
+  // Get options based on question type
+  const valueOptions = getConditionValueOptions(selectedQ);
 
-                        const normalize = (opt) => {
-                          if (opt == null) return { value: "", label: "" };
-                          if (
-                            typeof opt === "string" ||
-                            typeof opt === "number"
-                          ) {
-                            return { value: String(opt), label: String(opt) };
-                          }
-                          return {
-                            value: String(
-                              opt.value ?? opt.id ?? opt.key ?? opt.option ?? ""
-                            ),
-                            label: String(
-                              opt.label ??
-                                opt.text ??
-                                opt.name ??
-                                opt.value ??
-                                ""
-                            ),
-                          };
-                        };
+  // If we have predefined options (yes/no, multiple choice, checkbox, etc.)
+  if (valueOptions && valueOptions.length > 0) {
+    return (
+      <select
+        className="w-full border-2 border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 p-2.5 rounded-lg text-sm transition-all outline-none bg-white"
+        value={cond.value ?? ""}
+        onChange={(e) => {
+          const copy = [...rule.conditions];
+          copy[index].value = e.target.value;
+          setRule({ ...rule, conditions: copy });
+        }}
+      >
+        <option value="">Select Answer</option>
+        {valueOptions.map((opt, i) => (
+          <option key={i} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
 
-                        if (selectedQ?.type === "nps") {
-                          return (
-                            <input
-                              type="number"
-                              min={0}
-                              max={10}
-                              className="w-full border-2 border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 p-2.5 rounded-lg text-sm transition-all outline-none"
-                              placeholder="0–10"
-                              value={cond.value ?? ""}
-                              onWheel={(e) => e.target.blur()}
-                              onChange={(e) => {
-                                const val =
-                                  e.target.value === ""
-                                    ? ""
-                                    : Number(e.target.value);
-                                const copy = [...rule.conditions];
-                                copy[index].value = val;
-                                setRule({ ...rule, conditions: copy });
-                              }}
-                            />
-                          );
-                        }
-
-                        if (opts.length > 0) {
-                          return (
-                            <select
-                              className="w-full border-2 border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 p-2.5 rounded-lg text-sm transition-all outline-none bg-white"
-                              value={cond.value ?? ""}
-                              onChange={(e) => {
-                                const copy = [...rule.conditions];
-                                copy[index].value = e.target.value;
-                                setRule({ ...rule, conditions: copy });
-                              }}
-                            >
-                              <option value="">Select Answer</option>
-                              {opts.map((o, i) => {
-                                const { value, label } = normalize(o);
-                                return (
-                                  <option key={i} value={value}>
-                                    {label}
-                                  </option>
-                                );
-                              })}
-                            </select>
-                          );
-                        }
-
-                        return (
-                          <input
-                            type={
-                              selectedQ?.type === "number" ? "number" : "text"
-                            }
-                            className="w-full border-2 border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 p-2.5 rounded-lg text-sm transition-all outline-none"
-                            placeholder="Enter value..."
-                            value={cond.value ?? ""}
-                            onChange={(e) => {
-                              const copy = [...rule.conditions];
-                              copy[index].value = e.target.value;
-                              setRule({ ...rule, conditions: copy });
-                            }}
-                          />
-                        );
-                      })()}
+  // Default: text or number input for open-ended questions
+  return (
+    <input
+      type={qType === "number" ? "number" : "text"}
+      className="w-full border-2 border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 p-2.5 rounded-lg text-sm transition-all outline-none"
+      placeholder="Enter value..."
+      value={cond.value ?? ""}
+      onChange={(e) => {
+        const copy = [...rule.conditions];
+        copy[index].value = e.target.value;
+        setRule({ ...rule, conditions: copy });
+      }}
+    />
+  );
+})()}
                     </>
                   )}
                 </div>
@@ -1900,4 +1938,6 @@ function Legend() {
       </span>
     </div>
   );
+  /* Helper to get appropriate value options for a question type */
+
 }

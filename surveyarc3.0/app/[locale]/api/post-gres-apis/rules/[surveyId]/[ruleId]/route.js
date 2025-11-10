@@ -51,7 +51,7 @@ export async function PATCH(req, { params }) {
 }
 
 export async function DELETE(_req, { params }) {
-  const { surveyId, ruleId } = params;
+  const { surveyId, ruleId } =  await params;
   try {
     const res = await fetch(`${BASE}/rules/${encodeURIComponent(surveyId)}/${encodeURIComponent(ruleId)}`, {
       method: "DELETE",
