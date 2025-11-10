@@ -1,26 +1,30 @@
 "use client";
 import React, { useRef, useState } from "react";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { useThemes } from "./ThemesProvider";
+import { useTheme } from "@/providers/ThemeProvider";
 import { storage } from "@/firebase/firebase";
 
 export default function LogoUploader() {
-  const { theme, saveTheme } = useThemes();
+  const { themes, update } = useTheme(); // using new context
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(null);
   const inputRef = useRef(null);
 
+  // We'll pick the first theme as editable for demo. You can pass `themeId` as prop if needed
+  const theme = themes[0]; 
+
   const onPick = async (file) => {
     if (!file) return;
-    if (!theme?.id) {
-      console.error("Missing theme.id; cannot build storage path.");
+    if (!theme?.themeId) {
+      console.error("Missing themeId; cannot build storage path.");
       return;
     }
 
     setBusy(true);
     setProgress(0);
+
     try {
-      const path = `org-logos/${theme.id}/${Date.now()}-${file.name}`;
+      const path = `org-logos/${theme.themeId}/${Date.now()}-${file.name}`;
       const r = ref(storage, path);
 
       const uploadTask = uploadBytesResumable(r, file, {
@@ -41,10 +45,10 @@ export default function LogoUploader() {
       });
 
       const url = await getDownloadURL(r);
-
-      // Save BOTH url and alt together to avoid overwriting one or the other
       const nextAlt = theme?.logo?.alt || "";
-      await saveTheme({ logo: { url, alt: nextAlt } });
+
+      // Update theme with new logo
+      await update(theme.themeId, { logo: { url, alt: nextAlt } });
     } catch (err) {
       console.error("Logo upload failed:", err);
       alert("Upload failed. Please check console & storage rules.");
@@ -56,7 +60,8 @@ export default function LogoUploader() {
   };
 
   const onAltChange = async (alt) => {
-    await saveTheme({ logo: { url: theme?.logo?.url || "", alt } });
+    if (!theme?.themeId) return;
+    await update(theme.themeId, { logo: { url: theme.logo?.url || "", alt } });
   };
 
   return (

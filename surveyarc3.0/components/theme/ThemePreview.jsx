@@ -1,13 +1,11 @@
 "use client";
-import React from "react";
-import { useThemes } from "./ThemesProvider";
+import React, { useMemo } from "react";
+import { useTheme } from "@/providers/postGresPorviders/themeProvider";
 
-// Simple visual preview using inline styles (no external CSS changes)
 export default function ThemePreview({ draftTheme = null }) {
-  const { theme } = useThemes();
+  const { themes } = useTheme();
   
-  // Use draftTheme if provided (live editing), otherwise fall back to saved theme
-  const activeTheme = draftTheme || theme;
+  const activeTheme = draftTheme || themes[0]; // fallback to first theme
   
   if (!activeTheme) return null;
 
@@ -63,29 +61,16 @@ export default function ThemePreview({ draftTheme = null }) {
         }}
       >
         {/* Header */}
-        <div className="flex items-center gap-3 mb-5" style={{ alignItems: "center" }}>
+        <div className="flex items-center gap-3 mb-5">
           {b.url ? (
             <img 
               src={b.url} 
               alt="Logo" 
-              style={{ 
-                height: 36, 
-                width: "auto",
-                borderRadius: 6,
-                objectFit: "contain"
-              }} 
+              style={{ height: 36, width: "auto", borderRadius: 6, objectFit: "contain" }} 
             />
           ) : (
-            <div style={{ 
-              height: 36, 
-              width: 36, 
-              borderRadius: 6, 
-              background: p.surface || "#f8f9fa", 
-              border: "1px solid #e5e7eb" 
-            }} />
+            <div style={{ height: 36, width: 36, borderRadius: 6, background: p.surface || "#f8f9fa", border: "1px solid #e5e7eb" }} />
           )}
-          
-        
         </div>
 
         {/* Card */}
@@ -98,21 +83,10 @@ export default function ThemePreview({ draftTheme = null }) {
             border: "1px solid #e5e7eb"
           }}
         >
-          <h3 style={{ 
-            marginTop: 0, 
-            marginBottom: "8px",
-            fontFamily: t.headingFont || "system-ui, sans-serif",
-            fontSize: `${(t.baseSize || 16) * 1.25}px`,
-            fontWeight: 600,
-          }}>
+          <h3 style={{ marginTop: 0, marginBottom: 8, fontFamily: t.headingFont || "system-ui, sans-serif", fontSize: `${(t.baseSize || 16) * 1.25}px`, fontWeight: 600 }}>
             A question appears here
           </h3>
-          <p style={{ 
-            color: p.muted || "#6b7280", 
-            marginTop: 0, 
-            marginBottom: 16,
-            fontSize: `${(t.baseSize || 16) * 0.875}px`,
-          }}>
+          <p style={{ color: p.muted || "#6b7280", marginTop: 0, marginBottom: 16, fontSize: `${(t.baseSize || 16) * 0.875}px` }}>
             Optional description helps the respondent.
           </p>
 
@@ -133,20 +107,8 @@ export default function ThemePreview({ draftTheme = null }) {
 
           {/* Progress + actions */}
           <div style={{ marginTop: 20, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div
-              style={{
-                height: c.progressBar === "thick" ? 10 : 4,
-                background: "#e5e7eb",
-                borderRadius: 999,
-                width: "40%",
-                overflow: "hidden",
-              }}
-            >
-              <div style={{ 
-                height: "100%", 
-                width: "60%", 
-                background: p.primary || "#3b82f6" 
-              }} />
+            <div style={{ height: c.progressBar === "thick" ? 10 : 4, background: "#e5e7eb", borderRadius: 999, width: "40%", overflow: "hidden" }}>
+              <div style={{ height: "100%", width: "60%", background: p.primary || "#3b82f6" }} />
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -158,12 +120,7 @@ export default function ThemePreview({ draftTheme = null }) {
 
         {/* Footer */}
         {f.text && (
-          <div style={{ 
-            fontSize: "12px", 
-            color: p.muted || "#6b7280", 
-            marginTop: 24,
-            textAlign: "center"
-          }}>
+          <div style={{ fontSize: "12px", color: p.muted || "#6b7280", marginTop: 24, textAlign: "center" }}>
             {f.text}
           </div>
         )}

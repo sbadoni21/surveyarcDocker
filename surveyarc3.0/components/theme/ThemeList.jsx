@@ -1,10 +1,10 @@
 "use client";
 import React from "react";
-import { useThemes } from "./ThemesProvider";
 import { Icon } from "@iconify/react";
+import { useTheme } from "@/providers/postGresPorviders/themeProvider";
 
 export default function ThemeList() {
-  const { loading, themes, currentId, open, createTheme, duplicateTheme, deleteTheme } = useThemes();
+  const { loading, themes, currentId, open, createTheme, duplicateTheme, deleteTheme } = useTheme();
 
   return (
     <section className="bg-white rounded-xl border shadow-sm overflow-hidden">

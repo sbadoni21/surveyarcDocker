@@ -29,6 +29,7 @@ export default function OrgTicketsLayout({ children }) {
     { name: 'SLA', path: 'sla', roles: ['owner', 'admin'] },
     { name: 'Support Groups', path: 'support-groups', roles: ['owner', 'admin'] },
     { name: 'Tags', path: 'tags', roles: ['owner', 'admin', 'manager'] },
+    { name: 'External Apis', path: 'create-apis', roles: ['owner', 'admin', 'manager'] },
     { name: 'Agent Tickets', path: 'agent-tickets', roles: ['owner', 'admin', 'manager', 'team_lead', 'agent'] },
     { name: 'Team Lead', path: 'team-lead', roles: ['owner', 'admin', 'team_lead'] },
   ]
