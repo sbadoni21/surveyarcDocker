@@ -27,7 +27,7 @@ from app.routes import (
     archive, audit_log, domains, integration, invite, invoice,
     marketplace, metric, order, organisation, payment, pricing_plan, rule, contacts, 
     support_groups, support_teams, support_routing, slas, business_calendars, tags, 
-    ticket_categories, ticket_sla, ticket_taxonomies, audit_events, contact_emails, contact_lists, list_members, contact_phone, contact_socials)
+    ticket_categories, ticket_sla, ticket_taxonomies, audit_events, contact_emails, contact_lists, list_members, contact_phone, contact_socials, ticket_templates, themes)
 
 app = FastAPI(
     title="Survey & Ticket Management API",
@@ -351,6 +351,8 @@ app.include_router(list_members.router, tags=["List Members"])
 app.include_router(contact_phone.router, tags=["Contact Phones"])
 app.include_router(contact_socials.router, tags=["Contact Socials"])
 app.include_router(quota.router, tags=["Quotas"])
+app.include_router(ticket_templates.router, tags=["Ticket Templates"])
+app.include_router(themes.router, tags=["Themes Survey"])
 
 # Add encryption middleware with configuration
 app.add_middleware(

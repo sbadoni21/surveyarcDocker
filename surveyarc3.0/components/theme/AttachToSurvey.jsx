@@ -1,9 +1,23 @@
 "use client";
-import React from "react";
-import { useThemes } from "./ThemesProvider";
+import React, { useState, useEffect } from "react";
+import { useTheme } from "@/providers/postGresPorviders/themeProvider";
 
-export default function AttachToSurvey() {
-  const { themes, surveyThemeId, attachToSurvey } = useThemes();
+export default function AttachToSurvey({ surveyThemeId, onAttach }) {
+  const { themes } = useTheme();
+  const [selectedThemeId, setSelectedThemeId] = useState(surveyThemeId || "");
+
+  useEffect(() => {
+    setSelectedThemeId(surveyThemeId || "");
+  }, [surveyThemeId]);
+
+  const handleChange = (e) => {
+    const themeId = e.target.value;
+    setSelectedThemeId(themeId);
+
+    if (onAttach) {
+      onAttach(themeId); // Call parent callback to attach theme to survey
+    }
+  };
 
   return (
     <section className="bg-white rounded-xl border shadow-sm overflow-hidden">
@@ -15,12 +29,13 @@ export default function AttachToSurvey() {
       </div>
       <div className="p-4">
         <select
-          value={surveyThemeId || ""}
-          onChange={(e) => attachToSurvey(e.target.value)}
+          value={selectedThemeId}
+          onChange={handleChange}
           className="w-full border rounded-lg px-3 py-2"
         >
-          {themes.map(t => (
-            <option key={t.id} value={t.id}>
+          <option value="">-- Select a Theme --</option>
+          {themes.map((t) => (
+            <option key={t.themeId} value={t.themeId}>
               {t.name} {t.isDefault ? "• Default" : ""}
             </option>
           ))}
