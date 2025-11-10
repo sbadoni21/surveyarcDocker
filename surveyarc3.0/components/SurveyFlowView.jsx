@@ -1,35 +1,32 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactFlow, {
   Background,
   Controls,
   MiniMap,
   MarkerType,
+  applyNodeChanges,
+  applyEdgeChanges,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { useParams } from "next/navigation";
-import {
-  Plus,
-  Trash2,
-  ChevronDown,
-  ChevronRight,
-  GitBranch,
-  Play,
-  Filter,
-  X,
-  Save,
-  Sparkles,
-} from "lucide-react";
-
+import { GitBranch, Sparkles } from "lucide-react";
 import { useRule } from "@/providers/rulePProvider";
 import { useTags } from "@/providers/postGresPorviders/TagProvider";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
-import RaiseTicketForm from "@/components/tickets/RaiseTicketForm";
+import { RuleEditor } from "./SurveyFlowView/RuleEditor";
+import {
+  actionEdgeLabel,
+  actionPreview,
+  conditionLabel,
+  Legend,
+  messageNodeStyle,
+  resolveActionOrSkipTargetId,
+  valuePreview,
+} from "@/utils/surveyFlowHelpers";
+import RaiseTicketForm from "./tickets/RaiseTicketForm";
 
-/* =============================================
-   LAYOUT CONSTANTS
-============================================= */
 const X_GAP = 320;
 const Q_WIDTH = 240;
 const BLOCK_HEADER_H = 20;
@@ -45,9 +42,6 @@ const MSG_H = 56;
 const MSG_X_OFFSET = 130;
 const MSG_Y_STEP = 8;
 
-/* =============================================
-   RULE EDITOR HELPERS
-============================================= */
 const emptyCondition = {
   questionId: "",
   operator: "equals",
@@ -101,10 +95,7 @@ const namesToTagIds = (names, availableTags) => {
   return names.map((n) => byName.get(String(n).toLowerCase())).filter(Boolean);
 };
 
-/* =============================================
-   MERGED SCREEN
-============================================= */
-export default function SurveyFlowView({
+export default function SurveyFlowScreen({
   surveyId: surveyIdProp,
   blocks = [],
   questions = [],
@@ -128,7 +119,6 @@ export default function SurveyFlowView({
   const [ticketActIndex, setTicketActIndex] = useState(null);
 
   const [testAnswers, setTestAnswers] = useState({});
-
   const fetchedSurveys = useRef(new Set());
   const fetchInFlight = useRef(false);
 
@@ -160,13 +150,13 @@ export default function SurveyFlowView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [surveyId]);
 
+  // ----- core derived data (unchanged logic) -----
   const questionsById = useMemo(() => {
     const map = new Map();
-    questions.forEach((q) => map.set(q.questionId, q));
+    (questions || []).forEach((q) => map.set(q.questionId, q));
     return map;
   }, [questions]);
 
-  // Build blocksResolved but keep page-break placeholders (PB-) and keep Unassigned in this structure.
   const blocksResolved = useMemo(() => {
     const list = [];
     const seen = new Set();
@@ -175,7 +165,6 @@ export default function SurveyFlowView({
       const qs = order
         .map((id) => {
           if (typeof id === "string" && id.startsWith("PB-")) {
-            // page break placeholder (visual only)
             return { questionId: id, __isPageBreak: true };
           }
           return questionsById.get(id) || null;
@@ -186,7 +175,7 @@ export default function SurveyFlowView({
       });
       list.push({ ...b, _questions: qs });
     }
-    const stray = questions.filter((q) => !seen.has(q.questionId));
+    const stray = (questions || []).filter((q) => !seen.has(q.questionId));
     if (stray.length)
       list.push({
         blockId: "__unassigned__",
@@ -196,7 +185,6 @@ export default function SurveyFlowView({
     return list;
   }, [blocks, questionsById]);
 
-  // blocks to render in flow: exclude unassigned block (as requested)
   const blocksForFlow = useMemo(
     () => (blocksResolved || []).filter((b) => b.blockId !== "__unassigned__"),
     [blocksResolved]
@@ -205,10 +193,7 @@ export default function SurveyFlowView({
   const blockEntryMap = useMemo(() => {
     const m = new Map();
     for (const b of blocksResolved) {
-      // pick first non-page-break question as entry
-      const first = (b._questions || []).find(
-        (q) => !q.__isPageBreak
-      )?.questionId;
+      const first = (b._questions || []).find((q) => !q.__isPageBreak)?.questionId;
       if (first) m.set(b.blockId, first);
     }
     return m;
@@ -236,13 +221,13 @@ export default function SurveyFlowView({
     return m;
   }, [globalQ]);
 
+  // layout: keep your original layout approach
   const blockLayouts = useMemo(() => {
     let cursorX = 0;
     const out = [];
     for (const b of blocksForFlow) {
       const count = b._questions.length || 1;
-      const width =
-        Math.max(1, count) * X_GAP - (X_GAP - Q_WIDTH) + BLOCK_PADDING * 2;
+      const width = Math.max(1, count) * X_GAP - (X_GAP - Q_WIDTH) + BLOCK_PADDING * 2;
       const height = BLOCK_HEADER_H + 80 + BLOCK_PADDING * 2;
       out.push({
         blockId: b.blockId,
@@ -271,7 +256,7 @@ export default function SurveyFlowView({
 
   const blockNodes = useMemo(
     () =>
-      blockLayouts.map((l) => ({
+      (blockLayouts || []).map((l) => ({
         id: `block-${l.blockId}`,
         type: "group",
         position: { x: l.x, y: l.y },
@@ -290,7 +275,7 @@ export default function SurveyFlowView({
 
   const blockLabelNodes = useMemo(
     () =>
-      blockLayouts.map((l) => ({
+      (blockLayouts || []).map((l) => ({
         id: `block-label-${l.blockId}`,
         position: { x: 12, y: -BLOCK_LABEL_OFFSET - 18 },
         data: { label: l.name },
@@ -316,12 +301,11 @@ export default function SurveyFlowView({
 
   const questionNodes = useMemo(() => {
     const nodes = [];
-    blocksForFlow.forEach((b) => {
+    (blocksForFlow || []).forEach((b) => {
       const lay = layoutByBlock.get(b.blockId);
       if (!lay) return;
       b._questions.forEach((q, i) => {
         if (q.__isPageBreak) {
-          // render page break visually within the block
           nodes.push({
             id: q.questionId,
             data: { label: "— Page Break —" },
@@ -366,6 +350,8 @@ export default function SurveyFlowView({
             textAlign: "center",
             boxShadow: "0 8px 20px rgba(0,0,0,.3)",
             transition: "all 0.2s ease",
+            whiteSpace: "normal",
+            wordBreak: "break-word",
           },
         });
       });
@@ -418,9 +404,7 @@ export default function SurveyFlowView({
               )}`
           )
           .join("\nAND ");
-        const actText = (rule.actions || [])
-          .map((a) => actionPreview(a))
-          .join("\n");
+        const actText = (rule.actions || []).map((a) => actionPreview(a)).join("\n");
 
         const logicId = `logic-${rule.ruleId}`;
         logic.push({
@@ -437,6 +421,7 @@ export default function SurveyFlowView({
             color: "#F9FAFB",
             border: "1px solid #4B5563",
             whiteSpace: "pre-line",
+            wordBreak: "break-word",
             fontSize: 11,
             lineHeight: 1.3,
             textAlign: "center",
@@ -449,9 +434,7 @@ export default function SurveyFlowView({
         (rule.actions || []).forEach((a, ai) => {
           if (a?.type === "show_message") {
             const isRightHalf = i >= Math.floor(list.length / 2);
-            const msgX = isRightHalf
-              ? x + NODE_W + MSG_X_OFFSET
-              : x - (MSG_X_OFFSET + MSG_W + 20);
+            const msgX = isRightHalf ? x + NODE_W + MSG_X_OFFSET : x - (MSG_X_OFFSET + MSG_W + 20);
             const msgY = y + msgCount * (MSG_H + MSG_Y_STEP);
             msgs.push({
               id: `msg-${rule.ruleId}-${ai}`,
@@ -488,12 +471,12 @@ export default function SurveyFlowView({
     [canvasRightX]
   );
 
-  // build edges used by reactflow (keeps your existing logic)
   const edges = useMemo(() => {
     const arr = [];
 
     (rules || []).forEach((rule) => {
       const logicId = `logic-${rule.ruleId}`;
+
       (rule.conditions || []).forEach((c, idx) => {
         if (!c.questionId) return;
         arr.push({
@@ -551,8 +534,7 @@ export default function SurveyFlowView({
         }
 
         const primaryQ =
-          (rule.conditions || []).find((c) => !!c.questionId)?.questionId ||
-          null;
+          (rule.conditions || []).find((c) => !!c.questionId)?.questionId || null;
         const res = resolveActionOrSkipTargetId({
           action: a,
           primaryQuestionId: primaryQ,
@@ -562,13 +544,8 @@ export default function SurveyFlowView({
           blocks: blocksResolved,
         });
 
-        const explicitQuestionIds =
-          Array.isArray(a.questionIds) && a.questionIds.length
-            ? a.questionIds
-            : null;
-
-        const targetIds =
-          explicitQuestionIds ?? (res?.targetId ? [res.targetId] : []);
+        const explicitQuestionIds = Array.isArray(a.questionIds) && a.questionIds.length ? a.questionIds : null;
+        const targetIds = explicitQuestionIds ?? (res?.targetId ? [res.targetId] : []);
 
         if (targetIds.length) {
           const isSkip = String(a.type || "").startsWith("skip");
@@ -578,15 +555,8 @@ export default function SurveyFlowView({
 
           targetIds.forEach((targetId, tIdx) => {
             const resolvedTargetId = String(targetId);
-
-            // Do not add edges that point to page-break placeholders or unassigned nodes
-            // (we only add edges for real question ids present in flow)
-            const targetIsPageBreak =
-              typeof resolvedTargetId === "string" &&
-              resolvedTargetId.startsWith("PB-");
-            const targetIsInFlow = !!globalQ.find(
-              (q) => q.questionId === resolvedTargetId
-            );
+            const targetIsPageBreak = typeof resolvedTargetId === "string" && resolvedTargetId.startsWith("PB-");
+            const targetIsInFlow = !!globalQ.find((q) => q.questionId === resolvedTargetId);
             if (targetIsPageBreak || !targetIsInFlow) return;
 
             arr.push({
@@ -601,27 +571,12 @@ export default function SurveyFlowView({
                 strokeDasharray: dash,
               },
               markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
-              label: isSkip
-                ? "Skip Question"
-                : isGoto
-                ? a.type === "goto_question"
-                  ? "Go to Question"
-                  : "Go"
-                : actionEdgeLabel(
-                    a,
-                    resolvedTargetId,
-                    blocksResolved,
-                    res?.meta
-                  ),
+              label: isSkip ? "Skip Question" : isGoto ? (a.type === "goto_question" ? "Go to Question" : "Go") : actionEdgeLabel(a, resolvedTargetId, blocksResolved, res?.meta),
               labelStyle: { fontSize: 11, fill: "#E5E7EB", fontWeight: 500 },
               labelBgPadding: [6, 4],
               labelBgBorderRadius: 8,
               labelBgStyle: {
-                fill: isGoto
-                  ? "rgba(6,78,59,.95)"
-                  : isSkip
-                  ? "rgba(120,53,15,.95)"
-                  : "rgba(127,29,29,.95)",
+                fill: isGoto ? "rgba(6,78,59,.95)" : isSkip ? "rgba(120,53,15,.95)" : "rgba(127,29,29,.95)",
                 stroke,
               },
             });
@@ -636,9 +591,7 @@ export default function SurveyFlowView({
           const stroke = isGoto ? "#10B981" : isSkip ? "#F59E0B" : "#EF4444";
           const resolvedTargetId = String(res.targetId);
           const targetIsPageBreak = resolvedTargetId.startsWith("PB-");
-          const targetIsInFlow = !!globalQ.find(
-            (q) => q.questionId === resolvedTargetId
-          );
+          const targetIsInFlow = !!globalQ.find((q) => q.questionId === resolvedTargetId);
           if (!targetIsPageBreak && targetIsInFlow) {
             arr.push({
               id: `act-${logicId}-${res.targetId}-${idx}`,
@@ -657,11 +610,7 @@ export default function SurveyFlowView({
               labelBgPadding: [6, 4],
               labelBgBorderRadius: 8,
               labelBgStyle: {
-                fill: isGoto
-                  ? "rgba(6,78,59,.95)"
-                  : isSkip
-                  ? "rgba(120,53,15,.95)"
-                  : "rgba(127,29,29,.95)",
+                fill: isGoto ? "rgba(6,78,59,.95)" : isSkip ? "rgba(120,53,15,.95)" : "rgba(127,29,29,.95)",
                 stroke,
               },
             });
@@ -673,13 +622,8 @@ export default function SurveyFlowView({
     return arr;
   }, [rules, blocksResolved, blockEntryMap, qToBlockId, globalQ]);
 
-  // ----------------------------
-  // Loop detection (question -> rule -> question graph)
-  // ----------------------------
   const loops = useMemo(() => {
-    // Build adjacency of questionId -> [targetQuestionId]
     const adj = new Map();
-    // Also track which rule(s) produce each edge (for reporting)
     const edgeToRules = new Map();
 
     (rules || []).forEach((rule) => {
@@ -697,19 +641,13 @@ export default function SurveyFlowView({
           blocks: blocksResolved,
         });
 
-        const explicitQuestionIds =
-          Array.isArray(a.questionIds) && a.questionIds.length
-            ? a.questionIds
-            : null;
-
-        const targetIds =
-          explicitQuestionIds ?? (res?.targetId ? [res.targetId] : []);
+        const explicitQuestionIds = Array.isArray(a.questionIds) && a.questionIds.length ? a.questionIds : null;
+        const targetIds = explicitQuestionIds ?? (res?.targetId ? [res.targetId] : []);
 
         if (targetIds && targetIds.length) {
           targetIds.forEach((t) => {
             if (!t) return;
             const tid = String(t);
-            // ignore page breaks and targets not in current globalQ (flow)
             if (tid.startsWith("PB-")) return;
             const exists = globalQ.find((q) => q.questionId === tid);
             if (!exists) return;
@@ -733,7 +671,6 @@ export default function SurveyFlowView({
       });
     });
 
-    // DFS to find cycles. We'll collect simple cycles (not all possible permutations).
     const visited = new Set();
     const stack = new Set();
     const cycles = [];
@@ -741,7 +678,6 @@ export default function SurveyFlowView({
 
     function dfs(u) {
       if (stack.has(u)) {
-        // found a cycle: take path from first occurrence of u
         const idx = path.indexOf(u);
         const cyclePath = path.slice(idx).concat(u);
         cycles.push(cyclePath);
@@ -767,9 +703,7 @@ export default function SurveyFlowView({
       if (!visited.has(node)) dfs(node);
     }
 
-    // Map cycles to a readable format including involved rule names/ids
     const readable = cycles.map((c) => {
-      // build edges in cycle
       const edgesInCycle = [];
       for (let i = 0; i < c.length - 1; i++) {
         const a = c[i];
@@ -778,7 +712,6 @@ export default function SurveyFlowView({
         const rulesList = edgeToRules.get(key) || [];
         edgesInCycle.push({ from: a, to: b, rules: rulesList });
       }
-      // collect unique rule ids/names
       const ruleInfos = [];
       const seenRuleIds = new Set();
       edgesInCycle.forEach((e) =>
@@ -813,7 +746,7 @@ export default function SurveyFlowView({
     const q = questionsById.get(node.id);
     if (q) {
       const bId = qToBlockId.get(q.questionId);
-      setEditingRule(makeEmptyRule(surveyId, bId, q.questionId));
+      setEditingRule(makeEmptyRule ? makeEmptyRule(surveyId, bId, q.questionId) : null);
     }
   };
 
@@ -829,9 +762,7 @@ export default function SurveyFlowView({
       if (act.type === "skip_block")
         base.blockIds = Array.isArray(act.blockIds) ? act.blockIds : [];
       if (act.type === "skip_questions")
-        base.questionIds = Array.isArray(act.questionIds)
-          ? act.questionIds
-          : [];
+        base.questionIds = Array.isArray(act.questionIds) ? act.questionIds : [];
       if (act.type === "show_message") base.message = act.message || "";
       if (act.type === "raise_ticket") {
         base.subjectTemplate = act.subjectTemplate || "";
@@ -883,7 +814,7 @@ export default function SurveyFlowView({
   }
 
   function openTicketFormForAction(act, index) {
-    const tagIds = namesToTagIds(csvToArray(act.tagsCsv), availableTags);
+    const tagIds = namesToTagIds ? namesToTagIds(csvToArray(act.tagsCsv), availableTags) : [];
     setTicketInitial({
       subject:
         (act.subjectTemplate || "").trim() ||
@@ -899,6 +830,87 @@ export default function SurveyFlowView({
     setTicketOpen(true);
   }
 
+  const PERSIST_KEY = `survey-flow-pos-${surveyId || "default"}`;
+
+  const computedNodes = useMemo(
+    () => [
+      ...blockNodes,
+      ...blockLabelNodes,
+      ...questionNodes,
+      ...logicNodes,
+      ...messageNodes,
+      endNode,
+    ],
+    [blockNodes, blockLabelNodes, questionNodes, logicNodes, messageNodes, endNode]
+  );
+
+  const computedEdges = edges;
+
+  const [nodesState, setNodesState] = useState(() => {
+    try {
+      if (typeof window === "undefined") return computedNodes;
+      const raw = localStorage.getItem(PERSIST_KEY);
+      const stored = raw ? JSON.parse(raw) : null;
+      if (Array.isArray(stored)) {
+        const map = new Map(stored.map((s) => [s.id, s]));
+        return computedNodes.map((cn) => {
+          const s = map.get(cn.id);
+          if (s && s.position) return { ...cn, position: s.position };
+          return cn;
+        });
+      }
+    } catch (e) {
+      console.warn("Failed to parse stored positions", e);
+    }
+    return computedNodes;
+  });
+
+  const [edgesState, setEdgesState] = useState(computedEdges);
+
+  useEffect(() => {
+    setNodesState((prev) => {
+      const prevMap = new Map((prev || []).map((n) => [n.id, n]));
+      const merged = computedNodes.map((cn) => {
+        const p = prevMap.get(cn.id);
+        if (p && p.position) return { ...cn, position: p.position };
+        return cn;
+      });
+      return merged;
+    });
+
+    setEdgesState(computedEdges);
+  }, [computedNodes, computedEdges]);
+
+  const onNodesChange = useCallback((changes) => {
+    setNodesState((nds) => applyNodeChanges(changes, nds));
+  }, []);
+
+  const onEdgesChange = useCallback((changes) => {
+    setEdgesState((eds) => applyEdgeChanges(changes, eds));
+  }, []);
+
+  const onNodeDragStop = useCallback(
+    (evt, node) => {
+      setNodesState((nds) => {
+        const updated = nds.map((n) => (n.id === node.id ? { ...n, position: node.position } : n));
+        try {
+          localStorage.setItem(PERSIST_KEY, JSON.stringify(updated.map((n) => ({ id: n.id, position: n.position }))));
+        } catch (e) {
+          console.warn("Failed to persist node positions", e);
+        }
+        return updated;
+      });
+    },
+    [PERSIST_KEY]
+  );
+
+  const resetPositions = useCallback(() => {
+    try {
+      localStorage.removeItem(PERSIST_KEY);
+    } catch (e) {}
+    setNodesState(computedNodes);
+  }, [computedNodes]);
+
   if (loadingRules)
     return (
       <div className="flex items-center justify-center h-[88vh] text-gray-400">
@@ -913,77 +925,79 @@ export default function SurveyFlowView({
     <div className="grid grid-cols-1 2xl:grid-cols-[1fr_320px] gap-5 w-full h-[88vh]">
       <div className="w-full h-full dark:bg-[#0D0D0F] p-4 rounded-xl border-2 border-neutral-800 shadow-2xl overflow-hidden">
         <header className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-bold flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5">
             <div className="p-2 bg-indigo-600 rounded-lg">
               <GitBranch className="w-4 h-4" />
             </div>
-            Survey Flow
-          </h2>
-          <Legend />
+            <h2 className="text-lg font-bold">Survey Flow</h2>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={resetPositions}
+              className="text-xs px-3 py-1 bg-gray-800 text-white rounded-md"
+              title="Reset saved node positions"
+            >
+              Reset positions
+            </button>
+            <Legend />
+          </div>
         </header>
 
-        {/* ---- Loop banner (if any cycles present) ---- */}
         {loops && loops.length > 0 && (
           <div className="mb-4 p-3 rounded-lg bg-yellow-50 border border-amber-300 text-sm text-amber-800">
             <div className="font-semibold mb-1">Loop(s) detected in rules</div>
             {loops.map((lp, i) => (
               <div key={i} className="mb-2">
                 <div className="text-xs text-amber-700 mb-1">
-                  Path:{" "}
-                  <span className="font-medium">{lp.path.join(" → ")}</span>
+                  Path: <span className="font-medium">{lp.path.join(" → ")}</span>
                 </div>
                 <div className="text-xs">
-                  Rules involved:{" "}
-                  {lp.rules.length
-                    ? lp.rules.map((r) => `${r.name || r.ruleId}`).join(", ")
-                    : "Unknown"}
+                  Rules involved: {lp.rules.length ? lp.rules.map((r) => `${r.name || r.ruleId}`).join(", ") : "Unknown"}
                 </div>
               </div>
             ))}
             <div className="text-xs text-amber-700 mt-2">
-              Please review these rules — they create a cycle where a question
-              can lead back to itself via one or more rules.
+              Please review these rules — they create a cycle where a question can lead back to itself via one or more rules.
             </div>
           </div>
         )}
 
-        <ReactFlow
-          nodes={[
-            ...blockNodes,
-            ...blockLabelNodes,
-            ...questionNodes,
-            ...logicNodes,
-            ...messageNodes,
-            endNode,
-          ]}
-          edges={edges}
-          fitView
-          fitViewOptions={{ padding: 0.2, minZoom: 1, maxZoom: 1.75 }}
-          panOnScroll
-          zoomOnScroll
-          nodesDraggable
-          nodesConnectable={false}
-          onNodeClick={onNodeClick}
-          attributionPosition="bottom-left"
-        >
-          <MiniMap
-            nodeColor={(n) =>
-              n.id === "end-node"
-                ? "#991B1B"
-                : n.id.startsWith("msg-")
-                ? "#0f766e"
-                : n.id.startsWith("block-")
-                ? "#1f2937"
-                : n.id.startsWith("logic-")
-                ? "#374151"
-                : "#6366F1"
-            }
-            maskColor="rgba(17,24,39,0.7)"
-            style={{ bottom: "20px" }}
-          />
-          <Controls showInteractive={false} style={{ bottom: "40px" }} />
-          <Background color="#2B2B31" gap={16} />
-        </ReactFlow>
+        <div style={{ width: "100%", height: "calc(88vh - 120px)" }}>
+          <ReactFlow
+            nodes={nodesState}
+            edges={edgesState}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onNodeDragStop={onNodeDragStop}
+            fitView
+            fitViewOptions={{ padding: 0.2, minZoom: 1, maxZoom: 1.75 }}
+            panOnScroll
+            zoomOnScroll
+            nodesDraggable
+            nodesConnectable={false}
+            onNodeClick={onNodeClick}
+            attributionPosition="bottom-left"
+          >
+            <MiniMap
+              nodeColor={(n) =>
+                n.id === "end-node"
+                  ? "#991B1B"
+                  : n.id.startsWith("msg-")
+                  ? "#0f766e"
+                  : n.id.startsWith("block-")
+                  ? "#1f2937"
+                  : n.id.startsWith("logic-")
+                  ? "#374151"
+                  : "#6366F1"
+              }
+              maskColor="rgba(17,24,39,0.7)"
+              style={{ bottom: "20px" }}
+            />
+            <Controls showInteractive={false} style={{ bottom: "40px" }} />
+            <Background color="#2B2B31" gap={16} />
+          </ReactFlow>
+        </div>
       </div>
 
       <div className="p-6 bg-white rounded-xl border-2 border-gray-200 shadow-lg space-y-5 overflow-y-auto">
@@ -994,10 +1008,8 @@ export default function SurveyFlowView({
               <div className="text-sm text-indigo-900">
                 <p className="font-medium mb-1">Quick Start Guide</p>
                 <p className="text-indigo-700">
-                  Click a <span className="font-semibold">question node</span>{" "}
-                  to create a new branch. Click a{" "}
-                  <span className="font-semibold">logic node</span> to edit
-                  existing rules.
+                  Click a <span className="font-semibold">question node</span> to create a new branch. Click a{" "}
+                  <span className="font-semibold">logic node</span> to edit existing rules.
                 </p>
               </div>
             </div>
@@ -1021,1000 +1033,40 @@ export default function SurveyFlowView({
             setTicketActIndex={setTicketActIndex}
             orgId={orgId}
             currentUserId={currentUserId}
+            emptyAction={emptyAction}
           />
         )}
       </div>
-    </div>
-  );
-}
 
-/* =============================================
-   RULE EDITOR (right pane)
-   (unchanged code below, still uses blocksResolved so Unassigned block remains available in editor)
-============================================= */
-function RuleEditor({
-  rule,
-  setRule,
-  onSave,
-  onDelete,
-  saving,
-  blocksResolved,
-  questionsById,
-  availableTags,
-  openTicketFormForAction,
-  ticketOpen,
-  setTicketOpen,
-  ticketInitial,
-  setTicketInitial,
-  ticketActIndex,
-  setTicketActIndex,
-  orgId,
-  currentUserId,
-}) {
-  const blockOrder = useMemo(
-    () => blocksResolved.map((b) => b.blockId),
-    [blocksResolved]
-  );
-  const blocksById = useMemo(
-    () => Object.fromEntries(blocksResolved.map((b) => [b.blockId, b])),
-    [blocksResolved]
-  );
-
-  const questionsByBlock = useMemo(() => {
-    const m = {};
-    blocksResolved.forEach((b) => (m[b.blockId] = b._questions));
-    return m;
-  }, [blocksResolved]);
-function getConditionValueOptions(question) {
-  if (!question) return null;
-
-  const type = question.type?.toLowerCase();
-
-  // Yes/No questions
-  if (type === 'yes_no' || type === 'yesno' || type === 'boolean') {
-    return [
-      { value: 'yes', label: 'Yes' },
-      { value: 'no', label: 'No' }
-    ];
-  }
-
-  // Multiple choice, single select, radio, dropdown
-  if (
-    type === 'multiple_choice' ||
-    type === 'single_select' ||
-    type === 'radio' ||
-    type === 'dropdown' ||
-    type === 'select'
-  ) {
-    const rawOpts =
-      question.options ??
-      question.config?.options ??
-      question.choices ??
-      question.answers ??
-      [];
-
-    if (Array.isArray(rawOpts) && rawOpts.length > 0) {
-      return rawOpts.map((opt) => {
-        if (opt == null) return { value: '', label: '' };
-        if (typeof opt === 'string' || typeof opt === 'number') {
-          return { value: String(opt), label: String(opt) };
-        }
-        return {
-          value: String(opt.value ?? opt.id ?? opt.key ?? opt.option ?? ''),
-          label: String(opt.label ?? opt.text ?? opt.name ?? opt.value ?? '')
-        };
-      });
-    }
-  }
-
-  // Checkbox (multiple selection)
-  if (type === 'checkbox' || type === 'multi_select') {
-    const rawOpts =
-      question.options ??
-      question.config?.options ??
-      question.choices ??
-      question.answers ??
-      [];
-
-    if (Array.isArray(rawOpts) && rawOpts.length > 0) {
-      return rawOpts.map((opt) => {
-        if (opt == null) return { value: '', label: '' };
-        if (typeof opt === 'string' || typeof opt === 'number') {
-          return { value: String(opt), label: String(opt) };
-        }
-        return {
-          value: String(opt.value ?? opt.id ?? opt.key ?? opt.option ?? ''),
-          label: String(opt.label ?? opt.text ?? opt.name ?? opt.value ?? '')
-        };
-      });
-    }
-  }
-
-  // NPS is handled separately in the component
-  // Number, text, etc. will return null and show input field
-  return null;
-}
-  const getOperatorsForType = (type) => {
-    const base = [
-      { label: "Equals", value: "equals" },
-      { label: "Not Equals", value: "not_equals" },
-    ];
-
-    switch (type) {
-      case "contact_email":
-      case "contact_phone":
-      case "contact_address":
-      case "contact_website":
-      case "short_text":
-      case "long_text":
-        return [
-          ...base,
-          { label: "Contains", value: "contains" },
-          { label: "Does Not Contain", value: "not_contains" },
-          { label: "Starts With", value: "starts_with" },
-          { label: "Ends With", value: "ends_with" },
-          { label: "Is Empty", value: "is_empty" },
-          { label: "Is Not Empty", value: "is_not_empty" },
-        ];
-
-      case "number":
-      case "rating":
-      case "opinion_scale":
-        return [
-          ...base,
-          { label: "Greater Than", value: "greater_than" },
-          { label: "Less Than", value: "less_than" },
-          { label: "≥ (At Least)", value: "gte" },
-          { label: "≤ (At Most)", value: "lte" },
-          { label: "Between (Inclusive)", value: "between" },
-          { label: "Is Empty", value: "is_empty" },
-          { label: "Is Not Empty", value: "is_not_empty" },
-        ];
-
-      case "date":
-        return [
-          ...base,
-          { label: "Before", value: "before" },
-          { label: "After", value: "after" },
-          { label: "On", value: "on" },
-          { label: "Between", value: "between" },
-          { label: "Is Empty", value: "is_empty" },
-          { label: "Is Not Empty", value: "is_not_empty" },
-        ];
-
-      case "multiple_choice":
-      case "dropdown":
-      case "picture_choice":
-      case "checkbox":
-      case "ranking":
-      case "matrix":
-        return [
-          ...base,
-          { label: "Contains", value: "contains" },
-          { label: "Does Not Contain", value: "not_contains" },
-          { label: "Includes Any Of", value: "includes_any" },
-          { label: "Includes All Of", value: "includes_all" },
-          { label: "Is Empty", value: "is_empty" },
-          { label: "Is Not Empty", value: "is_not_empty" },
-        ];
-
-      case "yes_no":
-      case "legal":
-        return [
-          { label: "Equals", value: "equals" },
-          { label: "Not Equals", value: "not_equals" },
-        ];
-
-      case "file_upload":
-      case "google_drive":
-      case "video":
-      case "calendly":
-        return [
-          { label: "Is Uploaded / Present", value: "is_present" },
-          { label: "Is Not Uploaded", value: "is_not_present" },
-        ];
-
-      case "nps":
-        return [
-          { label: "Is Promoter (9–10)", value: "nps_is_promoter" },
-          { label: "Is Passive (6–8)", value: "nps_is_passive" },
-          { label: "Is Detractor (0–5)", value: "nps_is_detractor" },
-          { label: "Equals", value: "equals" },
-          { label: "Not Equals", value: "not_equals" },
-          { label: "≥ (At Least)", value: "nps_gte" },
-          { label: "≤ (At Most)", value: "nps_lte" },
-          { label: "Between (Inclusive)", value: "nps_between" },
-        ];
-
-      case "welcome_screen":
-      case "end_screen":
-      case "redirect_url":
-        return [];
-
-      default:
-        return base;
-    }
-  };
-
-  return (
-    <div className="space-y-5 text-sm">
-      <div className="flex items-center justify-between pb-4 border-b-2 border-gray-200">
-        <h3 className="font-bold text-xl text-slate-900">
-          {rule.ruleId ? "Edit Branch" : "Create Branch"}
-        </h3>
-        <button
-          className="text-gray-400 hover:text-gray-700 hover:bg-gray-100 p-2 rounded-lg transition-colors"
-          onClick={() => setRule(null)}
-          aria-label="Close"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-
-      <div className="space-y-4">
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">
-            Branch Name
-          </label>
-          <input
-            className="w-full border-2 border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 p-3 rounded-lg text-sm transition-all outline-none"
-            placeholder="Enter a descriptive name..."
-            value={rule.name}
-            onChange={(e) => setRule({ ...rule, name: e.target.value })}
-          />
-        </div>
-
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">
-              Applies to Block
-            </label>
-            <select
-              className="w-full border-2 border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 p-3 rounded-lg text-sm transition-all outline-none bg-white"
-              value={rule.blockId}
-              onChange={(e) => {
-                const newBlockId = e.target.value;
-                setRule((prev) => ({
-                  ...prev,
-                  blockId: newBlockId,
-                  conditions: (prev.conditions || []).map((c) => ({
-                    ...c,
-                    questionId: "",
-                    value: "",
-                  })),
-                  actions: (prev.actions || []).map((a) => ({
-                    ...a,
-                    questionId: "",
-                    questionIds: [],
-                  })),
-                }));
-              }}
-            >
-              {blockOrder.map((bid) => (
-                <option key={bid} value={bid}>
-                  {blocksById[bid]?.name || bid}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">
-              Priority
-            </label>
-            <input
-              type="number"
-              className="w-full border-2 border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 p-3 rounded-lg text-sm transition-all outline-none"
-              value={rule.priority}
-              onWheel={(e) => e.target.blur()}
-              onChange={(e) =>
-                setRule({ ...rule, priority: Number(e.target.value) })
-              }
-            />
-          </div>
-        </div>
-
-        <label className="inline-flex items-center gap-2.5 text-sm cursor-pointer group">
-          <div className="relative">
-            <input
-              type="checkbox"
-              checked={rule.enabled !== false}
-              onChange={(e) => setRule({ ...rule, enabled: e.target.checked })}
-              className="w-5 h-5 rounded border-2 border-gray-300 text-indigo-600 focus:ring-2 focus:ring-indigo-200 cursor-pointer"
-            />
-          </div>
-          <span className="font-medium text-slate-700 group-hover:text-slate-900">
-            Enabled
-          </span>
-        </label>
-
-        {/* Conditions */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <h4 className="text-base font-bold text-slate-900">Conditions</h4>
-            <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-medium">
-              IF
-            </span>
-          </div>
-
-          {rule.conditions.map((cond, index) => {
-            const allQs = questionsByBlock[rule.blockId] || [];
-            const selectedQ =
-              allQs.find((q) => q.questionId === cond.questionId) || null;
-
-            return (
-              <div
-                key={index}
-                className="p-4 rounded-xl border-2 border-gray-200 bg-gray-50 space-y-3 hover:border-indigo-300 transition-colors"
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-bold text-gray-500">
-                    #{index + 1}
-                  </span>
-                  {index > 0 && (
-                    <select
-                      className="text-xs border-2 border-gray-300 focus:border-indigo-500 px-2 py-1 rounded-md font-semibold bg-white outline-none"
-                      value={cond.conditionLogic || "AND"}
-                      onChange={(e) => {
-                        const copy = [...rule.conditions];
-                        copy[index].conditionLogic = e.target.value;
-                        setRule({ ...rule, conditions: copy });
-                      }}
-                    >
-                      <option value="AND">AND</option>
-                      <option value="OR">OR</option>
-                    </select>
-                  )}
-                </div>
-
-                <div className="grid gap-2">
-                  <select
-                    className="w-full border-2 border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 p-2.5 rounded-lg text-sm transition-all outline-none bg-white"
-                    value={cond.questionId}
-                    onChange={(e) => {
-                      const copy = [...rule.conditions];
-                      copy[index].questionId = e.target.value;
-                      copy[index].value = "";
-                      setRule({ ...rule, conditions: copy });
-                    }}
-                  >
-                    <option value="">Select Question</option>
-                    {allQs.map((q) => (
-                      <option key={q.questionId} value={q.questionId}>
-                        {q.label}
-                      </option>
-                    ))}
-                  </select>
-
-                  {selectedQ && (
-                    <>
-                      <select
-                        className="w-full border-2 border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 p-2.5 rounded-lg text-sm transition-all outline-none bg-white"
-                        value={cond.operator}
-                        onChange={(e) => {
-                          const copy = [...rule.conditions];
-                          copy[index].operator = e.target.value;
-                          setRule({ ...rule, conditions: copy });
-                        }}
-                      >
-                        {getOperatorsForType(selectedQ.type).map((op) => (
-                          <option key={op.value} value={op.value}>
-                            {op.label}
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* derive options robustly from multiple possible fields */}
-              {/* Condition value input based on question type */}
-{(() => {
-  const qType = selectedQ?.type?.toLowerCase();
-  
-  // NPS - number input 0-10
-  if (qType === "nps") {
-    return (
-      <input
-        type="number"
-        min={0}
-        max={10}
-        className="w-full border-2 border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 p-2.5 rounded-lg text-sm transition-all outline-none"
-        placeholder="0–10"
-        value={cond.value ?? ""}
-        onWheel={(e) => e.target.blur()}
-        onChange={(e) => {
-          const val = e.target.value === "" ? "" : Number(e.target.value);
-          const copy = [...rule.conditions];
-          copy[index].value = val;
-          setRule({ ...rule, conditions: copy });
+      <RaiseTicketForm
+        open={ticketOpen}
+        onClose={() => setTicketOpen(false)}
+        onSaveTemplate={(template) => {
+          if (ticketActIndex == null) return;
+          setEditingRule((prev) => {
+            if (!prev) return prev;
+            const actions = [...(prev.actions || [])];
+            const current = { ...(actions[ticketActIndex] || { type: "raise_ticket" }) };
+            const ticketData = Array.isArray(current.ticketData) ? [...current.ticketData] : [];
+            ticketData[0] = template;
+            current.ticketData = ticketData;
+            current.subjectTemplate = template.subjectTemplate;
+            current.priority = template.priority;
+            current.groupId = template.groupId;
+            current.message = template.message;
+            current.slaId = template.slaId;
+            actions[ticketActIndex] = current;
+            return { ...prev, actions };
+          });
+          setTicketOpen(false);
+          setTicketActIndex(null);
         }}
+        initial={ticketInitial || {}}
+        title="New Ticket"
+        orgId={orgId}
+        requestorId={currentUserId}
+        currentUserId={currentUserId}
       />
-    );
-  }
-
-  // Get options based on question type
-  const valueOptions = getConditionValueOptions(selectedQ);
-
-  // If we have predefined options (yes/no, multiple choice, checkbox, etc.)
-  if (valueOptions && valueOptions.length > 0) {
-    return (
-      <select
-        className="w-full border-2 border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 p-2.5 rounded-lg text-sm transition-all outline-none bg-white"
-        value={cond.value ?? ""}
-        onChange={(e) => {
-          const copy = [...rule.conditions];
-          copy[index].value = e.target.value;
-          setRule({ ...rule, conditions: copy });
-        }}
-      >
-        <option value="">Select Answer</option>
-        {valueOptions.map((opt, i) => (
-          <option key={i} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-    );
-  }
-
-  // Default: text or number input for open-ended questions
-  return (
-    <input
-      type={qType === "number" ? "number" : "text"}
-      className="w-full border-2 border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 p-2.5 rounded-lg text-sm transition-all outline-none"
-      placeholder="Enter value..."
-      value={cond.value ?? ""}
-      onChange={(e) => {
-        const copy = [...rule.conditions];
-        copy[index].value = e.target.value;
-        setRule({ ...rule, conditions: copy });
-      }}
-    />
-  );
-})()}
-                    </>
-                  )}
-                </div>
-
-                <div className="flex gap-2 pt-2">
-                  {index === rule.conditions.length - 1 && (
-                    <button
-                      className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
-                      onClick={() =>
-                        setRule((r) => ({
-                          ...r,
-                          conditions: [...r.conditions, { ...emptyCondition }],
-                        }))
-                      }
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Add Condition
-                    </button>
-                  )}
-
-                  {rule.conditions.length > 1 && (
-                    <button
-                      className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-600 border-2 border-red-200 rounded-lg transition-colors"
-                      onClick={() =>
-                        setRule((r) => ({
-                          ...r,
-                          conditions: r.conditions.filter(
-                            (_, i) => i !== index
-                          ),
-                        }))
-                      }
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Remove
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Actions */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <h4 className="text-base font-bold text-slate-900">Actions</h4>
-            <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full font-medium">
-              THEN
-            </span>
-          </div>
-
-          {rule.actions.map((act, index) => (
-            <div
-              key={index}
-              className="p-4 rounded-xl border-2 border-gray-200 bg-gray-50 space-y-3 hover:border-emerald-300 transition-colors"
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs font-bold text-gray-500">
-                  #{index + 1}
-                </span>
-              </div>
-
-              <select
-                className="w-full border-2 border-gray-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 p-2.5 rounded-lg text-sm font-medium transition-all outline-none bg-white"
-                value={act.type}
-                onChange={(e) => {
-                  const copy = [...rule.actions];
-                  copy[index] = { ...emptyAction, type: e.target.value };
-                  setRule({ ...rule, actions: copy });
-                }}
-              >
-                <option value="goto_block">Go To Block</option>
-                <option value="goto_block_question">
-                  Go To Block → Question
-                </option>
-                <option value="goto_question">
-                  Go To Question (this block)
-                </option>
-                <option value="skip_block">Skip Blocks</option>
-                <option value="skip_questions">
-                  Skip Questions (this block)
-                </option>
-                <option value="show_message">Show Message</option>
-                <option value="end">End Survey</option>
-                <option value="raise_ticket">Raise Ticket</option>
-              </select>
-
-              {act.type === "goto_block" && (
-                <select
-                  className="w-full border-2 border-gray-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 p-2.5 rounded-lg text-sm transition-all outline-none bg-white"
-                  value={act.blockId || ""}
-                  onChange={(e) => {
-                    const copy = [...rule.actions];
-                    copy[index].blockId = e.target.value;
-                    setRule({ ...rule, actions: copy });
-                  }}
-                >
-                  <option value="">Select Block</option>
-                  {blocksResolved.map((b) => (
-                    <option key={b.blockId} value={b.blockId}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              {act.type === "goto_block_question" && (
-                <div className="grid gap-2">
-                  <select
-                    className="w-full border-2 border-gray-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 p-2.5 rounded-lg text-sm transition-all outline-none bg-white"
-                    value={act.targetBlockId || ""}
-                    onChange={(e) => {
-                      const copy = [...rule.actions];
-                      copy[index].targetBlockId = e.target.value;
-                      copy[index].targetQuestionId = "";
-                      setRule({ ...rule, actions: copy });
-                    }}
-                  >
-                    <option value="">Select Block</option>
-                    {blocksResolved.map((b) => (
-                      <option key={b.blockId} value={b.blockId}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
-
-                  <select
-                    className="w-full border-2 border-gray-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 p-2.5 rounded-lg text-sm transition-all outline-none bg-white"
-                    value={act.targetQuestionId || ""}
-                    onChange={(e) => {
-                      const copy = [...rule.actions];
-                      copy[index].targetQuestionId = e.target.value;
-                      setRule({ ...rule, actions: copy });
-                    }}
-                    disabled={!act.targetBlockId}
-                  >
-                    <option value="">Select Question</option>
-                    {(
-                      blocksResolved.find(
-                        (b) => b.blockId === act.targetBlockId
-                      )?._questions || []
-                    )
-                      .filter((q) => !q.__isPageBreak)
-                      .map((q) => (
-                        <option key={q.questionId} value={q.questionId}>
-                          {q.label}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-              )}
-
-              {act.type === "goto_question" && (
-                <select
-                  className="w-full border-2 border-gray-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 p-2.5 rounded-lg text-sm transition-all outline-none bg-white"
-                  value={act.questionId || ""}
-                  onChange={(e) => {
-                    const copy = [...rule.actions];
-                    copy[index].questionId = e.target.value;
-                    setRule({ ...rule, actions: copy });
-                  }}
-                >
-                  <option value="">Select Question</option>
-                  {(
-                    blocksResolved.find((b) => b.blockId === rule.blockId)
-                      ?._questions || []
-                  )
-                    .filter((q) => !q.__isPageBreak)
-                    .map((q) => (
-                      <option key={q.questionId} value={q.questionId}>
-                        {q.label}
-                      </option>
-                    ))}
-                </select>
-              )}
-
-              {act.type === "skip_block" && (
-                <select
-                  multiple
-                  className="w-full border-2 border-gray-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 p-2.5 rounded-lg text-sm transition-all outline-none bg-white min-h-[100px]"
-                  value={Array.isArray(act.blockIds) ? act.blockIds : []}
-                  onChange={(e) => {
-                    const selected = Array.from(e.target.selectedOptions).map(
-                      (o) => o.value
-                    );
-                    const copy = [...rule.actions];
-                    copy[index].blockIds = selected;
-                    setRule({ ...rule, actions: copy });
-                  }}
-                >
-                  {blocksResolved.map((b) => (
-                    <option key={b.blockId} value={b.blockId}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              {act.type === "skip_questions" && (
-                <select
-                  multiple
-                  className="w-full border-2 border-gray-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 p-2.5 rounded-lg text-sm transition-all outline-none bg-white min-h-[100px]"
-                  value={Array.isArray(act.questionIds) ? act.questionIds : []}
-                  onChange={(e) => {
-                    const selected = Array.from(e.target.selectedOptions).map(
-                      (o) => o.value
-                    );
-                    const copy = [...rule.actions];
-                    copy[index].questionIds = selected;
-                    setRule({ ...rule, actions: copy });
-                  }}
-                >
-                  {(
-                    blocksResolved.find((b) => b.blockId === rule.blockId)
-                      ?._questions || []
-                  )
-                    .filter((q) => !q.__isPageBreak)
-                    .map((q) => (
-                      <option key={q.questionId} value={q.questionId}>
-                        {q.label}
-                      </option>
-                    ))}
-                </select>
-              )}
-
-              {act.type === "show_message" && (
-                <textarea
-                  className="w-full border-2 border-gray-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 p-2.5 rounded-lg text-sm transition-all outline-none resize-none"
-                  placeholder="Message to display to user..."
-                  rows={3}
-                  value={act.message || ""}
-                  onChange={(e) => {
-                    const copy = [...rule.actions];
-                    copy[index].message = e.target.value;
-                    setRule({ ...rule, actions: copy });
-                  }}
-                />
-              )}
-
-              {act.type === "raise_ticket" && (
-                <button
-                  type="button"
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
-                  onClick={() => openTicketFormForAction(act, index)}
-                >
-                  <Sparkles className="w-4 h-4" />
-                  Configure Ticket
-                </button>
-              )}
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-600 border-2 border-red-200 rounded-lg transition-colors"
-                  onClick={() =>
-                    setRule((r) => ({
-                      ...r,
-                      actions: r.actions.filter((_, i) => i !== index),
-                    }))
-                  }
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Remove
-                </button>
-              </div>
-            </div>
-          ))}
-
-          <button
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
-            onClick={() =>
-              setRule((r) => ({
-                ...r,
-                actions: [...r.actions, { ...emptyAction }],
-              }))
-            }
-          >
-            <Plus className="w-4 h-4" />
-            Add Action
-          </button>
-        </div>
-
-        <RaiseTicketForm
-          open={ticketOpen}
-          onClose={() => setTicketOpen(false)}
-          onSaveTemplate={(template) => {
-            if (ticketActIndex == null) return;
-            setRule((prev) => {
-              if (!prev) return prev;
-              const actions = [...(prev.actions || [])];
-              const current = {
-                ...(actions[ticketActIndex] || { type: "raise_ticket" }),
-              };
-              const ticketData = Array.isArray(current.ticketData)
-                ? [...current.ticketData]
-                : [];
-              ticketData[0] = template;
-              current.ticketData = ticketData;
-              current.subjectTemplate = template.subjectTemplate;
-              current.priority = template.priority;
-              current.groupId = template.groupId;
-              current.message = template.message;
-              current.slaId = template.slaId;
-              actions[ticketActIndex] = current;
-              return { ...prev, actions };
-            });
-            setTicketOpen(false);
-            setTicketActIndex(null);
-          }}
-          initial={ticketInitial || {}}
-          title="New Ticket"
-          orgId={orgId}
-          requestorId={currentUserId}
-          currentUserId={currentUserId}
-        />
-
-        <div className="flex gap-3 pt-4 border-t-2 border-gray-200">
-          <button
-            className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            onClick={onSave}
-            disabled={saving}
-          >
-            <Save className="w-4 h-4" />
-            {saving
-              ? "Saving..."
-              : rule.ruleId
-              ? "Update Branch"
-              : "Save Branch"}
-          </button>
-          {rule.ruleId && (
-            <button
-              className="px-6 py-3 rounded-lg border-2 border-red-500 text-red-600 font-semibold hover:bg-red-50 transition-colors flex items-center gap-2"
-              onClick={() => onDelete(rule.ruleId)}
-            >
-              <Trash2 className="w-4 h-4" />
-              Delete
-            </button>
-          )}
-        </div>
-        <button
-          className="w-full px-6 py-3 rounded-lg border-2 border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-colors"
-          onClick={() => setRule(null)}
-        >
-          Cancel
-        </button>
-      </div>
     </div>
   );
-}
-
-/* =============================================
-   HELPERS (unchanged)
-============================================= */
-function valuePreview(v) {
-  if (v == null) return "null";
-  if (Array.isArray(v)) return v.map(safeStr).join(" | ");
-  return safeStr(v);
-}
-function safeStr(v) {
-  try {
-    if (typeof v === "object") return JSON.stringify(v);
-    return String(v);
-  } catch {
-    return String(v);
-  }
-}
-function conditionLabel(cond) {
-  const op = cond?.operator || "";
-  return `${op}: ${valuePreview(cond?.value)}`;
-}
-function actionPreview(a) {
-  switch (a?.type) {
-    case "goto_question":
-      return `goto question ${a.questionId}`;
-    case "goto_block":
-      return `goto block ${a.blockId}`;
-    case "goto_block_question":
-      return `goto ${a.targetQuestionId}`;
-    case "skip_question":
-      return `skip question`;
-    case "skip_block":
-      return `skip block`;
-    case "end":
-    case "skip_end":
-      return `end survey`;
-    case "show_message":
-      return `show message`;
-    case "raise_ticket":
-      return `raise ticket`;
-    default:
-      return `action: ${a ? a.type : "unknown"}`;
-  }
-}
-function actionEdgeLabel(a, toId, blocks = [], meta = {}) {
-  if (!a) return "→ action";
-  switch (a.type) {
-    case "goto_question":
-      return `→ Q: ${toId}`;
-    case "goto_block": {
-      const blk =
-        blocks.find((b) => b._questions?.[0]?.questionId === toId) || null;
-      const nm = blk?.name || a.blockId;
-      return `→ Block: ${nm}`;
-    }
-    case "goto_block_question":
-      return `→ Q: ${toId}`;
-    case "skip_question":
-      return "⤼ Skip question";
-    case "skip_block": {
-      const nextName = meta?.nextBlockName ? ` (${meta.nextBlockName})` : "";
-      return `⤼ Skip block${nextName}`;
-    }
-    case "end":
-    case "skip_end":
-      return "End Survey";
-    case "show_message":
-      return "Show Message";
-    default:
-      return "→ action";
-  }
-}
-function resolveActionOrSkipTargetId({
-  action,
-  primaryQuestionId,
-  blockEntryMap,
-  qToBlockId,
-  globalQ,
-  blocks,
-}) {
-  if (!action) return null;
-  const getNextQuestionGlobal = (qid) => {
-    const idx = globalQ.findIndex((q) => q.questionId === qid);
-    return (idx >= 0 ? globalQ[idx + 1] : null)?.questionId || null;
-  };
-  const getNextQuestionInSameBlock = (qid) => {
-    const blockId = qToBlockId.get(qid);
-    if (!blockId) return null;
-    const same = globalQ.filter(
-      (q) => qToBlockId.get(q.questionId) === blockId
-    );
-    const i = same.findIndex((q) => q.questionId === qid);
-    return (i >= 0 ? same[i + 1] : null)?.questionId || null;
-  };
-  const getNextBlockEntry = (qid) => {
-    const blockId = qToBlockId.get(qid);
-    if (!blockId) return null;
-    const seq = [];
-    const seen = new Set();
-    globalQ.forEach((q) => {
-      const b = qToBlockId.get(q.questionId);
-      if (b && !seen.has(b)) {
-        seen.add(b);
-        seq.push(b);
-      }
-    });
-    const idx = seq.indexOf(blockId);
-    const nextBlockId = idx >= 0 ? seq[idx + 1] : null;
-    if (!nextBlockId) return null;
-    const entry = blockEntryMap.get(nextBlockId) || null;
-    const nextBlockName =
-      blocks.find((b) => b.blockId === nextBlockId)?.name ||
-      nextBlockId ||
-      null;
-    return { entry, nextBlockName };
-  };
-
-  switch (action.type) {
-    case "goto_block":
-      return {
-        targetId: action.blockId
-          ? blockEntryMap.get(action.blockId) || null
-          : null,
-      };
-    case "goto_question":
-      return { targetId: action.questionId || null };
-    case "goto_block_question":
-      return { targetId: action.targetQuestionId || null };
-    case "skip_question": {
-      const nextInBlock = primaryQuestionId
-        ? getNextQuestionInSameBlock(primaryQuestionId)
-        : null;
-      const next =
-        nextInBlock ||
-        (primaryQuestionId ? getNextQuestionGlobal(primaryQuestionId) : null);
-      return { targetId: next || null };
-    }
-    case "skip_block": {
-      const res = primaryQuestionId
-        ? getNextBlockEntry(primaryQuestionId)
-        : null;
-      if (!res) return null;
-      return {
-        targetId: res.entry || null,
-        meta: { nextBlockName: res.nextBlockName },
-      };
-    }
-    default:
-      return null;
-  }
-}
-function messageNodeStyle() {
-  return {
-    width: MSG_W,
-    height: MSG_H - 10,
-    borderRadius: 12,
-    padding: 10,
-    background:
-      "linear-gradient(135deg, rgba(15,118,110,.25) 0%, rgba(15,118,110,.15) 100%)",
-    color: "#000",
-    border: "2px solid #0f766e",
-    fontSize: 12,
-    fontWeight: 500,
-    whiteSpace: "pre-wrap",
-    boxShadow: "0 6px 16px rgba(0,0,0,.25)",
-  };
-}
-function Legend() {
-  return (
-    <div className="hidden md:flex items-center gap-4 text-xs bg-gray-900 px-4 py-2.5 rounded-xl border border-gray-700">
-      <span className="inline-flex items-center gap-2 text-gray-300">
-        <i className="w-3 h-3 inline-block rounded-sm border-2 border-gray-500" />{" "}
-        Block
-      </span>
-      {/* <span className="inline-flex items-center gap-2 text-gray-300">
-        <i className="w-3 h-3 inline-block rounded-sm border-2 border-dashed border-red-500" />{" "}
-        Unassigned (hidden in flow)
-      </span> */}
-      <span className="inline-flex items-center gap-2 text-gray-300">
-        <i className="w-3 h-3 inline-block rounded-sm bg-indigo-600" />{" "}
-        Condition
-      </span>
-      <span className="inline-flex items-center gap-2 text-gray-300">
-        <i className="w-3 h-3 inline-block rounded-sm bg-emerald-600" /> Goto /
-        End
-      </span>
-      <span className="inline-flex items-center gap-2 text-gray-300">
-        <i className="w-3 h-3 inline-block rounded-sm bg-amber-500" /> Skip
-      </span>
-      <span className="inline-flex items-center gap-2 text-gray-300">
-        <i className="w-3 h-3 inline-block rounded-sm bg-teal-600" /> Message
-      </span>
-      <span className="inline-flex items-center gap-2 text-gray-300">
-        <i className="w-3 h-3 inline-block rounded-sm border-2 border-dashed border-yellow-400" />{" "}
-        Page Break (visual)
-      </span>
-    </div>
-  );
-  /* Helper to get appropriate value options for a question type */
-
 }

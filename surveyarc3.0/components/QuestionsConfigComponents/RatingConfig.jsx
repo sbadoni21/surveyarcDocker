@@ -1,12 +1,14 @@
 // components/QuestionConfigComponents/RatingConfig.tsx
-'use client';
-import React from 'react';
+"use client";
+import React from "react";
 
 export default function RatingConfig({ config, updateConfig }) {
-  const handleMinChange = (e) => updateConfig('min', parseInt(e.target.value) || 0);
-  const handleMaxChange = (e) => updateConfig('max', parseInt(e.target.value) || 10);
-  const handleMinLabelChange = (e) => updateConfig('minLabel', e.target.value);
-  const handleMaxLabelChange = (e) => updateConfig('maxLabel', e.target.value);
+  const handleMinChange = (e) =>
+    updateConfig("min", parseInt(e.target.value) || 0);
+  const handleMaxChange = (e) =>
+    updateConfig("max", parseInt(e.target.value) || 10);
+  const handleMinLabelChange = (e) => updateConfig("minLabel", e.target.value);
+  const handleMaxLabelChange = (e) => updateConfig("maxLabel", e.target.value);
 
   return (
     <div className="space-y-4 dark:bg-[#1A1A1E] dark:text-[#96949C]">
@@ -17,6 +19,7 @@ export default function RatingConfig({ config, updateConfig }) {
             type="number"
             className="w-full dark:bg-[#1A1A1E] dark:text-[#96949C] border p-2 rounded"
             value={config.min ?? 0}
+            onWheel={(e) => e.target.blur()}
             onChange={handleMinChange}
           />
         </div>
@@ -26,6 +29,7 @@ export default function RatingConfig({ config, updateConfig }) {
             type="number"
             className="w-full dark:bg-[#1A1A1E] dark:text-[#96949C] border p-2 rounded"
             value={config.max ?? 10}
+            onWheel={(e) => e.target.blur()}
             onChange={handleMaxChange}
           />
         </div>
@@ -37,7 +41,7 @@ export default function RatingConfig({ config, updateConfig }) {
           <input
             type="text"
             className="w-full dark:bg-[#1A1A1E] dark:text-[#CBC9DE] border p-2 rounded"
-            value={config.minLabel || ''}
+            value={config.minLabel || ""}
             onChange={handleMinLabelChange}
             placeholder="e.g., Not Likely"
           />
@@ -47,7 +51,7 @@ export default function RatingConfig({ config, updateConfig }) {
           <input
             type="text"
             className="w-full dark:bg-[#1A1A1E] dark:text-[#CBC9DE] border p-2 rounded"
-            value={config.maxLabel || ''}
+            value={config.maxLabel || ""}
             onChange={handleMaxLabelChange}
             placeholder="e.g., Extremely Likely"
           />

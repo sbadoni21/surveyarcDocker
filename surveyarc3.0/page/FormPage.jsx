@@ -5,13 +5,6 @@ import { useSearchParams, useRouter } from "next/navigation";
 import SurveyForm from "@/components/SurveyForm";
 import { useQuestion } from "@/providers/questionPProvider";
 import { getCookie, setCookie } from "cookies-next";
-import {
-  doc,
-  serverTimestamp,
-  writeBatch,
-  collection,
-} from "firebase/firestore";
-import { db } from "@/firebase/firebase";
 import { useSurvey } from "@/providers/surveyPProvider";
 import Loading from "@/app/[locale]/loading";
 import { useRule } from "@/providers/rulePProvider";
@@ -92,7 +85,6 @@ export default function FormPage() {
 
   useEffect(() => {
     const init = async () => {
-      // avoid running until we have required params
       if (!orgId || !surveyId || !projectId) return;
 
       let completedSurveys = [];
@@ -193,7 +185,6 @@ export default function FormPage() {
     }
   }, [blocks]);
 
-
   const handleSubmit = async (answers) => {
     if (!orgId || !surveyId) {
       alert("Survey not ready. Please try again later.");
@@ -202,13 +193,11 @@ export default function FormPage() {
 
     try {
       setStatus("Saving response…");
-
-      // Calculate total time
       const endTime = new Date();
       const totalMs = endTime - startTime;
       const totalMinutes = Math.floor(totalMs / 60000);
       const totalSeconds = Math.floor((totalMs % 60000) / 1000);
-      const respondentId = userKey || "anonymous"; // or `resp_" + uuid()` if you want unique
+      const respondentId = userKey || "anonymous";
 
       const responseData = {
         respondent_id: respondentId,
@@ -231,10 +220,8 @@ export default function FormPage() {
         })),
       };
 
-      // Always create a new response (POST)
       const savedResponse = await saveResponse(orgId, surveyId, responseData);
 
-      // Update contact with this survey
       if (userKey) {
         await updateContact(userKey, {
           surveys: [
@@ -247,7 +234,6 @@ export default function FormPage() {
         });
       }
 
-      // Update organisation usage
       const currentUsage =
         organisation?.subscription?.currentusage?.response || 0;
       await update(orgId, {
@@ -255,7 +241,6 @@ export default function FormPage() {
         last_activity: new Date().toISOString(),
       });
 
-      // Push to Salesforce
       setStatus("Saving to Salesforce…");
       // const salesforceRes = await fetch("/api/salesforce/ingest", {
       //   method: "POST",
@@ -288,7 +273,7 @@ export default function FormPage() {
         maxAge: 60 * 60 * 24 * 365,
       });
 
-      window.location.href = "/thank-you";
+      window.location.replace("/thank-you");
     } catch (err) {
       console.error("Submission error:", err);
       alert(`Something went wrong: ${err.message || err}`);
@@ -305,7 +290,6 @@ export default function FormPage() {
 
       order.forEach((qid) => {
         if (qid.startsWith("PB-")) {
-          // Push the accumulated questions as one "page block"
           if (currentPageQuestions.length > 0) {
             expanded.push({
               ...block,
@@ -313,14 +297,12 @@ export default function FormPage() {
               questionOrder: [...currentPageQuestions],
             });
           }
-          // reset for next page
           currentPageQuestions = [];
         } else {
           currentPageQuestions.push(qid);
         }
       });
 
-      // push the last set (after last page break)
       if (currentPageQuestions.length > 0) {
         expanded.push({
           ...block,
@@ -345,7 +327,6 @@ export default function FormPage() {
         </p>
       ) : (
         <>
-       
           <SurveyForm
             questions={questions}
             blocks={expandBlocksByPageBreaks(blocks, questions)}

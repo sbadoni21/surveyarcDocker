@@ -25,6 +25,22 @@ export default function SurveyDemoPage() {
   const { rules, getAllRules } = useRule();
   const { getSurvey } = useSurvey();
 
+  const [isMobile, setIsMobile] = useState(false);
+
+  // detect mobile on mount and on resize
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia?.("(max-width: 640px)");
+    const update = () => setIsMobile(Boolean(mq.matches));
+    update();
+    if (mq.addEventListener) mq.addEventListener("change", update);
+    else mq.addListener(update);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", update);
+      else mq.removeListener(update);
+    };
+  }, []);
+
   const shuffleArray = (a) => {
     const x = [...a];
     for (let i = x.length - 1; i > 0; i--) {
@@ -121,8 +137,7 @@ export default function SurveyDemoPage() {
       let currentPageQuestions = [];
 
       order.forEach((qid) => {
-        if (qid.startsWith("PB-")) {
-          // Push the accumulated questions as one "page block"
+        if (String(qid).startsWith("PB-")) {
           if (currentPageQuestions.length > 0) {
             expanded.push({
               ...block,
@@ -130,14 +145,12 @@ export default function SurveyDemoPage() {
               questionOrder: [...currentPageQuestions],
             });
           }
-          // reset for next page
           currentPageQuestions = [];
         } else {
           currentPageQuestions.push(qid);
         }
       });
 
-      // push the last set (after last page break)
       if (currentPageQuestions.length > 0) {
         expanded.push({
           ...block,
@@ -153,31 +166,41 @@ export default function SurveyDemoPage() {
   if (loading) return <Loading />;
   if (!survey) return <p>Survey not found</p>;
 
+  // compact data once for both frames
+  const preparedBlocks = expandBlocksByPageBreaks(blocks, questions);
+
   return (
-    <div>
+    <div className="h-full overflow-hidden" >
       <div
         style={{
           margin: "16px auto",
           maxWidth: 1300,
           display: "grid",
-          gridTemplateColumns: "400px 1fr",
-          gap: 10,
+          gridTemplateColumns: isMobile ? "1fr" : "400px 1fr",
+          gap: 12,
           alignItems: "start",
         }}
       >
-        {/* ---------------- Phone Frame ---------------- */}
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 12, marginBottom: 8, color: "#555" }}>
-            Phone
-          </div>
+        {/* Phone Frame */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "flex-start",
+          }}
+        >
+          {!isMobile && <div style={{ fontSize: 12, marginBottom: 8, color: "#aaa" }}>Phone</div>}
+
           <div
             style={{
-              width: 300,
-              height: 580,
+              width: isMobile ? "100%" : 300,
+              maxWidth: 360,
+              height: isMobile ? "calc(100vh - 120px)" : 580,
               borderRadius: 36,
               padding: "18px 10px",
-              background: "#000",
-              boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+              background: "#000", // black background
+              boxShadow: "0 8px 30px rgba(0,0,0,0.6)",
               display: "flex",
               justifyContent: "center",
               alignItems: "center",
@@ -185,71 +208,74 @@ export default function SurveyDemoPage() {
           >
             <div
               style={{
-                width: 300,
-                height: 560,
-                background: "#fff",
-                borderRadius: 28,
-                overflow: "auto",
-              }}
-            >
-              <SurveyForm
-                questions={questions}
-                blocks={expandBlocksByPageBreaks(blocks, questions)}
-                handleSubmit={handleSubmit}
-                rules={rules}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ---------------- Laptop Frame ---------------- */}
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 12, marginBottom: 8, color: "#555" }}>
-            Laptop
-          </div>
-          <div
-            style={{
-              width: "100%",
-              maxWidth: 1000,
-              height: 620,
-              borderRadius: 12,
-              background: "#e8e8e8",
-              padding: "12px 12px 0 12px",
-              boxShadow: "0 8px 20px rgba(0,0,0,0.25)",
-              position: "relative",
-            }}
-          >
-            {/* Screen area */}
-            <div
-              style={{
-                background: "#fff",
+                width: "100%",
                 height: "100%",
-                borderRadius: 8,
-                overflow: "auto",
+                background: "#000",
+                borderRadius: 28,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
               }}
             >
-              <SurveyForm
-                questions={questions}
-                blocks={expandBlocksByPageBreaks(blocks, questions)}
-                handleSubmit={handleSubmit}
-                rules={rules}
-              />
+              {/* inside phone screen the SurveyForm is embedded */}
+              <div style={{ flex: 1, background: "#000" }}>
+                <SurveyForm
+                  questions={questions}
+                  blocks={preparedBlocks}
+                  handleSubmit={handleSubmit}
+                  rules={rules}
+                  embedded={true}
+                  theme="dark"
+                />
+              </div>
             </div>
-
-            {/* Laptop base */}
-            <div
-              style={{
-                width: "110%",
-                height: 20,
-                background: "#c0c0c0",
-                borderRadius: "0 0 12px 12px",
-                position: "absolute",
-                bottom: -20,
-                left: "-5%",
-              }}
-            />
           </div>
         </div>
+
+        {/* Laptop Frame (hide on mobile) */}
+        {!isMobile && (
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 12, marginBottom: 8, color: "#aaa" }}>Laptop</div>
+            <div
+              style={{
+                width: "100%",
+                maxWidth: 1000,
+                height: 640,
+                borderRadius: 12,
+                background: "#000", // black background
+                padding: "12px 12px 0 12px",
+                boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
+                position: "relative",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <div style={{ background: "#000", height: "100%", borderRadius: 8, overflow: "hidden" }}>
+                <SurveyForm
+                  questions={questions}
+                  blocks={preparedBlocks}
+                  handleSubmit={handleSubmit}
+                  rules={rules}
+                  embedded={true}
+                  theme="dark"
+                />
+              </div>
+
+              {/* laptop base */}
+              <div
+                style={{
+                  width: "110%",
+                  height: 20,
+                  background: "#0b0b0b",
+                  borderRadius: "0 0 12px 12px",
+                  position: "absolute",
+                  bottom: -20,
+                  left: "-5%",
+                }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
