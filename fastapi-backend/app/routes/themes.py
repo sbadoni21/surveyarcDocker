@@ -10,6 +10,7 @@ from ..schemas.themes import (
     ThemeListOut,
 )
 from ..services.redis_theme_service import RedisThemeService
+import secrets
 
 from uuid import uuid4
 from typing import Optional, List
@@ -94,6 +95,8 @@ def get_theme(
 # --------------------------------------------------------
 # ✅ Create theme
 # --------------------------------------------------------
+def generate_theme_id():
+    return "theme_" + secrets.token_hex(4)
 @router.post("/", response_model=ThemeOut)
 def create_theme(
     payload: ThemeCreate,
@@ -109,7 +112,7 @@ def create_theme(
         raise HTTPException(status_code=400, detail="Theme name already exists in org")
 
     theme = Theme(
-        theme_id=str(uuid4()),
+        theme_id = generate_theme_id(),
         **payload.dict(),
         
     )
