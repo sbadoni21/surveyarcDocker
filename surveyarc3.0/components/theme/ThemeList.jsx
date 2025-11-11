@@ -9,7 +9,7 @@ export default function ThemeList({ surveyId, orgId }) {
     loading,
     themes,
     currentId,
-    open,
+    open,              // ✅ MUST be here
     createTheme,
     duplicateTheme,
     deleteTheme,
@@ -49,7 +49,7 @@ export default function ThemeList({ surveyId, orgId }) {
               className={`p-4 cursor-pointer hover:bg-gray-50 ${
                 currentId === t.themeId ? "bg-blue-50" : ""
               }`}
-              onClick={() => open(t.themeId)}
+              onClick={() => open(t.themeId)}     // ✅ WORKS
             >
               <div className="flex items-center justify-between">
                 <div className="font-medium">{t.name}</div>
@@ -78,14 +78,14 @@ export default function ThemeList({ surveyId, orgId }) {
               </div>
 
               <button
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   addThemeToSurvey(orgId, surveyId, t.themeId);
                 }}
                 className="text-xs text-white bg-fuchsia-800 p-1 mt-2"
               >
                 Apply Theme to current survey
               </button>
-
             </div>
           ))
         )}

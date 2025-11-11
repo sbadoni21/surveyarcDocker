@@ -40,25 +40,30 @@ async function forceDecryptResponse(res) {
   return NextResponse.json(parsed.json, { status: res.status });
 }
 
-// GET /api/post-gres-apis/themes?org_id=xxx
-export async function GET(req) {
+
+
+
+// =====================================================
+// FILE 2: app/api/post-gres-apis/themes/[theme_id]/route.js
+// =====================================================
+// (Copy the same imports and helpers from above)
+
+// GET /api/post-gres-apis/themes/[theme_id]
+export async function GET(req, { params }) {
   try {
-    const { searchParams } = new URL(req.url);
-    const orgId = searchParams.get("org_id");
-    const userId = searchParams.get("user_id");
-    const active = searchParams.get("active");
+    const { theme_id } = await params;
+    
+    if (!theme_id) {
+      return NextResponse.json(
+        { status: "error", message: "Missing theme_id" },
+        { status: 400 }
+      );
+    }
 
-    const params = new URLSearchParams();
-    if (orgId) params.append("org_id", orgId);
-    if (active !== null) params.append("active", active);
-
-    const url = `${BASE}/themes/?${params.toString()}`;
+    const url = `${BASE}/themes/${encodeURIComponent(theme_id)}`;
 
     const res = await fetch(url, {
       signal: AbortSignal.timeout(30000),
-      headers: {
-        "X-User-Id": userId || "",
-      },
     });
 
     return forceDecryptResponse(res);
@@ -70,22 +75,64 @@ export async function GET(req) {
   }
 }
 
-// POST /api/post-gres-apis/themes
-export async function POST(req) {
+// PATCH /api/post-gres-apis/themes/[theme_id]
+export async function PATCH(req, { params }) {
   try {
+    const { theme_id } = await params;
     const body = await req.json();
+    
+    if (!theme_id) {
+      return NextResponse.json(
+        { status: "error", message: "Missing theme_id" },
+        { status: 400 }
+      );
+    }
+
     const payload = ENC ? await encryptPayload(body) : body;
 
-    const url = `${BASE}/themes/`;
+    const url = `${BASE}/themes/${encodeURIComponent(theme_id)}`;
 
     const res = await fetch(url, {
-      method: "POST",
+      method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        "X-User-Id": body.created_by || "",
+        "X-User-Id": body.updated_by || body.created_by || "",
         ...(ENC ? { "x-encrypted": "1" } : {}),
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    return forceDecryptResponse(res);
+  } catch (e) {
+    return NextResponse.json(
+      { status: "error", message: String(e?.message || e) },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/post-gres-apis/themes/[theme_id]
+export async function DELETE(req, { params }) {
+  try {
+    const { theme_id } = await params;
+    const { searchParams } = new URL(req.url);
+    const userId = searchParams.get("user_id");
+
+    if (!theme_id) {
+      return NextResponse.json(
+        { status: "error", message: "Missing theme_id" },
+        { status: 400 }
+      );
+    }
+
+    const url = `${BASE}/themes/${encodeURIComponent(theme_id)}`;
+
+    const res = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        "X-User-Id": userId || "",
+      },
       signal: AbortSignal.timeout(30000),
     });
 

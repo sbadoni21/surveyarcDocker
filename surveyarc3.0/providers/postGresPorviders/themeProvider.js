@@ -19,6 +19,11 @@ export const ThemeProvider = ({ children }) => {
   const [themes, setThemes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [currentId, setCurrentId] = useState(null);
+
+  const open = (themeId) => {
+    setCurrentId(themeId);
+  };
 
   /** ✅ Cookies */
   const userId = useMemo(() => {
@@ -58,14 +63,14 @@ export const ThemeProvider = ({ children }) => {
   /** CREATE */
   const create = async (themeData) => {
     try {
-      
       const created = await ThemeModel.create({
         ...themeData,
-        orgId:orgId,
-        userId:userId,
+        orgId: orgId,
+        userId: userId,
       });
 
       setThemes((prev) => [...prev, created]);
+      setCurrentId(created.themeId); // ✅ Auto-select newly created theme
       return created;
     } catch (e) {
       console.error("Failed to create theme:", e);
@@ -104,6 +109,11 @@ export const ThemeProvider = ({ children }) => {
     try {
       await ThemeModel.deleteTheme(themeId, orgId, userId);
       setThemes((prev) => prev.filter((t) => t.themeId !== themeId));
+      
+      // ✅ Clear selection if deleting current theme
+      if (currentId === themeId) {
+        setCurrentId(null);
+      }
     } catch (e) {
       console.error("Failed to delete theme:", e);
       throw e;
@@ -156,6 +166,8 @@ export const ThemeProvider = ({ children }) => {
     themes,
     loading,
     error,
+    currentId,  // ✅ ADDED - This was missing!
+    open,       // ✅ ADDED - This was missing!
 
     create,
     getById,
