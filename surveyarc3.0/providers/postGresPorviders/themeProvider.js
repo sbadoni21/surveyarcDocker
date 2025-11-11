@@ -58,10 +58,11 @@ export const ThemeProvider = ({ children }) => {
   /** CREATE */
   const create = async (themeData) => {
     try {
+      
       const created = await ThemeModel.create({
         ...themeData,
-        orgId: themeData.orgId,
-        userId: themeData.userId,
+        orgId:orgId,
+        userId:userId,
       });
 
       setThemes((prev) => [...prev, created]);

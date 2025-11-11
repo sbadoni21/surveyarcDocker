@@ -36,9 +36,8 @@ def _to_dict(theme: Theme) -> dict:
         "meta": theme.meta,
         "is_active": theme.is_active,
         "created_by": theme.created_by,
-        "created_at": theme.created_at,
-        "updated_at": theme.updated_at,
-    }
+        "created_at":theme.created_at, 
+        "updated_at":theme.updated_at}
 
 
 # --------------------------------------------------------
@@ -112,6 +111,7 @@ def create_theme(
     theme = Theme(
         theme_id=str(uuid4()),
         **payload.dict(),
+        
     )
 
     db.add(theme)

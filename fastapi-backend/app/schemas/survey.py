@@ -8,6 +8,7 @@ class SurveyBase(BaseModel):
     name: str = None
     created_by: str = None
     updated_by: str = None
+    theme_id: str = None
     time: Optional[str] = None
     settings: Optional[Dict[str, Any]] = {"anonymous": False}
     question_order: Optional[List[str]] =  None
@@ -29,6 +30,8 @@ class SurveyUpdate(BaseModel):
     question_order: Optional[List[str]] = None
     meta_data: Optional[Dict[str, Any]] = None
     status: Optional[str] = None
+    theme_id: Optional[str]  = None
+
     # 🔹 NEW: allow updating these
     blocks: Optional[List[Dict[str, Any]]] = None
     block_order: Optional[List[str]] = None
@@ -40,6 +43,8 @@ class SurveyOut(SurveyBase):
     status: str
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    theme_id: Optional[str]  = None
+
 
     class Config:
         orm_mode = True

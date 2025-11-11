@@ -29,8 +29,6 @@ const toCamel = (t) => ({
   isActive: t.is_active,
 
   createdBy: t.created_by,
-  createdAt: t.created_at,
-  updatedAt: t.updated_at,
 });
 
 const toSnake = (t) => ({
@@ -46,6 +44,7 @@ const toSnake = (t) => ({
   dark_secondary_color: t.darkSecondaryColor,
   dark_text_color: t.darkTextColor,
   dark_background_color: t.darkBackgroundColor,
+  created_by:t.userId,
 
   logo_url: t.logoUrl,
   meta: t.meta,
@@ -57,6 +56,7 @@ const ThemeModel = {
   async create(data) {
     console.log(data);
     const body = toSnake(data);
+    console.log(body);
 
     const res = await fetch(`${BASE}`, {
       method: "POST",

@@ -21,6 +21,7 @@ class Survey(Base):
     settings = Column(JSON, default=lambda: {"anonymous": False})
     question_order = Column(JSON, default=list)  # list of question IDs
     meta_data = Column(JSON, default=dict)
+    theme_id = Column(String, nullable=True)
 
     # 🔹 NEW: blocks & block_order
     blocks = Column(JSON, default=list)        # [{blockId, name, questionOrder:[]}, ...]
