@@ -19,6 +19,7 @@ import SurveyModel from "@/models/surveyModel";
 import SurveyFlowView from "@/components/SurveyFlowView";
 import CampaignPage from "./CampaignPage";
 import SurveyResponsesPage from "@/components/SurveyResponsePopup";
+import ThemeManager from "@/components/theme";
 
 export default function Dist() {
   const [selectedType, setSelectedType] = useState(null);
@@ -80,6 +81,7 @@ export default function Dist() {
     if (["demo", "preview"].includes(k)) return "demo";
     if (["distribution", "share"].includes(k)) return "distribution";
     if (["campaign"].includes(k)) return "campaign";
+    if (["theme"].includes(k)) return "theme";
     if (["responses"].includes(k)) return "responses";
     return "questions";
   }, []);
@@ -501,6 +503,7 @@ export default function Dist() {
         {activeTab === "distribution" && <DistributionPage />}
         {activeTab === "campaign" && <CampaignPage />}
         {activeTab === "responses" && <SurveyResponsesPage />}
+        {activeTab === "theme" && <ThemeManager />}
       </div>
     </div>
   );

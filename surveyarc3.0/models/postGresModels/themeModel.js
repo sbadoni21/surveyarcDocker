@@ -55,6 +55,7 @@ const toSnake = (t) => ({
 const ThemeModel = {
   /** CREATE */
   async create(data) {
+    console.log(data);
     const body = toSnake(data);
 
     const res = await fetch(`${BASE}`, {

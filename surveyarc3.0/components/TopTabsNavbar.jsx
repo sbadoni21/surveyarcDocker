@@ -11,6 +11,7 @@ export default function TopTabsNavbar({ activeTab, setActiveTab }) {
     // { id: "distribution", label: "Distribution", icon: <TbLayoutDistributeHorizontal width="20" height="20" /> },
     { id: "demo", label: "Demo survey", icon: <Icon icon="solar:play-linear" width="20" height="20" /> },
     { id: "responses", label: "Responses", icon: <Icon icon="ri:survey-line" width="20" height="20" /> },
+    { id: "theme", label: "Theme", icon: <Icon icon="ri:palette-line" width="20" height="20" /> },
 
     // { id: "campaign", label: "campaign", icon: <Icon icon="solar:play-linear" width="20" height="20" /> },
   ];
