@@ -10,6 +10,7 @@ export default function SurveyForm({
   blocks = [],
   handleSubmit,
   rules,
+  theme,
 }) {
   const [currentBlockIndex, setCurrentBlockIndex] = useState(0);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
@@ -232,7 +233,7 @@ export default function SurveyForm({
           await handleSubmit(answers);
         } catch (err) {
           console.error("Submit error:", err);
-          setSubmitting(false); 
+          setSubmitting(false);
         }
       })();
       return;
@@ -333,8 +334,8 @@ export default function SurveyForm({
 
   const getInputClasses = () => `
     w-full px-3 py-2 lg:px-4 lg:py-3 rounded-xl transition-all duration-200 
-    outline-none border border-[#8C8A97] font-medium
-    text-gray-800 dark:text-[#CBC9DE] dark:bg-[#1A1A1E] placeholder-gray-500 dark:placeholder-[#96949C]
+    outline-none border border-[color:var(--secondary-light)] dark:border-[color:var(--secondary-dark)] font-medium
+    text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] bg-[color:var(--bg-light)] dark:bg-[color:var(--bg-dark)] placeholder-gray-500 dark:placeholder-[#96949C]
   `;
 
   if (!blocksWithQuestions.length) {
@@ -367,9 +368,34 @@ export default function SurveyForm({
     blocksWithQuestions.length
   }`;
 
-
   return (
-    <div className="min-h-fit max-h-screen dark:bg-[#121214] bg-white flex flex-col relative">
+    <div
+      className="min-h-fit max-h-screen flex flex-col relative 
+             bg-[color:var(--bg-light)] dark:bg-[color:var(--bg-dark)]"
+      style={
+        theme?.isActive
+          ? {
+              "--bg-light": theme.lightBackgroundColor,
+              "--bg-dark": theme.darkBackgroundColor,
+              "--primary-light": theme.lightPrimaryColor,
+              "--primary-dark": theme.darkPrimaryColor,
+              "--secondary-light": theme.lightSecondaryColor,
+              "--secondary-dark": theme.darkSecondaryColor,
+              "--text-light": theme.lightTextColor,
+              "--text-dark": theme.darkTextColor,
+            }
+          : {
+              "--bg-light": "#ffffff",
+              "--bg-dark": "#121214",
+              "--primary-light": "#f1882a",
+              "--primary-dark": "#cd7323",
+              "--secondary-light": "#fbbe24",
+              "--secondary-dark": "#9a6d1b",
+              "--text-light": "#000000",
+              "--text-dark": "#ffffff",
+            }
+      }
+    >
       {/* ---------- Overlay while submitting ---------- */}
       {submitting && (
         <div
@@ -387,24 +413,36 @@ export default function SurveyForm({
       )}
 
       {/* Sticky header */}
-      <header className="sticky top-0 z-30 backdrop-blur bg-orange-500/95 dark:bg-[#111111]/95 border-b border-orange-400/30 dark:border-[#222]">
+      <header className="sticky top-0 z-30 backdrop-blur bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] border-b border-orange-400/30 dark:border-[#222]">
         <div className="lg:max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-white/20 rounded-md">
-              <FileText className="text-white dark:text-[#CD7323]" size={22} />
-            </div>
+            {theme?.logoUrl ? (
+              <img
+                src={theme.logoUrl}
+                alt={theme.brandName || "Logo"}
+                className="h-10 w-10 object-contain rounded-md"
+              />
+            ) : (
+              <div className="p-2 bg-white/20 rounded-md flex items-center justify-center">
+                <FileText
+                  className="text-white dark:text-[#CD7323]"
+                  size={22}
+                />
+              </div>
+            )}
+
             <div>
               <p className="text-lg lg:text-2xl font-bold text-white leading-tight">
-                Survey ARC
+                {theme?.name || "Survey ARC"}
               </p>
             </div>
           </div>
 
           <div className="text-right">
-            <p className="text-sm text-white/95">Progress</p>
-            <div className="w-36 h-2 bg-white/20 rounded-full overflow-hidden mt-1">
+            <p className="text-sm text-[color:var(--bg-light)] ">Progress</p>
+            <div className="w-36 h-2 bg-[color:var(--bg-light)] rounded-full overflow-hidden mt-1">
               <div
-                className="h-full bg-white rounded-full transition-all duration-300"
+                className="h-full bg-[color:var(--secondary-light)]  rounded-full transition-all duration-300"
                 style={{
                   width: `${Math.round(
                     ((currentBlockIndex * totalPagesInBlock +
@@ -429,12 +467,14 @@ export default function SurveyForm({
                   {!["end_screen", "welcome_screen"].includes(
                     question.type
                   ) && (
-                    <p className="text-lg lg:text-2xl font-semibold mb-4 text-gray-800 dark:text-[#CBC9DE]">
+                    <p className="text-lg lg:text-2xl font-semibold mb-4 text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
                       {idx + 1}. {question.label}
                     </p>
                   )}
                   {question.description && (
-                    <i className="mb-4 text-sm text-gray-600 dark:text-[#A0A0B0]">{question.description}</i>
+                    <i className="mb-4 text-sm text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
+                      {question.description}
+                    </i>
                   )}
                   <RenderQuestion
                     question={question}
@@ -446,13 +486,13 @@ export default function SurveyForm({
                       question.config || defaultConfigMap[question.type] || {}
                     }
                     inputClasses={getInputClasses()}
-                    disabled={submitting} // if your RenderQuestion supports disabled prop
+                    disabled={submitting}
                   />
                 </div>
               ))
             ) : (
               <div className="text-center py-12">
-                <p className="text-xl text-gray-700 dark:text-[#CFCFE0]">
+                <p className="text-xl text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
                   No question to show on this page.
                 </p>
               </div>
@@ -461,9 +501,9 @@ export default function SurveyForm({
         </div>
       </main>
 
-      <div className="sticky bottom-0 z-40 bg-white/95 dark:bg-[#0F0F10]/95 border-t border-gray-200 dark:border-[#222]">
+      <div className="sticky bottom-0 z-40 bg-[color:var(--bg-light)] dark:bg-[color:var(--bg-dark)] border-t border-[color:var(--secondary-light)] dark:border-[color:var(--secondary-dark)]">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-          <div className="text-sm text-gray-600 dark:text-[#CFCFE0]"></div>
+          <div className="text-sm text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]"></div>
 
           <div className="flex justify-center items-center w-full gap-3">
             {isLastBlock ? (
@@ -475,14 +515,11 @@ export default function SurveyForm({
                     )
                   )
                     return;
-                  // set submitting flag BEFORE calling parent's handleSubmit
                   setSubmitting(true);
                   try {
                     await handleSubmit(answers);
-                    // DO NOT setSubmitting(false) here on success — parent will redirect.
                   } catch (err) {
                     console.error("Submit failed:", err);
-                    // allow retry
                     setSubmitting(false);
                     alert("Submission failed. Please try again.");
                   }
@@ -499,7 +536,7 @@ export default function SurveyForm({
             ) : (
               <button
                 onClick={handleNextBlock}
-                className="flex items-center text-sm lg:text-lg gap-2 px-6 py-3 rounded-md font-semibold transition-transform duration-150 hover:scale-105 bg-gradient-to-r from-orange-500 to-orange-600 text-white"
+                className="flex items-center text-sm lg:text-lg gap-2 px-6 py-3 rounded-md font-semibold transition-transform duration-150 hover:scale-105 bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]"
                 disabled={submitting}
               >
                 Next

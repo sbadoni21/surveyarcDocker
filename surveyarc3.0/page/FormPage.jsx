@@ -11,6 +11,7 @@ import { useRule } from "@/providers/rulePProvider";
 import { useContacts } from "@/providers/postGresPorviders/contactProvider";
 import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
 import { useResponse } from "@/providers/postGresPorviders/responsePProvider";
+import { useTheme } from "@/providers/postGresPorviders/themeProvider"; // <- theme provider
 
 export default function FormPage() {
   const searchParams = useSearchParams();
@@ -32,6 +33,7 @@ export default function FormPage() {
 
   const [questions, setQuestions] = useState([]);
   const [survey, setSurvey] = useState(null);
+  const [theme, setTheme] = useState(null); // <- theme state
   const [loading, setLoading] = useState(true);
   const [responseId, setResponseId] = useState(null);
   const [isCompleted, setIsCompleted] = useState(false);
@@ -43,6 +45,7 @@ export default function FormPage() {
   const { saveResponse } = useResponse();
   const { updateContact } = useContacts();
   const { organisation, update } = useOrganisation();
+  const { getById } = useTheme(); 
 
   const shuffleArray = (array) => {
     const shuffled = [...array];
@@ -111,7 +114,7 @@ export default function FormPage() {
             const surveyDoc = await getSurvey(surveyId);
             if (!surveyDoc) {
               router.push("/404");
-              return;
+              return null;
             }
 
             const randomizedBlocks = (surveyDoc.blocks || []).map(
@@ -120,6 +123,19 @@ export default function FormPage() {
 
             setSurvey(surveyDoc);
             setBlocks(randomizedBlocks);
+
+            if (surveyDoc?.theme_id) {
+              try {
+                const th = await getById(surveyDoc.theme_id);
+                setTheme(th || null);
+              } catch (err) {
+                console.error("Failed to load theme:", err);
+                setTheme(null);
+              }
+            } else {
+              setTheme(null);
+            }
+            // --- end new
           } catch (err) {
             console.error("Error fetching survey:", err);
             router.push("/404");
@@ -143,11 +159,11 @@ export default function FormPage() {
           }
         };
 
-        Promise.all([
+        await Promise.all([
           fetchSurveyData(),
           fetchQuestions(),
           fetchRules(),
-        ]).finally(() => setLoading(false));
+        ]);
       } catch (err) {
         console.error(err);
         router.push("/404");
@@ -157,6 +173,7 @@ export default function FormPage() {
     };
 
     init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, projectId, surveyId]);
 
   useEffect(() => {
@@ -332,6 +349,7 @@ export default function FormPage() {
             blocks={expandBlocksByPageBreaks(blocks, questions)}
             handleSubmit={handleSubmit}
             rules={rules}
+            theme={theme} // <- pass theme into SurveyForm
           />
         </>
       )}

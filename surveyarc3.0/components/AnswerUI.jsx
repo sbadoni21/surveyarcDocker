@@ -86,7 +86,8 @@ export default function RenderQuestion({
       return (
         <textarea
           placeholder={config.placeholder}
-          className={`${inputClasses} min-h-[120px] dark:bg-[#1A1A1E]  resize-none`}
+          className={`${inputClasses} min-h-[120px] bg-[color:var(--bg-light)] dark:bg-[color:var(--bg-dark)]"
+  resize-none`}
           value={value}
           maxLength={config.maxLength}
           onChange={(e) => onChange(e.target.value)}
@@ -120,8 +121,8 @@ export default function RenderQuestion({
               <Star
                 className={`w-8 h-8 transition-transform transform hover:scale-110 ${
                   value >= star
-                    ? "text-orange-500"
-                    : "text-gray-300 dark:text-gray-600"
+                    ? "text-[color:var(--primary-light)] "
+                    : "text-[color:var(--text-light)]  dark:text-[color:var(--text-dark)]"
                 }`}
                 fill={value >= star ? "#f97316" : "none"}
               />
@@ -136,10 +137,10 @@ export default function RenderQuestion({
           {config.options?.map((option, i) => (
             <label
               key={i}
-              className={`flex items-center p-4 rounded-3xl lg:rounded-xl lg:border-2 lg:dark:border-none cursor-pointer transition-all duration-200 hover:scale-105 ${
+              className={`flex items-center p-4 rounded-3xl lg:rounded-xl lg:border-2  cursor-pointer transition-all duration-200 hover:scale-105 ${
                 value === option
-                  ? "bg-[#F1882A] lg:border-orange-400 text-white"
-                  : "bg-white shadow-md dark:bg-gray-800 border-yellow-400 dark:border-orange-400 text-gray-800 dark:text-[#96949C] hover:bg-orange-100 dark:hover:bg-gray-700"
+                  ? "bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] lg:border-[color:var(--primary-light)] text-white"
+                  : "bg-[color:var(--bg-light)] dark:bg-[color:var(--bg-dark)] shadow-md  border-[color:var(--secondary-light)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] hover:bg-[color:var(--primary-light)] dark:hover:bg-[color:var(--primary-dark)]"
               }`}
             >
               <div className="flex items-center">
@@ -182,16 +183,16 @@ export default function RenderQuestion({
     case QUESTION_TYPES.LEGAL:
       return (
         <div className="space-y-5">
-          <div className="bg-orange-100 dark:bg-gray-800 p-4 rounded-xl border-l-4 border-orange-500 dark:border-orange-400 text-gray-800 dark:text-[#96949C] text-sm">
+          <div className="bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] p-4 rounded-xl border-l-4 border-[color:var(--secondary-light)] dark:border-[color:var(--secondary-dark)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] text-sm">
             {config.legalText ||
               "Please review and accept the terms and conditions before continuing."}
           </div>
-          <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-[#CBC9DE]">
+          <label className="flex items-center gap-2 text-sm text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
             <input
               type="checkbox"
               checked={value === true}
               onChange={(e) => onChange(e.target.checked)}
-              className="accent-orange-500"
+              className="accent-[color:var(--primary-light)]"
             />
             <span>
               {config.checkboxLabel || "I agree to the terms and conditions."}
@@ -208,8 +209,8 @@ export default function RenderQuestion({
               key={option}
               className={`flex-1 flex items-center justify-center p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 hover:scale-105 ${
                 value === option
-                  ? "bg-orange-500 border-orange-400 text-white"
-                  : "bg-orange-50 dark:bg-gray-800 border-yellow-400 dark:border-orange-400 text-gray-800 dark:text-[#96949C] hover:bg-orange-100 dark:hover:bg-gray-700"
+                  ? "bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] text-white"
+                  : "bg-[color:var(--bg-light)] dark:bg-[color:var(--bg-dark)] border-[color:var(--secondary-light)] dark:border-[color:var(--secondary-dark)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] hover:bg-[color:var(--primary-light)] dark:hover:bg-[color:var(--primary-dark)]"
               }`}
             >
               <input
@@ -238,8 +239,8 @@ export default function RenderQuestion({
               key={i}
               className={`flex items-center p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 hover:scale-105 ${
                 selected.includes(option)
-                  ? "bg-orange-500 border-orange-400 text-white"
-                  : "bg-orange-50 dark:bg-[#121214] border-yellow-400 dark:border-[#96949C] text-gray-800 dark:text-[#CBC9DE] hover:bg-orange-100 dark:hover:bg-gray-700"
+                  ? "bg-[color:var(--secondary-light)] border-[color:var(--secondary-dark)] text-white"
+                  : "bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] border-[color:var(--secondary-light)] dark:border-[color:var(--secondary-dark)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] hover:bg-[color:var(--primary-light)] dark:hover:bg-[color:var(--primary-dark)]"
               }`}
             >
               <div className="flex items-center">
@@ -274,8 +275,8 @@ export default function RenderQuestion({
               onClick={() => onChange(img.url)}
               className={`border-2 rounded-xl p-2 flex flex-col items-center justify-center shadow-sm transition-all ${
                 value === img.url
-                  ? "border-orange-500"
-                  : "border-gray-300 dark:border-gray-700"
+                  ? "border-[color:var(--secondary-light)]]"
+                  : "border-[color:var(--secondary-light)]] dark:border-[color:var(--secondary-dark)]]"
               }`}
             >
               <img
@@ -284,7 +285,7 @@ export default function RenderQuestion({
                 className="w-full h-32 object-cover rounded-md"
               />
               {img.label && (
-                <span className="mt-2 text-sm font-medium text-gray-700 dark:text-[#96949C]">
+                <span className="mt-2 text-sm font-medium text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
                   {img.label}
                 </span>
               )}
@@ -326,7 +327,7 @@ export default function RenderQuestion({
       return (
         <div className="w-full aspect-video rounded-xl overflow-hidden border-2">
           {isDirectVideoFile(embedUrl) ? (
-            <video controls className="w-full h-full bg-black">
+            <video controls className="w-full h-full bg-[color:var(--bg-dark)]">
               <source src={embedUrl} />
               Your browser does not support the video tag.
             </video>
@@ -346,10 +347,10 @@ export default function RenderQuestion({
     case QUESTION_TYPES.FILE_UPLOAD:
       const isImage = value && value.type?.startsWith("image/");
       return (
-        <div className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer hover:bg-orange-50 dark:hover:bg-gray-800 transition-colors">
+        <div className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer hover:bg-[color:var(--primary-light)] dark:hover:bg-[color:var(--primary-dark)] transition-colors">
           <label className="flex flex-col items-center gap-2">
-            <Upload className="w-6 h-6 text-orange-500" />
-            <span className="text-sm text-gray-700 dark:text-[#96949C]">
+            <Upload className="w-6 h-6 text-[color:var(--text-light)]" />
+            <span className="text-sm text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
               Click to upload file
             </span>
             <input
@@ -365,7 +366,7 @@ export default function RenderQuestion({
                 <img
                   src={URL.createObjectURL(value)}
                   alt="Uploaded preview"
-                  className="max-w-xs mx-auto rounded shadow-md border border-gray-300"
+                  className="max-w-xs mx-auto rounded shadow-md border border-[color:var(--secondary-light)]"
                 />
               ) : (
                 <p className="text-sm text-green-600 dark:text-green-400 font-medium">
@@ -395,7 +396,7 @@ export default function RenderQuestion({
 
       if (!folderId) {
         return (
-          <div className="text-sm text-red-500 p-4 bg-red-50 dark:bg-red-900 rounded">
+          <div className="text-sm text-[color:var(--text-light)] p-4 bg-[color:var(--primary-light)] dark:bg-[color:var(--secondary-light)] rounded">
             Google Drive folder ID not configured.
           </div>
         );
@@ -424,7 +425,7 @@ export default function RenderQuestion({
       }
 
       return (
-        <div className="w-full aspect-video bg-white dark:bg-black border-2 rounded-xl overflow-hidden">
+        <div className="w-full aspect-video bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] border-2 rounded-xl overflow-hidden">
           <iframe
             src={embedUrl}
             className="w-full h-full"
@@ -490,7 +491,7 @@ export default function RenderQuestion({
       return (
         <div className="space-y-4 text-center">
           {/* Labels */}
-          <div className="flex justify-between text-sm text-gray-600 dark:text-yellow-200 px-1">
+          <div className="flex justify-between text-sm text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] px-1">
             <span>{minLabel}</span>
             <span>{maxLabel}</span>
           </div>
@@ -504,8 +505,8 @@ export default function RenderQuestion({
                   onClick={() => onChange(val)}
                   className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-orange-400 ${
                     value === val
-                      ? "bg-orange-500 text-white shadow-md"
-                      : "bg-orange-100 dark:bg-gray-700 text-gray-800 dark:text-[#96949C] hover:bg-orange-200 dark:hover:bg-gray-600"
+                      ? "bg-[color:var(--primary-light)] text-[color:var(--text-light)] shadow-md"
+                      : "bg-[color:var(--bg-light)] dark:bg-[color:var(--bg-dark)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] hover:bg-[color:var(--primary-light)] dark:hover:bg-[color:var(--primary-dark)]"
                   }`}
                 >
                   {val}

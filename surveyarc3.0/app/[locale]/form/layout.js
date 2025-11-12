@@ -7,6 +7,7 @@ import { RuleProvider } from "@/providers/rulePProvider";
 import { OrganisationProvider } from "@/providers/postGresPorviders/organisationProvider";
 import { ResponseProvider } from "@/providers/postGresPorviders/responsePProvider";
 import { ContactProvider } from "@/providers/postGresPorviders/contactProvider";
+import { ThemeProvider } from "@/providers/postGresPorviders/themeProvider";
 
 export default async function Layout(props) {
   const { children } = props;
@@ -19,12 +20,14 @@ export default async function Layout(props) {
     <body lang={locale}>
       <OrganisationProvider>
         <QuestionProvider>
+          <ThemeProvider>
           <ThemeToggle />
           <RuleProvider>
             <ContactProvider>
               <ResponseProvider>{children}</ResponseProvider>
             </ContactProvider>
           </RuleProvider>
+          </ThemeProvider>
         </QuestionProvider>
       </OrganisationProvider>
     </body>
