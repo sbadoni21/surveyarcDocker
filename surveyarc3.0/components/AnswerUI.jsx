@@ -561,11 +561,11 @@ export default function RenderQuestion({
                     onClick={() => onChange(score)}
                     className={[
                       "rounded-full font-semibold transition-colors outline-none",
-                      "focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2 dark:focus:ring-offset-gray-900",
+                      "focus:outline-none focus:ring-2 focus:ring-[color:var(--primary-light)] focus:ring-offset-2 dark:focus:ring-offset-[color:var(--primary-dark)]",
                       "sm:w-12 sm:h-12 sm:text-sm",
                       value === score
-                        ? "bg-orange-500 text-white"
-                        : "bg-orange-100 dark:bg-gray-700 text-gray-800 dark:text-[#96949C] hover:bg-orange-200 dark:hover:bg-gray-600",
+                        ? "bg-[color:var(--primary-light)] text-[color:var(--text-light)]"
+                        : "bg-[color:var(--bg-light)] dark:bg-[color:var(--bg-dark)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] hover:bg-[color:var(--primary-light)] dark:hover:bg-[color:var(--primary-dark)]",
                     ].join(" ")}
                     style={{ width: BTN, height: BTN, fontSize: 12 }}
                   >
@@ -576,7 +576,7 @@ export default function RenderQuestion({
 
               {/* labels row aligned to 0 / mid / max */}
               <div
-                className="grid mt-1 sm:mt-2 text-[11px] sm:text-xs text-gray-600 dark:text-yellow-200"
+                className="grid mt-1 sm:mt-2 text-[11px] sm:text-xs text-[color:var(--text-light)] dark:text-[color:var(--primary-dark)]"
                 style={{
                   gridTemplateColumns: `repeat(${cols.length}, ${BTN}px)`,
                   columnGap: GAP,
@@ -615,7 +615,7 @@ export default function RenderQuestion({
           </div>
 
           {/* optional selection helper */}
-          <div className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 h-4">
+          <div className="text-[11px] sm:text-xs text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] h-4">
             {value != null ? `Selected: ${value}` : "\u00A0"}
           </div>
         </div>
