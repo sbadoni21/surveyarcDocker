@@ -658,15 +658,15 @@ export default function RenderQuestion({
         <div className="space-y-4">
           <div className="overflow-x-auto rounded-xl shadow-xl">
             <table className="min-w-full text-sm text-left ">
-              <thead className="bg-[#FFEEDF] rounded-xl dark:bg-gray-700">
+              <thead className="bg-[color:var(--bg-light)] rounded-xl dark:bg-[color:var(--bg-dark)]">
                 <tr>
-                  <th className="p-3 font-medium text-gray-700 dark:text-[#96949C]">
+                  <th className="p-3 font-medium text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
                     &nbsp;
                   </th>
                   {columns.map((col, idx) => (
                     <th
                       key={idx}
-                      className="p-3 text-xs font-normal text-center text-nowrap text-gray-700 dark:text-[#96949C]"
+                      className="p-3 text-xs font-normal text-center text-nowrap text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]"
                     >
                       {col}
                     </th>
@@ -677,9 +677,9 @@ export default function RenderQuestion({
                 {rows.map((row, rowIndex) => (
                   <tr
                     key={rowIndex}
-                    className="border-t border-gray-200 dark:border-gray-600"
+                    className="border-t border-[color:var(--secondary-light)] dark:border-[color:var(--secondary-dark)]"
                   >
-                    <td className="p-3 text-xs text-nowrap text-gray-800 dark:text-[#96949C]">
+                    <td className="p-3 text-xs text-nowrap text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
                       {row}
                     </td>
                     {columns.map((col, colIndex) => {
@@ -709,9 +709,11 @@ export default function RenderQuestion({
                               }
                               className="hidden peer"
                             />
-                            <div className="w-6 h-6 rounded border border-[#8C8A97] bg-white peer-checked:bg-orange-500 flex items-center justify-center transition-colors duration-200">
+                            <div
+                              className="w-6 h-6 rounded border border-[color:var(--secondary-light)] bg-[color:var(--bg-light)] peer-checked:bg-[color:var(--primary-light)] flex items-center justify-center transition-colors duration-200"
+                            >
                               <svg
-                                className={`w-4 h-4 text-white ${
+                                className={`w-4 h-4 text-[color:var(--text-dark)] ${
                                   isChecked ? "block" : "hidden"
                                 }`}
                                 fill="none"
@@ -806,7 +808,7 @@ export default function RenderQuestion({
       return (
         <div className="text-center">
           <h2 className="text-3xl font-bold mb-2">{config.title}</h2>
-          <p className="text-lg text-gray-600 dark:text-yellow-200">
+          <p className="text-lg text-[color:var(--text-light)] dark:text-[color:var(--primary-light)]">
             {config.description}
           </p>
         </div>
@@ -815,14 +817,14 @@ export default function RenderQuestion({
     case QUESTION_TYPES.REDIRECT:
       return (
         <div className="text-center">
-          <p className="text-sm text-gray-700 dark:text-[#96949C] mb-2">
+          <p className="text-sm text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] mb-2">
             After completing this step, you'll be redirected to:
           </p>
           <a
             href={config.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-orange-600 dark:text-orange-400 underline break-all"
+            className="text-[color:var(--secondary-light)] dark:text-[color:var(--secondary-dark)] underline break-all"
           >
             {config.url || "No URL configured"}
           </a>
@@ -835,7 +837,7 @@ export default function RenderQuestion({
           <h2 className="text-3xl font-bold text-green-600 dark:text-green-400">
             {config.title}
           </h2>
-          <p className="mt-2 text-lg text-gray-700 dark:text-yellow-200">
+          <p className="mt-2 text-lg text-[color:var(--text-light)] dark:text-[color:var(--primary-light)]">
             {config.description}
           </p>
         </div>
@@ -843,7 +845,7 @@ export default function RenderQuestion({
 
     default:
       return (
-        <p className="p-4 rounded-xl text-center text-gray-500 dark:text-yellow-300">
+        <p className="p-4 rounded-xl text-center text-[color:var(--text-light)] dark:text-[color:var(--primary-light)]">
           Unsupported question type: {questionType}
         </p>
       );
