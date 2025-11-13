@@ -6,13 +6,13 @@ import { ProjectProvider } from "@/providers/postGresPorviders/projectProvider";
 import { SupportGroupProvider } from "@/providers/postGresPorviders/SupportGroupProvider";
 import { SupportTeamProvider } from "@/providers/postGresPorviders/SupportTeamProvider";
 import { TagProvider } from "@/providers/postGresPorviders/TagProvider";
+import { ThemeProvider } from "@/providers/postGresPorviders/themeProvider";
 import { TicketCategoryProvider } from "@/providers/postGresPorviders/TicketCategoryProvider";
 import { TicketTaxonomyProvider } from "@/providers/postGresPorviders/TicketTaxonomyProvider";
 import { UserProvider } from "@/providers/postGresPorviders/UserProvider";
 import { SLAProvider } from "@/providers/slaProvider";
 import { TicketProvider } from "@/providers/ticketsProvider";
 import React, { useState } from "react";
-
 
 export default function Layout({ children }) {
   const [isCollapsed, setIsCollapsed] = useState(true);
@@ -21,42 +21,40 @@ export default function Layout({ children }) {
     <div className="flex w-full bg-[#F5F5F5] dark:bg-[#121214]">
       <TagProvider>
         <TicketCategoryProvider>
-      <OrganisationProvider>
-        <UserProvider>
-          <TicketTaxonomyProvider>
-              <TicketProvider>
-                <SupportGroupProvider>
-                  <SupportTeamProvider>
-          <BusinessCalendarsProvider>
-          <ProjectProvider>
-            <Sidebar
-              isCollapsed={isCollapsed}
-              setIsCollapsed={setIsCollapsed}
-            />
-                  <SLAProvider>
-
-            <main
-              className={`transition-all  duration-300 ${
-                isCollapsed
-                  ? "w-[calc(100%-30px)] "
-                  : "w-[calc(100%-200px)]"
-              }`}
-            >
-              {children}
-            </main>
-                  </SLAProvider>
-
-          </ProjectProvider>
-          
-          </BusinessCalendarsProvider>
-          </SupportTeamProvider>
-          </SupportGroupProvider>
-              </TicketProvider>
-          </TicketTaxonomyProvider>
-
-        </UserProvider>
-      </OrganisationProvider>
-      </TicketCategoryProvider>
+          <OrganisationProvider>
+            <UserProvider>
+              <ThemeProvider>
+                <TicketTaxonomyProvider>
+                  <TicketProvider>
+                    <SupportGroupProvider>
+                      <SupportTeamProvider>
+                        <BusinessCalendarsProvider>
+                          <ProjectProvider>
+                            <Sidebar
+                              isCollapsed={isCollapsed}
+                              setIsCollapsed={setIsCollapsed}
+                            />
+                            <SLAProvider>
+                              <main
+                                className={`transition-all  duration-300 ${
+                                  isCollapsed
+                                    ? "w-[calc(100%-30px)] "
+                                    : "w-[calc(100%-200px)]"
+                                }`}
+                              >
+                                {children}
+                              </main>
+                            </SLAProvider>
+                          </ProjectProvider>
+                        </BusinessCalendarsProvider>
+                      </SupportTeamProvider>
+                    </SupportGroupProvider>
+                  </TicketProvider>
+                </TicketTaxonomyProvider>
+              </ThemeProvider>
+            </UserProvider>
+          </OrganisationProvider>
+        </TicketCategoryProvider>
       </TagProvider>
     </div>
   );

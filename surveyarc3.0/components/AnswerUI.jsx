@@ -42,9 +42,9 @@ function SortableItem({ id }) {
       style={style}
       {...attributes}
       {...listeners}
-      className="flex items-center gap-2 p-3 rounded-lg border border-yellow-400 dark:border-orange-400 bg-orange-50 dark:bg-gray-800 text-gray-800 dark:text-[#96949C] cursor-move"
+      className="flex items-center gap-2 p-3 rounded-lg border border-[color:var(--secondary-light)] dark:border-[color:var(--secondary-dark)] bg-[color:var(--bg-light)] dark:bg-[color:var(--bg-dark)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] cursor-move"
     >
-      <GripVertical className="text-orange-400" />
+      <GripVertical className="text-[color:var(--secondary-light)]]" />
       <span className="font-medium">{id}</span>
     </li>
   );
