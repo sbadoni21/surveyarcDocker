@@ -1,537 +1,736 @@
-// app/(your-route)/CampaignPage.jsx
 "use client";
-import { useCampaign } from "@/providers/campaginProviders";
-import { useCampaignResult } from "@/providers/campaginResultProvider";
-import { useRouteParams } from "@/utils/getPaths";
-import React, { useEffect, useMemo, useState } from "react";
+import { useCampaign } from "@/providers/postGresPorviders/campaignProvider";
+import React, { useState, useEffect, useCallback } from "react";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend
 } from "recharts";
+import CampaignCreateModal from '@/components/CampaignCreateModal';
+import { useContacts } from "@/providers/postGresPorviders/contactProvider";
+import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
+import { useSurvey } from "@/providers/surveyPProvider";
+import { usePathname } from "next/navigation";
+import { useUser } from "@/providers/postGresPorviders/UserProvider";
 
 const CampaignPage = () => {
   const [activeTab, setActiveTab] = useState("overview");
-  const [campaigns, setCampaigns] = useState([]);
-  const [campaignResults, setCampaignResults] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [selectedCampaign, setSelectedCampaign] = useState(null);
-  const { orgId, projectId, surveyId } = useRouteParams()
+  const [analytics, setAnalytics] = useState(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  
+  const path = usePathname();
+  const projectId = path.split("/")[6];
+  const orgId = path.split("/")[3];
+  const {uid} = useUser();
+  
   const {
-    loadProjectCampaigns,
+    campaigns,
+    loading,
+    error,
+    create,
     createCampaign,
     deleteCampaign,
-    updateCampaignStatus,
-    getAllCampaignsForProject,
+    sendCampaign,
+    pauseCampaign,
+    resumeCampaign,
+    getAnalytics,
+    setFilter,
+    filters
   } = useCampaign();
+  
+  console.log(campaigns)
+  const { 
+    lists, 
+    contacts, 
+    listLists, 
+    listContacts,
+    loading: contactsLoading 
+  } = useContacts();
+  
+  const { organisation } = useOrganisation();
+  
+  const { 
+    surveys, 
+    getAllSurveys 
+  } = useSurvey();
 
-  const { getCampaignResults } = useCampaignResult();
+  // FIXED: Use useCallback to memoize these functions
+  const handleLoadSurveys = useCallback(async () => {
+    if (organisation?.org_id && projectId) {
+      try {
+        await getAllSurveys(organisation.org_id, projectId);
+      } catch (error) {
+        console.error('Error loading surveys:', error);
+      }
+    }
+  }, [organisation?.org_id, projectId, getAllSurveys]);
+
+  const handleLoadLists = useCallback(async () => {
+    if (organisation?.org_id) {
+      try {
+        await listLists(organisation.org_id);
+      } catch (error) {
+        console.error('Error loading lists:', error);
+      }
+    }
+  }, [organisation?.org_id, listLists]);
+
+  const handleLoadContacts = useCallback(async () => {
+    if (organisation?.org_id) {
+      try {
+        await listContacts(organisation.org_id);
+      } catch (error) {
+        console.error('Error loading contacts:', error);
+      }
+    }
+  }, [organisation?.org_id, listContacts]);
+
+  // FIXED: Load surveys only once on mount or when dependencies change
+  useEffect(() => {
+    handleLoadSurveys();
+  }, [organisation?.org_id, projectId]); // Removed handleLoadSurveys from dependencies
+
+  // Calculate aggregate statistics
+  const totals = campaigns.reduce((acc, c) => ({
+    recipients: acc.recipients + c.totalRecipients,
+    sent: acc.sent + c.sentCount,
+    delivered: acc.delivered + c.deliveredCount,
+    opened: acc.opened + c.openedCount,
+    clicked: acc.clicked + c.clickedCount,
+    failed: acc.failed + c.failedCount,
+    bounced: acc.bounced + c.bouncedCount,
+    surveyStarted: acc.surveyStarted + c.surveyStartedCount,
+    surveyCompleted: acc.surveyCompleted + c.surveyCompletedCount
+  }), {
+    recipients: 0,
+    sent: 0,
+    delivered: 0,
+    opened: 0,
+    clicked: 0,
+    failed: 0,
+    bounced: 0,
+    surveyStarted: 0,
+    surveyCompleted: 0
+  });
+
+  const openRate = totals.delivered > 0
+    ? ((totals.opened / totals.delivered) * 100).toFixed(1)
+    : 0;
+
+  const responseRate = totals.delivered > 0
+    ? ((totals.surveyStarted / totals.delivered) * 100).toFixed(1)
+    : 0;
 
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const docs = await loadProjectCampaigns(projectId);
-      const list = getAllCampaignsForProject(projectId);
-      setCampaigns(list);
-      if (list.length) {
-        setSelectedCampaign(list[0]);
-        const results = await getCampaignResults(list[0].id);
-        setCampaignResults(results);
-      } else {
-        setSelectedCampaign(null);
-        setCampaignResults([]);
-      }
-      setLoading(false);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+    if (selectedCampaign) {
+      getAnalytics(selectedCampaign.campaignId).then(setAnalytics);
+    }
+  }, [selectedCampaign]);
 
-  const totalsAgg = useMemo(() => {
-    return campaigns.reduce(
-      (acc, c) => {
-        const t = c.totals || {};
-        acc.sent += t.sent || 0;
-        acc.failed += t.failed || 0;
-        acc.queued += t.queued || 0;
-        acc.skipped += t.skipped || 0;
-        acc.targets += t.targets || 0;
-        return acc;
-      },
-      { sent: 0, failed: 0, queued: 0, skipped: 0, targets: 0 }
-    );
-  }, [campaigns]);
-
+  // Chart data
   const pieData = [
-    { name: "Sent", value: totalsAgg.sent, color: "#10B981" },
-    { name: "Failed", value: totalsAgg.failed, color: "#EF4444" },
-    { name: "Queued", value: totalsAgg.queued, color: "#F59E0B" },
-    { name: "Skipped", value: totalsAgg.skipped, color: "#6B7280" },
-  ];
+    { name: "Delivered", value: totals.delivered, color: "#10B981" },
+    { name: "Failed", value: totals.failed, color: "#EF4444" },
+    { name: "Bounced", value: totals.bounced, color: "#F59E0B" }
+  ].filter(d => d.value > 0);
 
-  const perfData = campaigns.map((c) => ({
-    name: c.name || c.id,
-    sent: c.totals?.sent || 0,
-    failed: c.totals?.failed || 0,
+  const performanceData = campaigns.map(c => ({
+    name: c.campaignName.substring(0, 15),
+    sent: c.sentCount,
+    delivered: c.deliveredCount,
+    opened: c.openedCount,
+    clicked: c.clickedCount
   }));
 
-  const successRate =
-    totalsAgg.targets > 0 ? Math.round((totalsAgg.sent / totalsAgg.targets) * 100) : 0;
+  const channelData = campaigns.reduce((acc, c) => {
+    const existing = acc.find(x => x.name === c.channel);
+    if (existing) {
+      existing.count += 1;
+      existing.sent += c.sentCount;
+    } else {
+      acc.push({ name: c.channel, count: 1, sent: c.sentCount });
+    }
+    return acc;
+  }, []);
 
+  // Status badge
+  const StatusBadge = ({ status }) => {
+    const colors = {
+      draft: "bg-gray-100 text-gray-800",
+      scheduled: "bg-blue-100 text-blue-800",
+      sending: "bg-yellow-100 text-yellow-800",
+      sent: "bg-green-100 text-green-800",
+      paused: "bg-orange-100 text-orange-800",
+      cancelled: "bg-red-100 text-red-800"
+    };
+    return (
+      <span className={`px-2 py-1 text-xs font-medium rounded-full ${colors[status] || colors.draft}`}>
+        {status}
+      </span>
+    );
+  };
+
+  // Channel badge
+  const ChannelBadge = ({ channel }) => {
+    const colors = {
+      email: "bg-blue-100 text-blue-800",
+      sms: "bg-purple-100 text-purple-800",
+      whatsapp: "bg-green-100 text-green-800",
+      voice: "bg-orange-100 text-orange-800",
+      multi: "bg-indigo-100 text-indigo-800"
+    };
+    const icons = {
+      email: "✉️",
+      sms: "💬",
+      whatsapp: "📱",
+      voice: "📞",
+      multi: "🔀"
+    };
+    return (
+      <span className={`px-2 py-1 text-xs font-medium rounded-full ${colors[channel] || colors.email}`}>
+        {icons[channel]} {channel}
+      </span>
+    );
+  };
+
+  // Render Overview Tab
   const renderOverview = () => (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-4">Campaign Overview</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <h3 className="text-sm font-medium text-blue-600">Total Campaigns</h3>
-            <p className="text-2xl font-bold text-blue-900">{campaigns.length}</p>
-          </div>
-          <div className="bg-green-50 p-4 rounded-lg">
-            <h3 className="text-sm font-medium text-green-600">Messages Sent</h3>
-            <p className="text-2xl font-bold text-green-900">{totalsAgg.sent}</p>
-          </div>
-          <div className="bg-red-50 p-4 rounded-lg">
-            <h3 className="text-sm font-medium text-red-600">Failed</h3>
-            <p className="text-2xl font-bold text-red-900">{totalsAgg.failed}</p>
-          </div>
-          <div className="bg-yellow-50 p-4 rounded-lg">
-            <h3 className="text-sm font-medium text-yellow-600">Success Rate</h3>
-            <p className="text-2xl font-bold text-yellow-900">{successRate}%</p>
+      {/* Key Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-blue-500">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600 font-medium">Total Campaigns</p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">{campaigns.length}</p>
+            </div>
+            <div className="text-4xl">📋</div>
           </div>
         </div>
 
-        {selectedCampaign && (
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h3 className="text-lg font-semibold mb-3">Selected Campaign Details</h3>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div><span className="font-medium">Name:</span> {selectedCampaign.name}</div>
-              <div>
-                <span className="font-medium">Status:</span>
-                <span
-                  className={`ml-2 px-2 py-1 rounded text-xs ${
-                    selectedCampaign.status === "completed"
-                      ? "bg-green-100 text-green-800"
-                      : selectedCampaign.status === "running"
-                      ? "bg-yellow-100 text-yellow-800"
-                      : "bg-gray-100 text-gray-800"
-                  }`}
-                >
-                  {selectedCampaign.status}
-                </span>
-              </div>
-              <div><span className="font-medium">Channel:</span> {selectedCampaign.channel}</div>
-              <div><span className="font-medium">Template:</span> {selectedCampaign.templateId}</div>
-              <div>
-                <span className="font-medium">Created:</span>{" "}
-                {selectedCampaign.createdAt?.seconds
-                  ? new Date(selectedCampaign.createdAt.seconds * 1000).toLocaleDateString()
-                  : "N/A"}
-              </div>
-              <div><span className="font-medium">Contact Count:</span> {selectedCampaign.contactCount || 0}</div>
+        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600 font-medium">Messages Sent</p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">{totals.sent.toLocaleString()}</p>
             </div>
+            <div className="text-4xl">📤</div>
           </div>
-        )}
+          <p className="text-xs text-green-600 mt-2">↑ {totals.delivered} delivered</p>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-purple-500">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600 font-medium">Open Rate</p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">{openRate}%</p>
+            </div>
+            <div className="text-4xl">👁️</div>
+          </div>
+          <p className="text-xs text-gray-600 mt-2">{totals.opened} opened</p>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-orange-500">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600 font-medium">Response Rate</p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">{responseRate}%</p>
+            </div>
+            <div className="text-4xl">📊</div>
+          </div>
+          <p className="text-xs text-gray-600 mt-2">{totals.surveyStarted} started</p>
+        </div>
+      </div>
+
+      {/* Recent Campaigns */}
+      <div className="bg-white rounded-lg shadow">
+        <div className="px-6 py-4 border-b">
+          <h2 className="text-lg font-semibold text-gray-900">Recent Campaigns</h2>
+        </div>
+        <div className="p-6">
+          <div className="space-y-4">
+            {campaigns.slice(0, 5).map(campaign => (
+              <div
+                key={campaign.campaignId}
+                className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                onClick={() => {
+                  setSelectedCampaign(campaign);
+                  setActiveTab("details");
+                }}
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-3">
+                    <h3 className="font-semibold text-gray-900">{campaign.campaignName}</h3>
+                    <StatusBadge status={campaign.status} />
+                    <ChannelBadge channel={campaign.channel} />
+                  </div>
+                  <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
+                    <span>📧 {campaign.sentCount}/{campaign.totalRecipients}</span>
+                    <span>✅ {campaign.deliveredCount}</span>
+                    <span>📖 {campaign.openedCount}</span>
+                    <span>🎯 {campaign.surveyCompletedCount}</span>
+                  </div>
+                </div>
+                <div className="text-sm text-gray-500">
+                  {new Date(campaign.createdAt).toLocaleDateString()}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
 
+  // Render Analytics Tab
   const renderAnalytics = () => (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">Campaign Analytics</h2>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <div>
-            <h3 className="text-lg font-semibold mb-4">Delivery Status Distribution</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Delivery Status Distribution */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">Delivery Status Distribution</h3>
+          {pieData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
-                <Pie data={pieData} cx="50%" cy="50%" outerRadius={80} dataKey="value"
-                  label={({ name, value }) => `${name}: ${value}`}>
-                  {pieData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                <Pie
+                  data={pieData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={100}
+                  dataKey="value"
+                >
+                  {pieData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
                 </Pie>
                 <Tooltip />
               </PieChart>
             </ResponsiveContainer>
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold mb-4">Campaign Performance Comparison</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={perfData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="sent" fill="#10B981" name="Sent" />
-                <Bar dataKey="failed" fill="#EF4444" name="Failed" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          ) : (
+            <div className="h-64 flex items-center justify-center text-gray-500">
+              No data available
+            </div>
+          )}
+        </div>
+
+        {/* Channel Distribution */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">Channel Distribution</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={channelData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="count" fill="#3B82F6" name="Campaigns" />
+              <Bar dataKey="sent" fill="#10B981" name="Sent" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Campaign Performance Comparison */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <h3 className="text-lg font-semibold mb-4">Campaign Performance Comparison</h3>
+        <ResponsiveContainer width="100%" height={400}>
+          <BarChart data={performanceData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="sent" fill="#3B82F6" name="Sent" />
+            <Bar dataKey="delivered" fill="#10B981" name="Delivered" />
+            <Bar dataKey="opened" fill="#F59E0B" name="Opened" />
+            <Bar dataKey="clicked" fill="#8B5CF6" name="Clicked" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Engagement Funnel */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <h3 className="text-lg font-semibold mb-4">Engagement Funnel</h3>
+        <div className="space-y-3">
+          {[
+            { label: "Sent", value: totals.sent, color: "bg-blue-600", width: 100 },
+            { label: "Delivered", value: totals.delivered, color: "bg-green-600", width: (totals.delivered / totals.sent * 100) || 0 },
+            { label: "Opened", value: totals.opened, color: "bg-yellow-600", width: (totals.opened / totals.sent * 100) || 0 },
+            { label: "Survey Started", value: totals.surveyStarted, color: "bg-purple-600", width: (totals.surveyStarted / totals.sent * 100) || 0 },
+            { label: "Completed", value: totals.surveyCompleted, color: "bg-pink-600", width: (totals.surveyCompleted / totals.sent * 100) || 0 }
+          ].map(item => (
+            <div key={item.label} className="flex items-center gap-4">
+              <div className="w-32 text-sm font-medium text-gray-700">{item.label}</div>
+              <div className="flex-1 bg-gray-200 rounded-full h-8">
+                <div 
+                  className={`${item.color} h-8 rounded-full flex items-center justify-end pr-3 text-white text-sm font-medium transition-all`}
+                  style={{ width: `${item.width}%` }}
+                >
+                  {item.value > 0 && item.value}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
   );
 
+  // Render Campaigns Tab
   const renderCampaigns = () => (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow">
-        <div className="p-6 border-b">
-          <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold text-gray-800">All Campaigns</h2>
-            <button
-              onClick={() =>
-                createCampaign(projectId, { name: `New Campaign ${Date.now()}`, channel: "email", contactCount: 0 })
-                  .then(() => loadProjectCampaigns(projectId).then(() => setCampaigns(getAllCampaignsForProject(projectId))))
-              }
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-            >
-              Create Campaign
-            </button>
+        <div className="px-6 py-4 border-b flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <h2 className="text-lg font-semibold text-gray-900">All Campaigns</h2>
+            <input
+              type="text"
+              placeholder="Search campaigns..."
+              className="px-3 py-2 border rounded-lg text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => setFilter("search", e.target.value)}
+              value={filters.search}
+            />
           </div>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
+          >
+            + New Campaign
+          </button>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Campaign</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Channel</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Targets</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sent</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Failed</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Success Rate</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Campaign
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Channel
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Recipients
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Delivered
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Opened
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Response
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
-              {campaigns.map((c) => {
-                const t = c.totals || {};
-                const rate = t.targets > 0 ? Math.round((t.sent / t.targets) * 100) : 0;
-                return (
-                  <tr key={c.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="font-medium text-gray-900">{c.name || c.id}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span
-                        className={`px-2 py-1 text-xs rounded-full ${
-                          c.channel === "whatsapp"
-                            ? "bg-green-100 text-green-800"
-                            : c.channel === "email"
-                            ? "bg-blue-100 text-blue-800"
-                            : "bg-purple-100 text-purple-800"
-                        }`}
+            <tbody className="bg-white divide-y divide-gray-200">
+              {campaigns.map((campaign) => (
+                <tr key={campaign.campaignId} className="hover:bg-gray-50">
+                  <td className="px-6 py-4">
+                    <div className="font-medium text-gray-900">{campaign.campaignName}</div>
+                    <div className="text-sm text-gray-500">
+                      {new Date(campaign.createdAt).toLocaleDateString()}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <ChannelBadge channel={campaign.channel} />
+                  </td>
+                  <td className="px-6 py-4">
+                    <StatusBadge status={campaign.status} />
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-900">
+                    {campaign.totalRecipients}
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-gray-900">{campaign.deliveredCount}</div>
+                    <div className="text-xs text-gray-500">
+                      {((campaign.deliveredCount / campaign.totalRecipients) * 100).toFixed(1)}%
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-gray-900">{campaign.openedCount}</div>
+                    <div className="text-xs text-gray-500">
+                      {campaign.deliveredCount > 0
+                        ? ((campaign.openedCount / campaign.deliveredCount) * 100).toFixed(1)
+                        : 0}%
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-gray-900">{campaign.surveyCompletedCount}</div>
+                    <div className="text-xs text-gray-500">
+                      {campaign.surveyStartedCount > 0
+                        ? ((campaign.surveyCompletedCount / campaign.surveyStartedCount) * 100).toFixed(1)
+                        : 0}%
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedCampaign(campaign);
+                          setActiveTab("details");
+                        }}
+                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
                       >
-                        {c.channel}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span
-                        className={`px-2 py-1 text-xs rounded-full ${
-                          c.status === "completed"
-                            ? "bg-green-100 text-green-800"
-                            : c.status === "running"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {c.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">{t.targets || 0}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-green-600">{t.sent || 0}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-red-600">{t.failed || 0}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">{rate}%</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <button onClick={() => setSelectedCampaign(c)} className="text-blue-600 hover:text-blue-800 mr-3">
                         View
                       </button>
+                      {campaign.status === "draft" && (
+                        <button
+                          onClick={() => sendCampaign(campaign.campaignId)}
+                          className="text-green-600 hover:text-green-800 text-sm font-medium"
+                        >
+                          Send
+                        </button>
+                      )}
+                      {campaign.status === "sending" && (
+                        <button
+                          onClick={() => pauseCampaign(campaign.campaignId)}
+                          className="text-orange-600 hover:text-orange-800 text-sm font-medium"
+                        >
+                          Pause
+                        </button>
+                      )}
+                      {campaign.status === "paused" && (
+                        <button
+                          onClick={() => resumeCampaign(campaign.campaignId)}
+                          className="text-green-600 hover:text-green-800 text-sm font-medium"
+                        >
+                          Resume
+                        </button>
+                      )}
                       <button
-                        onClick={() =>
-                          updateCampaignStatus(projectId, c.id, "running").then(() =>
-                            loadProjectCampaigns(projectId).then(() => setCampaigns(getAllCampaignsForProject(projectId)))
-                          )
-                        }
-                        className="text-green-600 hover:text-green-800 mr-3"
-                      >
-                        Start
-                      </button>
-                      <button
-                        onClick={() =>
-                          deleteCampaign(projectId, c.id).then(() =>
-                            loadProjectCampaigns(projectId).then(() => setCampaigns(getAllCampaignsForProject(projectId)))
-                          )
-                        }
-                        className="text-red-600 hover:text-red-800"
+                        onClick={() => {
+                          if (confirm(`Delete campaign "${campaign.campaignName}"?`)) {
+                            deleteCampaign(campaign.campaignId);
+                          }
+                        }}
+                        className="text-red-600 hover:text-red-800 text-sm font-medium"
                       >
                         Delete
                       </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {campaigns.length === 0 && (
-                <tr>
-                  <td className="px-6 py-10 text-center text-gray-500" colSpan={8}>
-                    No campaigns found for this project.
+                    </div>
                   </td>
                 </tr>
-              )}
+              ))}
             </tbody>
           </table>
+
+          {campaigns.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              <div className="text-4xl mb-4">📭</div>
+              <p className="text-lg font-medium">No campaigns yet</p>
+              <p className="text-sm">Create your first campaign to get started</p>
+            </div>
+          )}
         </div>
       </div>
+      <CampaignCreateModal
+        isOpen={showCreateModal}
+        userId={uid}
+        orgId={orgId}
+        onClose={() => setShowCreateModal(false)}
+        onCreate={create}
+        lists={lists}
+        contacts={contacts}
+        surveys={surveys}
+        onLoadLists={handleLoadLists}
+        onLoadContacts={handleLoadContacts}
+        onLoadSurveys={handleLoadSurveys}
+      />
     </div>
   );
 
-  const renderResults = () => {
-    const failed = campaignResults.filter((r) => r.status === "failed");
+  // Render Campaign Details
+  const renderDetails = () => {
+    if (!selectedCampaign) {
+      return (
+        <div className="text-center py-12 text-gray-500">
+          <div className="text-4xl mb-4">📊</div>
+          <p className="text-lg">Select a campaign to view details</p>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-6">
+        {/* Campaign Header */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-2xl font-bold text-gray-800 mb-6">Campaign Results</h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="flex items-start justify-between mb-6">
             <div>
-              <h3 className="text-lg font-semibold mb-4">Delivery Summary</h3>
-              <div className="space-y-4">
-                <div className="border rounded-lg p-4">
-                  <div className="flex justify-between mb-2">
-                    <span className="font-medium">Total Messages</span>
-                    <span className="text-blue-600 font-bold">{totalsAgg.targets}</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div className="bg-blue-600 h-2 rounded-full" style={{ width: "100%" }} />
-                  </div>
-                </div>
-                <div className="border rounded-lg p-4">
-                  <div className="flex justify-between mb-2">
-                    <span className="font-medium">Successfully Delivered</span>
-                    <span className="text-green-600 font-bold">
-                      {totalsAgg.sent}/{totalsAgg.targets}
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-green-600 h-2 rounded-full"
-                      style={{
-                        width: `${totalsAgg.targets ? (totalsAgg.sent / totalsAgg.targets) * 100 : 0}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-                <div className="border rounded-lg p-4">
-                  <div className="flex justify-between mb-2">
-                    <span className="font-medium">Failed Deliveries</span>
-                    <span className="text-red-600 font-bold">
-                      {totalsAgg.failed}/{totalsAgg.targets}
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-red-600 h-2 rounded-full"
-                      style={{
-                        width: `${totalsAgg.targets ? (totalsAgg.failed / totalsAgg.targets) * 100 : 0}%`,
-                      }}
-                    />
-                  </div>
-                </div>
+              <h2 className="text-2xl font-bold text-gray-900">{selectedCampaign.campaignName}</h2>
+              <div className="flex items-center gap-3 mt-2">
+                <StatusBadge status={selectedCampaign.status} />
+                <ChannelBadge channel={selectedCampaign.channel} />
               </div>
             </div>
+            <button
+              onClick={() => {
+                setSelectedCampaign(null);
+                setActiveTab("campaigns");
+              }}
+              className="text-gray-400 hover:text-gray-600 text-2xl"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
-              <h3 className="text-lg font-semibold mb-4">Error Analysis</h3>
-              <div className="space-y-3">
-                {failed.map((r) => (
-                  <div key={r.id} className="bg-red-50 border border-red-200 rounded-lg p-4">
-                    <div className="font-medium text-red-800">
-                      {r.channel === "whatsapp" ? "WhatsApp API Error" : "Email Delivery Error"}
-                    </div>
-                    <div className="text-sm text-red-600">{r.error || "Unknown error occurred"}</div>
-                    <div className="text-xs text-red-500">
-                      {r.failedAt?.seconds ? new Date(r.failedAt.seconds * 1000).toLocaleString() : "Unknown time"}
-                    </div>
-                  </div>
-                ))}
-                {failed.length === 0 && (
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <div className="text-green-700">No errors to display. All campaigns are running smoothly!</div>
-                  </div>
-                )}
+              <p className="text-sm text-gray-600">Total Recipients</p>
+              <p className="text-2xl font-bold text-gray-900">{selectedCampaign.totalRecipients}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Sent</p>
+              <p className="text-2xl font-bold text-blue-600">{selectedCampaign.sentCount}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Delivered</p>
+              <p className="text-2xl font-bold text-green-600">{selectedCampaign.deliveredCount}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Opened</p>
+              <p className="text-2xl font-bold text-purple-600">{selectedCampaign.openedCount}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Analytics Summary */}
+        {analytics && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold mb-4">Performance Metrics</h3>
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="text-center p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-600 font-medium">Delivery Rate</p>
+                <p className="text-2xl font-bold text-blue-900">{analytics.deliveryRate}%</p>
+              </div>
+              <div className="text-center p-4 bg-green-50 rounded-lg">
+                <p className="text-sm text-green-600 font-medium">Open Rate</p>
+                <p className="text-2xl font-bold text-green-900">{analytics.openRate}%</p>
+              </div>
+              <div className="text-center p-4 bg-purple-50 rounded-lg">
+                <p className="text-sm text-purple-600 font-medium">Click Rate</p>
+                <p className="text-2xl font-bold text-purple-900">{analytics.clickRate}%</p>
+              </div>
+              <div className="text-center p-4 bg-orange-50 rounded-lg">
+                <p className="text-sm text-orange-600 font-medium">Response Rate</p>
+                <p className="text-2xl font-bold text-orange-900">{analytics.responseRate}%</p>
+              </div>
+              <div className="text-center p-4 bg-pink-50 rounded-lg">
+                <p className="text-sm text-pink-600 font-medium">Completion Rate</p>
+                <p className="text-2xl font-bold text-pink-900">{analytics.completionRate}%</p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Timeline */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">Campaign Timeline</h3>
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="w-24 text-sm text-gray-600">Created</div>
+              <div className="flex-1 text-sm font-medium">
+                {new Date(selectedCampaign.createdAt).toLocaleString()}
+              </div>
+            </div>
+            {selectedCampaign.scheduledAt && (
+              <div className="flex items-center gap-4">
+                <div className="w-24 text-sm text-gray-600">Scheduled</div>
+                <div className="flex-1 text-sm font-medium">
+                  {new Date(selectedCampaign.scheduledAt).toLocaleString()}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
     );
   };
 
-  const renderContacts = () => (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">Contact Management</h2>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <div className="border rounded-lg">
-              <div className="p-4 border-b bg-gray-50">
-                <h3 className="font-semibold">Contact Lists</h3>
-              </div>
-              <div className="p-4 space-y-3">
-                {campaigns.flatMap((c) =>
-                  (c.listIds || []).map((listId, i) => (
-                    <div key={`${c.id}-${i}`} className="flex items-center justify-between p-3 border rounded">
-                      <div>
-                        <h4 className="font-medium">{listId}</h4>
-                        <p className="text-sm text-gray-600">{c.contactCount || 0} contacts</p>
-                      </div>
-                      <div className="flex space-x-2">
-                        <button className="text-blue-600 text-sm">Edit</button>
-                        <button className="text-red-600 text-sm">Delete</button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-          <div>
-            <div className="border rounded-lg">
-              <div className="p-4 border-b bg-gray-50">
-                <h3 className="font-semibold">Quick Stats</h3>
-              </div>
-              <div className="p-4 space-y-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {campaigns.reduce((sum, c) => sum + (c.contactCount || 0), 0)}
-                  </div>
-                  <div className="text-sm text-gray-600">Total Contacts</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">
-                    {campaigns.reduce((sum, c) => sum + ((c.listIds || []).length || 0), 0)}
-                  </div>
-                  <div className="text-sm text-gray-600">Active Lists</div>
-                </div>
-                <button className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
-                  Import Contacts
-                </button>
-              </div>
-            </div>
-          </div>
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading campaigns...</p>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
 
-  const renderSettings = () => (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">Campaign Settings</h2>
-        <div className="space-y-6">
-          <div>
-            <h3 className="text-lg font-semibold mb-4">General Settings</h3>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Default Chunk Size</label>
-                <input type="number" defaultValue="50" className="w-full border rounded-lg px-3 py-2" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Retry Attempts</label>
-                <input type="number" defaultValue="3" className="w-full border rounded-lg px-3 py-2" />
-              </div>
-            </div>
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold mb-4">Integration Settings</h3>
-            <div className="space-y-4">
-              <div className="border rounded-lg p-4">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h4 className="font-medium">Salesforce Integration</h4>
-                    <p className="text-sm text-gray-600">Sync campaign results to Salesforce</p>
-                  </div>
-                  <button className="bg-green-600 text-white px-3 py-1 rounded text-sm">Connected</button>
-                </div>
-              </div>
-              <div className="border rounded-lg p-4">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h4 className="font-medium">WhatsApp Business API</h4>
-                    <p className="text-sm text-gray-600">Send WhatsApp messages</p>
-                  </div>
-                  <button className="bg-red-600 text-white px-3 py-1 rounded text-sm">Error</button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="flex justify-end space-x-3">
-            <button className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
-            <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Settings</button>
-          </div>
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl mb-4">⚠️</div>
+          <p className="text-lg font-medium text-gray-900">Error loading campaigns</p>
+          <p className="text-sm text-gray-600 mt-2">{error}</p>
         </div>
       </div>
-    </div>
-  );
-
-  const renderContent = () => {
-    if (loading) {
-      return (
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-        </div>
-      );
-    }
-    switch (activeTab) {
-      case "overview":
-        return renderOverview();
-      case "analytics":
-        return renderAnalytics();
-      case "campaigns":
-        return renderCampaigns();
-      case "contacts":
-        return renderContacts();
-      case "results":
-        return renderResults();
-      case "settings":
-        return renderSettings();
-      default:
-        return renderOverview();
-    }
-  };
-
+    );
+  }
   return (
-    <div className="flex h-screen bg-gray-100">
-      <div className="w-64 bg-white shadow-lg relative">
-        <div className="p-6 border-b">
-          <h1 className="text-xl font-bold text-gray-800">Campaign Hub</h1>
-          <p className="text-sm text-gray-600">Manage your campaigns</p>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="py-6">
+            <h1 className="text-3xl font-bold text-gray-900">Campaign Dashboard</h1>
+            <p className="text-gray-600 mt-1">Manage and monitor your survey campaigns</p>
+          </div>
         </div>
-        <nav className="p-4">
-          <ul className="space-y-2">
+      </div>
+
+      {/* Navigation Tabs */}
+      <div className="bg-white border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex space-x-8">
             {[
               { id: "overview", label: "Overview", icon: "📊" },
-              { id: "analytics", label: "Analytics", icon: "📈" },
               { id: "campaigns", label: "Campaigns", icon: "📋" },
-              { id: "contacts", label: "Contacts", icon: "👥" },
-              { id: "results", label: "Results", icon: "🎯" },
-              { id: "settings", label: "Settings", icon: "⚙️" },
-            ].map((t) => (
-              <li key={t.id}>
-                <button
-                  onClick={() => setActiveTab(t.id)}
-                  className={`w-full flex items-center px-4 py-3 text-left rounded-lg transition-colors ${
-                    activeTab === t.id
-                      ? "bg-blue-100 text-blue-700 border-r-2 border-blue-700"
-                      : "text-gray-700 hover:bg-gray-100"
-                  }`}
-                >
-                  <span className="mr-3 text-lg">{t.icon}</span>
-                  <span className="font-medium">{t.label}</span>
-                </button>
-              </li>
+              { id: "analytics", label: "Analytics", icon: "📈" },
+              { id: "details", label: "Details", icon: "🔍" }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`py-4 px-2 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === tab.id
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                }`}
+              >
+                <span className="mr-2">{tab.icon}</span>
+                {tab.label}
+              </button>
             ))}
-          </ul>
-        </nav>
+          </div>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
-        <div className="p-6">{renderContent()}</div>
+      {/* Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {activeTab === "overview" && renderOverview()}
+        {activeTab === "campaigns" && renderCampaigns()}
+        {activeTab === "analytics" && renderAnalytics()}
+        {activeTab === "details" && renderDetails()}
       </div>
     </div>
   );

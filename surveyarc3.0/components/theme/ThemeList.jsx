@@ -22,7 +22,7 @@ export default function ThemeList({ surveyId, orgId }) {
   };
 
   return (
-    <section className="bg-white rounded-xl border shadow-sm overflow-hidden">
+    <section className="bg-white rounded-xl border shadow-sm ">
       <div className="p-4 border-b flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Icon icon="mdi:palette-outline" width="20" height="20" />
@@ -37,7 +37,7 @@ export default function ThemeList({ surveyId, orgId }) {
         </button>
       </div>
 
-      <div className="max-h-96 overflow-auto divide-y">
+      <div className="max-h-96 overflow-auto divide-y ">
         {loading ? (
           <div className="p-6 text-center text-gray-500">Loading…</div>
         ) : themes.length === 0 ? (

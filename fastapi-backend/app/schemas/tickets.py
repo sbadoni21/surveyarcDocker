@@ -5,7 +5,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from ..models.tickets import (
     TicketStatus, TicketPriority, TicketSeverity, TicketLinkType,
-    WorklogType, SLAPauseReason
+    WorklogType, SLAPauseReason, TicketPlatform
 )
 
 
@@ -169,6 +169,7 @@ class TicketBase(BaseModel):
     subject: str
     description: Optional[str] = None
     status: TicketStatus = TicketStatus.new
+    ticket: TicketPlatform = TicketPlatform.in_app
     priority: TicketPriority = TicketPriority.normal
     severity: TicketSeverity = TicketSeverity.sev4
 

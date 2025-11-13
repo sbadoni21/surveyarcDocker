@@ -180,3 +180,81 @@ def toggle_active(
     RedisThemeService.invalidate_theme(theme_id, org_id=theme.org_id)
 
     return data
+@router.delete("/{theme_id}", response_model=ThemeOut)
+def delete_theme(
+    theme_id: str,
+    db: Session = Depends(get_db),
+):
+    theme = db.query(Theme).filter(Theme.theme_id == theme_id).first()
+    if not theme:
+        raise HTTPException(status_code=404, detail="Theme not found")
+
+    data = _to_dict(theme)
+    org_id = theme.org_id
+
+    db.delete(theme)
+    db.commit()
+
+    # Redis remove
+    RedisThemeService.invalidate_theme(theme_id, org_id=org_id)
+
+    return data
+
+
+    return data
+# --------------------------------------------------------
+# ✅ Duplicate theme
+# --------------------------------------------------------
+@router.post("/{theme_id}/duplicate", response_model=ThemeOut)
+def duplicate_theme(
+    theme_id: str,
+    db: Session = Depends(get_db),
+):
+    # Find original theme
+    original = db.query(Theme).filter(Theme.theme_id == theme_id).first()
+    if not original:
+        raise HTTPException(status_code=404, detail="Theme not found")
+    
+    # Generate new name
+    base_name = original.name
+    copy_number = 1
+    new_name = f"{base_name} (Copy)"
+    
+    # Check for existing copies and increment
+    while db.query(Theme).filter(
+        Theme.org_id == original.org_id,
+        Theme.name == new_name
+    ).first():
+        copy_number += 1
+        new_name = f"{base_name} (Copy {copy_number})"
+    
+    # Create duplicate
+    duplicate = Theme(
+        theme_id=generate_theme_id(),
+        org_id=original.org_id,
+        name=new_name,
+        light_primary_color=original.light_primary_color,
+        light_secondary_color=original.light_secondary_color,
+        light_text_color=original.light_text_color,
+        light_background_color=original.light_background_color,
+        dark_primary_color=original.dark_primary_color,
+        dark_secondary_color=original.dark_secondary_color,
+        dark_text_color=original.dark_text_color,
+        dark_background_color=original.dark_background_color,
+        logo_url=original.logo_url,
+        meta=original.meta,
+        is_active=True,  # New duplicates are active by default
+        created_by=original.created_by,
+    )
+    
+    db.add(duplicate)
+    db.commit()
+    db.refresh(duplicate)
+    
+    data = _to_dict(duplicate)
+    
+    # Cache new theme
+    RedisThemeService.cache_theme(duplicate.theme_id, data)
+    RedisThemeService.invalidate_theme(duplicate.theme_id, org_id=duplicate.org_id)
+    
+    return data

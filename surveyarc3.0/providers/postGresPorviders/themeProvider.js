@@ -36,7 +36,6 @@ export const ThemeProvider = ({ children }) => {
     return String(getCookie("currentOrgId") || "");
   }, []);
 
-  /** ✅ Auto-load */
   useEffect(() => {
     if (organisation?.org_id) {
       loadThemes(organisation.org_id);
@@ -105,7 +104,7 @@ export const ThemeProvider = ({ children }) => {
   };
 
   /** DELETE */
-  const deleteTheme = async (themeId, userId) => {
+  const deleteTheme = async (themeId) => {
     try {
       await ThemeModel.deleteTheme(themeId, orgId, userId);
       setThemes((prev) => prev.filter((t) => t.themeId !== themeId));
@@ -161,6 +160,21 @@ export const ThemeProvider = ({ children }) => {
 
     return themes.filter((t) => t.name?.toLowerCase().includes(q));
   };
+  
+const duplicateTheme = async (themeId) => {
+  try {
+    const duplicated = await ThemeModel.duplicate(themeId, userId);
+    setThemes((prev) => [...prev, duplicated]);
+    setCurrentId(duplicated.themeId); // ✅ Auto-select duplicated theme
+    return duplicated;
+  } catch (e) {
+    console.error("Failed to duplicate theme:", e);
+    throw e;
+  }
+};
+const createTheme = () => {
+  setCurrentId(null); // ✅ Clear selection to show blank editor
+};
 
   const value = {
     themes,
@@ -168,12 +182,12 @@ export const ThemeProvider = ({ children }) => {
     error,
     currentId,  // ✅ ADDED - This was missing!
     open,       // ✅ ADDED - This was missing!
-
+createTheme,
     create,
     getById,
     update,
     deleteTheme,
-
+    duplicateTheme,
     activate,
     deactivate,
 

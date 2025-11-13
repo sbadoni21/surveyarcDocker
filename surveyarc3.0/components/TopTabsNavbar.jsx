@@ -13,7 +13,9 @@ export default function TopTabsNavbar({ activeTab, setActiveTab }) {
     { id: "responses", label: "Responses", icon: <Icon icon="ri:survey-line" width="20" height="20" /> },
     { id: "theme", label: "Theme", icon: <Icon icon="ri:palette-line" width="20" height="20" /> },
 
-    // { id: "campaign", label: "campaign", icon: <Icon icon="solar:play-linear" width="20" height="20" /> },
+{ id: "campaign", label: "Campaign", icon:<Icon icon="solar:target-linear" width="20" height="20" />
+
+ },
   ];
 
   // Map tab ids to desired hash routes (including your misspelling requirement)
@@ -23,6 +25,7 @@ export default function TopTabsNavbar({ activeTab, setActiveTab }) {
     flow: "#flow",
     distribution: "#distribution",
     demo: "#demo",
+    campaign: "#campaign",
   };
 
   const handleClick = (id) => {

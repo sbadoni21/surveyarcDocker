@@ -69,12 +69,11 @@ export async function PATCH(req, { params }) {
   }
 }
 
-// DELETE /api/post-gres-apis/ticket-templates/[template_id]
 export async function DELETE(req, { params }) {
   try {
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get("user_id");
-    const templateId = params.template_id;
+    const templateId = searchParams.get("template_id");
     
     const res = await fetch(`${BASE}/ticket-templates/templates/${templateId}`, {
       method: "DELETE",
@@ -83,12 +82,20 @@ export async function DELETE(req, { params }) {
       },
       signal: AbortSignal.timeout(30000),
     });
-    
+
     if (res.status === 204) {
-      return new NextResponse(null, { status: 204 });
+      return NextResponse.json(
+        { status: "success", message: "Template deleted successfully" },
+        { status: 200 }
+      );
     }
+
     return forceDecryptResponse(res);
   } catch (e) {
-    return NextResponse.json({ status: "error", message: String(e?.message || e) }, { status: 500 });
+    return NextResponse.json(
+      { status: "error", message: String(e?.message || e) },
+      { status: 500 }
+    );
   }
 }
+
