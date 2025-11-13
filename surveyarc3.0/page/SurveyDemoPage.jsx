@@ -7,6 +7,7 @@ import { useQuestion } from "@/providers/questionPProvider";
 import { useSurvey } from "@/providers/surveyPProvider";
 import Loading from "@/app/[locale]/loading";
 import { useRule } from "@/providers/rulePProvider";
+import { useTheme } from "@/providers/postGresPorviders/themeProvider";
 
 export default function SurveyDemoPage() {
   const router = useRouter();
@@ -24,6 +25,8 @@ export default function SurveyDemoPage() {
   const { getAllQuestions } = useQuestion();
   const { rules, getAllRules } = useRule();
   const { getSurvey } = useSurvey();
+  const [theme, setTheme] = useState(null);
+  const { getById } = useTheme();
 
   const [isMobile, setIsMobile] = useState(false);
 
@@ -82,6 +85,17 @@ export default function SurveyDemoPage() {
         const randomized = (s.blocks || []).map(applyBlockRandomization);
         setSurvey(s);
         setBlocks(randomized);
+        if (s?.theme_id) {
+          try {
+            const th = await getById(s.theme_id);
+            setTheme(th || null);
+          } catch (err) {
+            console.error("Failed to load theme:", err);
+            setTheme(null);
+          }
+        } else {
+          setTheme(null);
+        }
       } catch (e) {
         console.error("Error fetching survey:", e);
         router.push("/404");
@@ -170,7 +184,7 @@ export default function SurveyDemoPage() {
   const preparedBlocks = expandBlocksByPageBreaks(blocks, questions);
 
   return (
-    <div className="h-full overflow-hidden" >
+    <div className="h-full overflow-hidden">
       <div
         style={{
           margin: "16px auto",
@@ -190,7 +204,11 @@ export default function SurveyDemoPage() {
             justifyContent: "flex-start",
           }}
         >
-          {!isMobile && <div style={{ fontSize: 12, marginBottom: 8, color: "#aaa" }}>Phone</div>}
+          {!isMobile && (
+            <div style={{ fontSize: 12, marginBottom: 8, color: "#aaa" }}>
+              Phone
+            </div>
+          )}
 
           <div
             style={{
@@ -225,7 +243,7 @@ export default function SurveyDemoPage() {
                   handleSubmit={handleSubmit}
                   rules={rules}
                   embedded={true}
-                  theme="dark"
+                  theme={theme}
                 />
               </div>
             </div>
@@ -235,7 +253,9 @@ export default function SurveyDemoPage() {
         {/* Laptop Frame (hide on mobile) */}
         {!isMobile && (
           <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 12, marginBottom: 8, color: "#aaa" }}>Laptop</div>
+            <div style={{ fontSize: 12, marginBottom: 8, color: "#aaa" }}>
+              Laptop
+            </div>
             <div
               style={{
                 width: "100%",
@@ -250,14 +270,21 @@ export default function SurveyDemoPage() {
                 flexDirection: "column",
               }}
             >
-              <div style={{ background: "#000", height: "100%", borderRadius: 8, overflow: "hidden" }}>
+              <div
+                style={{
+                  background: "#000",
+                  height: "100%",
+                  borderRadius: 8,
+                  overflow: "hidden",
+                }}
+              >
                 <SurveyForm
                   questions={questions}
                   blocks={preparedBlocks}
                   handleSubmit={handleSubmit}
                   rules={rules}
                   embedded={true}
-                  theme="dark"
+                  theme={theme}
                 />
               </div>
 
