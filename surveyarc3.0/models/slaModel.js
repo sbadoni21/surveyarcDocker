@@ -7,8 +7,8 @@ const ok = async (r) => {
 };
 
 const SLAEndpoints = {
-  list: (orgId) => `${BASE}/slas?org_id=${encodeURIComponent(orgId)}`,
-  get: (slaId) => `${BASE}/slas/${encodeURIComponent(slaId)}`,
+  list: (org_id) => `${BASE}/slas?org_id=${encodeURIComponent(org_id)}`,
+  get: (sla_id,org_id) => `${BASE}/slas/${encodeURIComponent(org_id)}/${encodeURIComponent(sla_id)}`,
   // Ticket SLA controls (tickets router exposes these)
   ticket: {
     firstResponse: (ticketId) => `${BASE}/tickets/${encodeURIComponent(ticketId)}/sla/first-response`,
@@ -24,12 +24,14 @@ const SLAEndpoints = {
 };
 
 const SLAModel = {
+
   async list(orgId) {
     const r = await fetch(SLAEndpoints.list(orgId));
     return ok(r);
   },
-  async get(slaId) {
-    const r = await fetch(SLAEndpoints.get(slaId));
+
+  async get(slaId, orgId) {
+    const r = await fetch(SLAEndpoints.get(slaId, orgId));
     return ok(r);
   },
 

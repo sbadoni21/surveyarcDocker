@@ -4,6 +4,8 @@ import defaultConfigMap from "@/enums/defaultConfigs";
 import { FileText } from "lucide-react";
 import RenderQuestion from "./AnswerUI";
 import RuleEngine from "./RulesEngine";
+import TicketModel from "@/models/ticketModel";
+import SLAModel from "@/models/slaModel";
 
 export default function SurveyForm({
   questions = [],
@@ -192,6 +194,22 @@ export default function SurveyForm({
     let shouldEnd = false;
     let messageToShow = null;
 
+    const addMinutesToNow = (minutes) => {
+      return new Date(Date.now() + minutes * 60 * 1000).toISOString();
+    };
+
+    const raiseTicket = async (ticketData) => {
+      try {
+        const data = await TicketModel.create(ticketData);
+        console.log("Ticket raised successfully:", data);
+        // alert("Ticket raised successfully!");
+        // return data;
+      } catch (err) {
+        console.error(" Failed to raise ticket:", err);
+        // alert("Failed to raise ticket. Please try again later.");
+      }
+    };
+
     actionsArray.forEach((action) => {
       if (!action) return;
       switch (action.type) {
@@ -221,6 +239,54 @@ export default function SurveyForm({
         case "show_message":
           messageToShow = action.message;
           break;
+        case "raise_ticket":
+          try {
+            if (action?.ticketData?.[0]) {
+              const ticket = action.ticketData[0];
+
+              const slaRes = SLAModel.get(ticket.slaId, ticket.orgId);
+
+              if (!slaRes || slaRes.error) {
+                throw new Error("Failed to fetch SLA data");
+              }
+
+              const slaData = slaRes.data || slaRes;
+
+              const priorityMinutes =
+                slaData?.priority_map?.[ticket.priority] ?? 7200;
+              const severityMinutes =
+                slaData?.severity_map?.[ticket.severity] ?? 7200;
+
+              const firstResponseDueAt = addMinutesToNow(severityMinutes);
+              const resolutionDueAt = addMinutesToNow(priorityMinutes);
+
+              const updatedTicketData = {
+                ...ticket,
+                dueAt: resolutionDueAt,
+                sla_processing: {
+                  ...ticket.sla_processing,
+                  first_response_due_at: firstResponseDueAt,
+                  resolution_due_at: resolutionDueAt,
+                },
+                firstResponseDueAt,
+                resolutionDueAt,
+                meta: {
+                  ...(ticket.meta || {}),
+                  title: "Survey Ticket",
+                  message: "A ticket was raised by the survey.",
+                  submittedAnswers: answers,
+                  timestamp: new Date().toISOString(),
+                },
+              };
+              raiseTicket(updatedTicketData);
+            } else {
+              console.warn("No ticketData found in action");
+            }
+          } catch (err) {
+            console.error("Error processing raise_ticket action:", err);
+          }
+          break;
+
         default:
       }
     });

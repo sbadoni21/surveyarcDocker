@@ -11,6 +11,7 @@ from sqlalchemy import (
 class OrgRole(str, enum.Enum):
     owner            = "owner"
     admin            = "admin"
+    agent            = "agent"
     billing_admin    = "billing_admin"
     security_admin   = "security_admin"
     manager          = "manager"

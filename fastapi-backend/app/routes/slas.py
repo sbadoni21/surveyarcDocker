@@ -62,18 +62,30 @@ def list_slas(
 @router.get("/{sla_id}", response_model=SLAOut)
 def get_sla(sla_id: str, db: Session = Depends(get_db)):
     """Get a single SLA by ID"""
-    # try redis first (best-effort)
-    cached = cache_get_sla(sla_id)
-    if cached is not None:
-        return SLAOut.model_validate(cached)
+
+    # Try Redis (best effort, fail silently if Redis unavailable)
+    cached = None
+    try:
+        cached = cache_get_sla(sla_id)
+        if cached is not None:
+            return SLAOut.model_validate(cached)
+    except Exception as e:
+        # Log warning but don't fail
+        print(f"[Warning] Redis read failed: {e}")
+
+    # Fallback to DB
     row = db.get(SLA, sla_id)
     if not row:
         raise HTTPException(404, "SLA not found")
+
     dto = SLAOut.model_validate(row, from_attributes=True)
+
+    # Try to cache back in Redis (non-blocking)
     try:
         cache_sla(sla_id, dto.model_dump())
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Warning] Redis write failed: {e}")
+
     return dto
 
 

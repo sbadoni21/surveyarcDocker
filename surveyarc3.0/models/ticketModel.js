@@ -67,6 +67,7 @@ const toCamel = (t) => ({
   custom: t.custom_fields || t.meta || {},
   teamId: t.team_id ?? null,
   agentId: t.agent_id ?? null,
+  meta: t.meta || {},
 
   slaStatus: t.sla_status ?? null,
 });
@@ -149,6 +150,7 @@ async create(data) {
       sla_mode: data.slaMode ?? null,
       calendar_id: data.calendarId ?? null,
     },
+    meta: data.meta ?? {},
   };
 
   const payload = omitNullish(payloadRaw);

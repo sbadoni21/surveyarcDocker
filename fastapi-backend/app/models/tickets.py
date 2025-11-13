@@ -173,8 +173,8 @@ class Ticket(Base):
     last_activity_at:       Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True, nullable=True)
     last_public_comment_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    reply_count:     Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    follower_count:  Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    reply_count:     Mapped[int] = mapped_column(Integer, default=0, nullable=True)
+    follower_count:  Mapped[int] = mapped_column(Integer, default=0, nullable=True)
 
     custom_fields: Mapped[dict] = mapped_column(JSONB, default=dict)
     meta:          Mapped[dict] = mapped_column(JSONB, default=dict)
