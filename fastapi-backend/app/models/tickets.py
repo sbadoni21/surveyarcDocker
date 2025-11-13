@@ -40,6 +40,12 @@ class TicketStatus(str, enum.Enum):
     resolved = "resolved"
     closed = "closed"
     canceled = "canceled"
+    
+class TicketPlatform(str, enum.Enum):
+    in_app = "in_app"
+    external_api = "external_api"
+    mobile_app = "mobile_app"
+
 
 class TicketPriority(str, enum.Enum):
     low = "low"
@@ -92,6 +98,8 @@ sla_pause_reason_enum = SAEnum(SLAPauseReason, name="sla_pause_reason", metadata
 # ------------------------------- Named PG Enum types (reuse these) -------------------------------
 # These create named PostgreSQL enum types once and allow reuse across models/tables.
 ticket_status_enum          = SAEnum(TicketStatus,             name="ticket_status",              metadata=Base.metadata)
+ticket_platform_enum          = SAEnum(TicketPlatform,             name="ticket_platform",              metadata=Base.metadata)
+
 ticket_priority_enum        = SAEnum(TicketPriority,           name="ticket_priority",            metadata=Base.metadata)
 ticket_severity_enum        = SAEnum(TicketSeverity,           name="ticket_severity",            metadata=Base.metadata)
 ticket_link_type_enum       = SAEnum(TicketLinkType,           name="ticket_link_type",           metadata=Base.metadata)
@@ -126,6 +134,7 @@ class Ticket(Base):
 
     # IMPORTANT: use named PG enum types + actual Enum classes for defaults
     status:   Mapped[TicketStatus]   = mapped_column(ticket_status_enum,   default=TicketStatus.new,     index=True, nullable=False)
+    platform:   Mapped[TicketPlatform]   = mapped_column(ticket_platform_enum,   default=TicketStatus.new,     index=True, nullable=True)
     priority: Mapped[TicketPriority] = mapped_column(ticket_priority_enum, default=TicketPriority.normal, index=True, nullable=False)
     severity: Mapped[TicketSeverity] = mapped_column(ticket_severity_enum, default=TicketSeverity.sev4,  index=True, nullable=False)
 

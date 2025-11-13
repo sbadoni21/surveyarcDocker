@@ -55,9 +55,9 @@ class Contact(Base):
     )
 
     # child relations
-    emails       = relationship("ContactEmail", cascade="all, delete-orphan")
-    phones       = relationship("ContactPhone", cascade="all, delete-orphan")
-    socials      = relationship("ContactSocial", cascade="all, delete-orphan")
+    emails       = relationship("ContactEmail",back_populates="contact", cascade="all, delete-orphan")
+    phones       = relationship("ContactPhone",back_populates="contact", cascade="all, delete-orphan")
+    socials      = relationship("ContactSocial",back_populates="contact", cascade="all, delete-orphan")
 class ContactEmail(Base):
     __tablename__ = "contact_emails"
 
@@ -72,6 +72,8 @@ class ContactEmail(Base):
 
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
     status      = Column(String, default="active")  # bounced/unsubscribed
+    contact = relationship("Contact", back_populates="emails")
+
 
     __table_args__ = (UniqueConstraint("email_lower", "contact_id"),)
 class ContactPhone(Base):
@@ -88,6 +90,8 @@ class ContactPhone(Base):
     is_verified      = Column(Boolean, default=False)
 
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
+    contact = relationship("Contact", back_populates="phones")
+
 
     __table_args__ = (UniqueConstraint("country_code", "phone_number", "contact_id"),)
 class ContactSocial(Base):
@@ -101,6 +105,8 @@ class ContactSocial(Base):
     link        = Column(String)
 
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
+    contact = relationship("Contact", back_populates="socials")
+
     
 class ContactList(Base):
     __tablename__ = "contact_lists"

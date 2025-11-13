@@ -273,7 +273,6 @@ async def delete_template(
     """
     stmt = select(TicketTemplate).where(
         TicketTemplate.template_id == template_id,
-        TicketTemplate.org_id == current_user.org_id
     )
     template = db.scalar(stmt)
     

@@ -141,7 +141,7 @@ async getAllByOrg(orgId, userId) {
    * @returns {Promise<Object>} Deletion response
    */
   async delete(templateId,orgId,userId) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(templateId)}?org_id=${encodeURIComponent(orgId)}&user_id=${encodeURIComponent(userId)}`, {
+    const res = await fetch(`${BASE}/${encodeURIComponent(templateId)}?org_id=${encodeURIComponent(orgId)}&user_id=${encodeURIComponent(userId)}&template_id=${encodeURIComponent(templateId)}`, {
       method: "DELETE",
       cache: "no-store",
     });

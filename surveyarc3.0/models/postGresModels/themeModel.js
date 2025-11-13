@@ -124,7 +124,16 @@ const ThemeModel = {
 
     return json(res);
   },
-
+  async duplicate(themeId, userId) {
+    const res = await fetch(
+      `${BASE}/${encodeURIComponent(themeId)}/duplicate?user_id=${encodeURIComponent(userId)}`,
+      {
+        method: "POST",
+        cache: "no-store",
+      }
+    );
+    return toCamel(await json(res));
+  },
   /** DEACTIVATE */
   async deactivate(themeId) {
     return this.update(themeId, { isActive: false });

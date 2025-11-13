@@ -640,6 +640,36 @@ const handleResponseCountClick = async (surveyId) => {
                             <EditIcon fontSize="small" sx={{ mr: 1 }} /> Edit
                             Survey
                           </MenuItem>
+                          {survey.status === "draft" ? (
+  <MenuItem
+    onClick={() => {
+      updateSurvey(orgId, survey.surveyId, { status: "published" });
+    }}
+    disabled={loading}
+  >
+    <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Published
+  </MenuItem>
+) : survey.status === "published" ? (
+  <MenuItem
+    onClick={() => {
+      updateSurvey(orgId, survey.surveyId, { status: "archived" });
+    }}
+    disabled={loading}
+  >
+    <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Archive
+  </MenuItem>
+) : survey.status === "archived" ? (
+  <MenuItem
+    onClick={() => {
+      updateSurvey(orgId, survey.surveyId, { status: "published" });
+    }}
+    disabled={loading}
+  >
+    <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Published
+  </MenuItem>
+) : null}
+
+
                           <MenuItem
                             onClick={() => {
                               deleteSurvey(survey.surveyId);
