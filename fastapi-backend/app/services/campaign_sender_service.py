@@ -5,6 +5,7 @@
 import logging
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from typing import List, Optional
 
 from ..models.campaigns import Campaign, CampaignResult, CampaignStatus, CampaignChannel, RecipientStatus
@@ -12,9 +13,14 @@ from ..models.outbox import Outbox
 from ..models.contact import Contact
 from ..utils.id_generator import generate_id
 
-
+import secrets
 logger = logging.getLogger(__name__)
 UTC = timezone.utc
+
+
+def generate_tracking_token():
+    """Generate unique tracking token for campaign results"""
+    return "camp_tracking_" + secrets.token_hex(4)
 
 
 def create_campaign_results(
@@ -51,12 +57,11 @@ def create_campaign_results(
             continue
         
         # Generate tracking token
-        from ..utils.id_generator import generate_tracking_token
         tracking_token = generate_tracking_token()
         
         # Create campaign result
         result = CampaignResult(
-            result_id=generate_id("result"),
+            result_id=generate_id(),
             campaign_id=campaign.campaign_id,
             contact_id=contact.contact_id,
             org_id=campaign.org_id,
@@ -73,6 +78,16 @@ def create_campaign_results(
         logger.debug(f"✅ Created result for {contact.name} ({address}) via {channel.value}")
     
     session.flush()
+    
+    if skipped_contacts["no_address"] > 0:
+        logger.info(f"⚠️  Skipped {skipped_contacts['no_address']} contacts (no valid address)")
+    if skipped_contacts["no_content"] > 0:
+        logger.info(f"⚠️  Skipped {skipped_contacts['no_content']} contacts (missing content)")
+    
+    logger.info(f"✅ Created {results_created} campaign results")
+    
+    return results_created
+
 
 def queue_campaign_sends(session: Session, campaign: Campaign, batch_size: int = 100) -> int:
     """
@@ -106,10 +121,11 @@ def queue_campaign_sends(session: Session, campaign: Campaign, batch_size: int =
             )
             
             session.add(outbox)
+            session.flush()  # Flush to get outbox.id
             
             # Update result status
             result.status = RecipientStatus.pending
-            result.outbox_id = outbox.id if hasattr(outbox, 'id') else None
+            result.outbox_id = outbox.id
             
             queued_count += 1
             
@@ -119,8 +135,9 @@ def queue_campaign_sends(session: Session, campaign: Campaign, batch_size: int =
             result.error = str(e)
     
     session.flush()
+    logger.info(f"📤 Queued {queued_count} campaign messages to outbox")
+    
     return queued_count
-
 
 
 def build_campaign_payload(campaign: Campaign, result: CampaignResult) -> dict:
@@ -140,7 +157,7 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult) -> dict:
     base_payload = {
         "campaign_id": campaign.campaign_id,
         "result_id": result.result_id,
-        "contact_id": result.contact_id,  # ✅ ADD THIS
+        "contact_id": result.contact_id,
         "tracking_token": result.tracking_token,
         "recipient_name": result.recipient_name or "there",
         "survey_link": survey_link,
@@ -153,18 +170,54 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult) -> dict:
         html_body = html_body.replace("{survey_link}", survey_link)
         html_body = html_body.replace("{name}", result.recipient_name or "")
         
-        # ✅ REMOVE tracking pixel from here - let the template handle it
-        
         return {
             **base_payload,
             "to": [result.recipient_address],
             "subject": campaign.email_subject,
-            "html": html_body,  # ✅ This is the custom HTML from campaign
+            "html": html_body,
             "from_name": campaign.email_from_name,
             "reply_to": campaign.email_reply_to,
         }
     
-    # ... rest of the channels remain the same
+    elif result.channel_used == CampaignChannel.sms:
+        # SMS payload
+        sms_message = campaign.sms_message or ""
+        sms_message = sms_message.replace("{survey_link}", short_link)
+        sms_message = sms_message.replace("{name}", result.recipient_name or "")
+        
+        return {
+            **base_payload,
+            "to": result.recipient_address,
+            "message": sms_message,
+        }
+    
+    elif result.channel_used == CampaignChannel.whatsapp:
+        # WhatsApp payload
+        whatsapp_message = campaign.whatsapp_message or ""
+        whatsapp_message = whatsapp_message.replace("{survey_link}", short_link)
+        whatsapp_message = whatsapp_message.replace("{name}", result.recipient_name or "")
+        
+        return {
+            **base_payload,
+            "to": result.recipient_address,
+            "message": whatsapp_message,
+            "template_id": campaign.whatsapp_template_id,
+        }
+    
+    elif result.channel_used == CampaignChannel.voice:
+        # Voice payload
+        voice_script = campaign.voice_script or ""
+        voice_script = voice_script.replace("{survey_link}", short_link)
+        voice_script = voice_script.replace("{name}", result.recipient_name or "")
+        
+        return {
+            **base_payload,
+            "to": result.recipient_address,
+            "script": voice_script,
+        }
+    
+    return base_payload
+
 
 def get_survey_base_url() -> str:
     """Get base URL for survey links"""
@@ -210,6 +263,7 @@ def process_campaign_batch(campaign_id: str, batch_size: int = 100) -> dict:
         if pending_count == 0:
             campaign.status = CampaignStatus.sent
             campaign.completed_at = datetime.now(UTC)
+            logger.info(f"🎉 Campaign {campaign_id} completed!")
         
         session.commit()
         
@@ -226,6 +280,7 @@ def process_campaign_batch(campaign_id: str, batch_size: int = 100) -> dict:
 def update_result_from_outbox(session: Session, result_id: str, sent_at: datetime, message_id: str = None):
     """
     Update campaign result when outbox message is sent
+    Called by outbox processor after successful send
     """
     result = session.query(CampaignResult).filter(
         CampaignResult.result_id == result_id
@@ -235,24 +290,45 @@ def update_result_from_outbox(session: Session, result_id: str, sent_at: datetim
         logger.warning(f"Result {result_id} not found for outbox update")
         return
     
+    # Update result
     result.status = RecipientStatus.sent
     result.sent_at = sent_at
     if message_id:
         result.message_id = message_id
     
-    # Increment campaign counter
-    campaign = result.campaign
+    # Get campaign
+    campaign = session.query(Campaign).filter(
+        Campaign.campaign_id == result.campaign_id
+    ).first()
+    
     if campaign:
-        campaign.sent_count += 1
+        # Increment sent_count
+        campaign.sent_count = (campaign.sent_count or 0) + 1
         
-        # Update channel stats
+        # Initialize channel_stats if needed
         if not campaign.channel_stats:
             campaign.channel_stats = {}
         
+        # Get channel key
         channel_key = result.channel_used.value
-        if channel_key not in campaign.channel_stats:
-            campaign.channel_stats[channel_key] = {"sent": 0, "delivered": 0, "opened": 0, "clicked": 0}
         
+        # Initialize channel stats if needed
+        if channel_key not in campaign.channel_stats:
+            campaign.channel_stats[channel_key] = {
+                "sent": 0,
+                "delivered": 0,
+                "opened": 0,
+                "clicked": 0,
+                "bounced": 0,
+                "failed": 0
+            }
+        
+        # Increment sent count for this channel
         campaign.channel_stats[channel_key]["sent"] += 1
+        
+        # Mark as modified for SQLAlchemy
+        flag_modified(campaign, "channel_stats")
+        
+        logger.debug(f"📊 Campaign stats updated: sent_count={campaign.sent_count}")
     
     session.flush()

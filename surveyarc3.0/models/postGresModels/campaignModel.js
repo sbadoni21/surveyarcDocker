@@ -91,7 +91,7 @@ const CampaignModel = {
     const body = toSnake(data);
         console.log(body)
 
-    const res = await fetch(`${BASE}`, {
+    const res = await fetch(`${BASE}?user_id=${userId}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -175,6 +175,7 @@ const CampaignModel = {
 
   /** DELETE */
   async delete(campaignId, userId) {
+    
     const res = await fetch(
       `${BASE}/${encodeURIComponent(campaignId)}?user_id=${encodeURIComponent(userId)}`,
       {

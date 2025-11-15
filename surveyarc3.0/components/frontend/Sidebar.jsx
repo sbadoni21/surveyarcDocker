@@ -113,9 +113,10 @@ export default function Sidebar() {
 
   const menuItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "" },
-    ...(shouldShowOrgTickets ? [{ icon: Building2, label: "Org Tickets", path: getOrgTicketsPath() }] : []),
+        { icon: FolderOpen, label: "Survey Management", path: "projects" },
+
+    ...(shouldShowOrgTickets ? [{ icon: Building2, label: "Tickets Management", path: getOrgTicketsPath() }] : []),
     { icon: Users, label: "Team", path: "team" },
-    { icon: FolderOpen, label: "Projects", path: "projects" },
     { icon: Settings, label: "Settings", path: "settings" },
   ];
 

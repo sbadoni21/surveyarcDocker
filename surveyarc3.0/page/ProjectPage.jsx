@@ -109,7 +109,7 @@ export default function ProjectPage() {
       <header className="flex items-center justify-between gap-10 py-4 mb-8 w-full">
         <div className=" px-4 py-2 w-[30%] ">
           <h1 className="text-[24px] font-semibold m-0 dark:text-[#CBC9DE]">
-            Project Management
+            Survey Management
           </h1>
           
         </div>

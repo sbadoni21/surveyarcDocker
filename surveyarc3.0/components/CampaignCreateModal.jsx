@@ -15,12 +15,13 @@ const CampaignCreateModal = ({
 }) => {
   const [formData, setFormData] = useState({
     campaignName: '',
-    userId: userId,
     surveyId: '',
     channel: 'email',
     fallbackChannel: null,
+    status:"scheduled",
     channelPriority: [],
     orgId:orgId,
+    userId:userId,
     
     // Contact selection
     contactListId: '',
@@ -117,6 +118,10 @@ const CampaignCreateModal = ({
       setFormData({
         campaignName: '',
         surveyId: '',
+            orgId:orgId,
+    userId:userId,
+    status:"scheduled",
+
         channel: 'email',
         fallbackChannel: null,
         channelPriority: [],
@@ -482,35 +487,48 @@ const formatScheduledTime = (isoString) => {
     Scheduling (Optional)
   </h3>
   
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-2">
-      Schedule Send Time
-      <span className="text-xs text-gray-500 ml-2">
-        (Your timezone: {getUserTimezone()})
+ <div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">
+    Schedule Send Time
+    <span className="text-xs text-gray-500 ml-2">
+      (Your timezone: {getUserTimezone()})
+    </span>
+  </label>
+
+  <input
+    type="datetime-local"
+    value={
+      formData.scheduledAt
+        ? new Date(formData.scheduledAt).toLocaleString("sv-SE").replace(" ", "T").slice(0, 16) // Convert UTC → local for display
+        : ""
+    }
+  onChange={(e) => {
+  const local = e.target.value;
+
+  const utc = new Date(local).toISOString();
+  setFormData({ ...formData, scheduledAt: utc });
+}}
+
+    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+    min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+  .toISOString()
+  .slice(0, 16)} // Local min
+  />
+
+  {formData.scheduledAt && (
+    <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
+      ℹ️ Will be sent at (your time):{" "}
+      <strong>
+        {new Date(formData.scheduledAt).toLocaleString()}
+      </strong>
+      <br />
+      <span className="text-gray-600">
+        Server UTC time: {formData.scheduledAt}
       </span>
-    </label>
-    <input
-      type="datetime-local"
-      value={formData.scheduledAt || ''}
-      onChange={(e) => setFormData({ ...formData, scheduledAt: e.target.value || null })}
-      className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-      min={new Date().toISOString().slice(0, 16)} // ✅ Prevent past dates
-    />
-    <p className="text-xs text-gray-500 mt-1">
-      Leave empty to send immediately, or schedule for a specific date and time
-    </p>
-    
-    {/* ✅ Show what time will be scheduled in UTC */}
-    {formData.scheduledAt && (
-      <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
-        ℹ️ Will be sent at: <strong>{formatScheduledTime(new Date(formData.scheduledAt).toISOString())}</strong>
-        <br />
-        <span className="text-gray-600">
-          (Server time: {new Date(formData.scheduledAt).toISOString()})
-        </span>
-      </div>
-    )}
-  </div>
+    </div>
+  )}
+</div>
+
 </div>
         </div>
 

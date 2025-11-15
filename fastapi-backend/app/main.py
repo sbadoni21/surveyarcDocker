@@ -49,7 +49,7 @@ REDIS_HEALTH_CHECK_INTERVAL = int(os.getenv("REDIS_HEALTH_CHECK_INTERVAL", "30")
 ENABLE_OUTBOX_PROCESSOR = os.getenv("ENABLE_OUTBOX_PROCESSOR", "true").lower() == "true"
 OUTBOX_POLL_INTERVAL = float(os.getenv("OUTBOX_POLL_INTERVAL", "2.0"))
 OUTBOX_BATCH_SIZE = int(os.getenv("OUTBOX_BATCH_SIZE", "25"))
-CAMPAIGN_SCHEDULER_INTERVAL = int(os.getenv("CAMPAIGN_SCHEDULER_INTERVAL", "60"))
+CAMPAIGN_SCHEDULER_INTERVAL = int(os.getenv("CAMPAIGN_SCHEDULER_INTERVAL", "20"))
 
 # Global variable to track outbox processor thread
 outbox_processor_thread = None
@@ -73,22 +73,13 @@ async def lifespan(app: FastAPI):
     """
     global outbox_processor_thread
     
-    # ==================== STARTUP ====================
-    logger.info("=" * 80)
-    logger.info("🚀 Starting Survey & Ticket Management API with Redis Integration...")
-    logger.info("=" * 80)
     
     # Test Redis connection with detailed info
     try:
         redis_info = RedisHealthCheck.get_redis_info()
         if redis_info["status"] == "connected":
             logger.info("✅ Redis connected successfully")
-            logger.info(f"   - Redis Version: {redis_info.get('redis_version', 'unknown')}")
-            logger.info(f"   - Connected Clients: {redis_info.get('connected_clients', 0)}")
-            logger.info(f"   - Memory Used: {redis_info.get('used_memory_human', 'unknown')}")
-            logger.info(f"   - Hit Ratio: {redis_info.get('hit_ratio', 0)}%")
         else:
-            logger.warning("⚠️  Warning: Redis connection failed - caching will be disabled")
             logger.warning(f"   - Error: {redis_info.get('error', 'Unknown error')}")
     except Exception as e:
         logger.warning(f"⚠️  Warning: Redis connection error: {e}")
@@ -131,9 +122,6 @@ async def lifespan(app: FastAPI):
                 name="OutboxProcessor"
             )
             outbox_processor_thread.start()
-            logger.info("✅ Outbox processor started successfully")
-            logger.info(f"   - Poll Interval: {OUTBOX_POLL_INTERVAL}s")
-            logger.info(f"   - Batch Size: {OUTBOX_BATCH_SIZE}")
         except Exception as e:
             logger.error(f"❌ Failed to start outbox processor: {e}")
     else:

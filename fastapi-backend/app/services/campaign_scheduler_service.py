@@ -29,7 +29,7 @@ class CampaignScheduler:
     and automatically triggers them when their scheduled time arrives
     """
     
-    def __init__(self, check_interval: int = 60):
+    def __init__(self, check_interval: int = 90):
         """
         Args:
             check_interval: How often to check for scheduled campaigns (in seconds)
@@ -100,20 +100,18 @@ class CampaignScheduler:
             
             # Find campaigns that should be triggered
             campaigns = session.query(Campaign).filter(
-                Campaign.status == CampaignStatus.scheduled,
                 Campaign.scheduled_at.isnot(None),
                 Campaign.scheduled_at <= now,
-                Campaign.deleted_at.is_(None)
             ).with_for_update(skip_locked=True).all()
-            
             if not campaigns:
                 logger.debug(f"No scheduled campaigns found (checked up to {now.strftime('%Y-%m-%d %H:%M:%S UTC')})")
                 return 0
             
-            logger.info(f"📬 Found {len(campaigns)} campaign(s) ready to trigger:")
+            logger.info(f"📬 logging this now {campaigns} campaign(s) ready to trigger:")
             for campaign in campaigns:
                 logger.info(f"   - {campaign.campaign_name} (ID: {campaign.campaign_id}, scheduled: {campaign.scheduled_at})")
-            
+                logger.info(f"📬 logging this now {campaign} campaign(s) ready to trigger:")
+
             for campaign in campaigns:
                 try:
                     self._trigger_campaign(session, campaign)

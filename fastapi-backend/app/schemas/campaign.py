@@ -38,6 +38,7 @@ class CampaignBase(BaseModel):
     campaign_name: str = Field(..., min_length=1, max_length=255)
     survey_id: str
     org_id:str
+    user_id:str
     channel: CampaignChannelEnum = CampaignChannelEnum.email
     fallback_channel: Optional[CampaignChannelEnum] = None
     channel_priority: Optional[List[str]] = Field(default=None, description="Channel priority order for 'multi' channel")

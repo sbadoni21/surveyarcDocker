@@ -426,6 +426,9 @@ const CampaignPage = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Recipients
                 </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Started At
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Delivered
                 </th>
@@ -457,6 +460,9 @@ const CampaignPage = () => {
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-900">
                     {campaign.totalRecipients}
+                  </td>
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                    {campaign.scheduledAt}
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm text-gray-900">{campaign.deliveredCount}</div>

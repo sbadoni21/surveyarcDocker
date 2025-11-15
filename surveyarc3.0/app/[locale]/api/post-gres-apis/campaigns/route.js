@@ -82,13 +82,8 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     const body = await req.json();
-    
-    console.log("📤 Creating campaign:", {
-      campaignName: body.campaign_name,
-      surveyId: body.survey_id,
-      orgId: body.org_id,
-      userId: body.user_id
-    });
+        const { searchParams } = new URL(req.url);
+    const userId = searchParams.get("user_id");
 
     const payload = ENC ? await encryptPayload(body) : body;
 
@@ -98,7 +93,7 @@ export async function POST(req) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-User-Id": body.user_id || "", // ✅ Pass userId in header
+        "X-User-Id": userId || "", 
         ...(ENC ? { "x-encrypted": "1" } : {}),
       },
       body: JSON.stringify(payload),

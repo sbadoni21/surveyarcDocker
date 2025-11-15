@@ -123,8 +123,10 @@ export async function DELETE(req, { params }) {
 
     const res = await fetch(url, {
       method: "DELETE",
-  
-      signal: AbortSignal.timeout(30000),
+
+  headers: {
+    "X-User-Id": userId || "",
+  },      signal: AbortSignal.timeout(30000),
     });
 
     if (res.status === 204) {

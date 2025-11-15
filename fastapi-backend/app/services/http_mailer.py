@@ -9,7 +9,7 @@ FROM_ADDRESS      = os.getenv("FROM_ADDRESS")  # optional
 
 _DEFAULT_TIMEOUT = float(os.getenv("MAILER_TIMEOUT", "8"))
 
-def _headers():
+def headers():
     h = {"Content-Type": "application/json"}
     if MAIL_API_TOKEN:
         h["Authorization"] = f"Bearer {MAIL_API_TOKEN}"
@@ -25,12 +25,12 @@ def send_via_mailer(to, subject, html, cc=None, bcc=None, reply_to=None):
     if bcc:          payload["bcc"] = bcc
     if reply_to:     payload["replyTo"] = reply_to
 
-    r = requests.post(MAILER_URL, json=payload, headers=_headers(), timeout=_DEFAULT_TIMEOUT)
+    r = requests.post(MAILER_URL, json=payload, headers=headers(), timeout=_DEFAULT_TIMEOUT)
     r.raise_for_status()  # <-- critical: bubble up failures
     return r.json() if r.headers.get("content-type","").startswith("application/json") else {"ok": True}
 
 def send_from_payload(kind: str, payload: dict):
     r = requests.post(MAILER_URL_KINDS, json={"kind": kind, "payload": payload},
-                      headers=_headers(), timeout=_DEFAULT_TIMEOUT)
+                      headers=headers(), timeout=_DEFAULT_TIMEOUT)
     r.raise_for_status()
     return r.json() if r.headers.get("content-type","").startswith("application/json") else {"ok": True}
