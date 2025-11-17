@@ -1,5 +1,6 @@
 # ============================================
-# CAMPAIGN SCHEDULER SERVICE - app/services/campaign_scheduler_service.py
+# SMART CAMPAIGN SCHEDULER SERVICE V3
+# app/services/campaign_scheduler_service_v3.py
 # ============================================
 
 import logging
@@ -12,7 +13,11 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..db import SessionLocal
 from ..models.campaigns import Campaign, CampaignStatus
-from .campaign_sender_service import create_campaign_results, process_campaign_batch
+from .campaign_sender_service import (
+    create_campaign_results, 
+    process_campaign_batch,
+    check_and_complete_campaigns
+)
 from ..models.contact import Contact, ContactList, list_members
 
 logging.basicConfig(
@@ -25,14 +30,13 @@ UTC = timezone.utc
 
 class CampaignScheduler:
     """
-    Background service that checks for scheduled campaigns
-    and automatically triggers them when their scheduled time arrives
+    ✅ SMART: Enhanced scheduler with campaign completion checking
     """
     
     def __init__(self, check_interval: int = 90):
         """
         Args:
-            check_interval: How often to check for scheduled campaigns (in seconds)
+            check_interval: How often to check (in seconds)
         """
         self.check_interval = check_interval
         self.running = False
@@ -49,7 +53,10 @@ class CampaignScheduler:
         self.running = True
         self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
-        logger.info(f"📅 Campaign scheduler started (check_interval={self.check_interval}s)")
+        logger.info(
+            f"📅 Smart campaign scheduler v3 started "
+            f"(check_interval={self.check_interval}s)"
+        )
     
     def stop(self):
         """Stop the scheduler"""
@@ -59,77 +66,112 @@ class CampaignScheduler:
         self.running = False
         if self.thread:
             self.thread.join(timeout=5)
-        logger.info(f"📅 Campaign scheduler stopped after {self.check_count} checks")
+        logger.info(f"📅 Scheduler stopped after {self.check_count} checks")
     
     def _run_loop(self):
         """Main scheduler loop"""
-        logger.info(f"🔄 Scheduler loop started - checking every {self.check_interval}s")
+        logger.info(
+            f"🔄 Scheduler loop started - checking every {self.check_interval}s"
+        )
         
         while self.running:
             try:
                 self.check_count += 1
                 self.last_check_time = datetime.now(UTC)
                 
-                logger.info(f"🔍 [Check #{self.check_count}] Scanning for scheduled campaigns at {self.last_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+                logger.info(
+                    f"🔍 [Check #{self.check_count}] "
+                    f"Scanning at {self.last_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                )
                 
+                # ✅ TASK 1: Trigger scheduled campaigns
                 triggered_count = self._check_and_trigger_campaigns()
                 
                 if triggered_count > 0:
-                    logger.info(f"✅ [Check #{self.check_count}] Triggered {triggered_count} campaign(s)")
-                else:
-                    logger.info(f"ℹ️  [Check #{self.check_count}] No campaigns to trigger")
+                    logger.info(
+                        f"✅ [Check #{self.check_count}] "
+                        f"Triggered {triggered_count} campaign(s)"
+                    )
+                
+                # ✅ TASK 2: Check for campaigns that should be completed
+                completion_result = check_and_complete_campaigns()
+                
+                if completion_result["completed"] > 0:
+                    logger.info(
+                        f"🎉 [Check #{self.check_count}] "
+                        f"Completed {completion_result['completed']} campaign(s)"
+                    )
+                
+                if triggered_count == 0 and completion_result["completed"] == 0:
+                    logger.info(f"ℹ️  [Check #{self.check_count}] No actions taken")
                     
             except Exception as e:
-                logger.error(f"❌ Error in campaign scheduler loop: {e}", exc_info=True)
+                logger.error(f"❌ Error in scheduler loop: {e}", exc_info=True)
             
-            # Sleep for check_interval
-            logger.debug(f"😴 Sleeping for {self.check_interval}s until next check...")
+            logger.debug(f"😴 Sleeping for {self.check_interval}s...")
             time.sleep(self.check_interval)
         
         logger.info("🛑 Scheduler loop ended")
     
     def _check_and_trigger_campaigns(self) -> int:
         """
-        Check for scheduled campaigns and trigger them
-        Returns: Number of campaigns triggered
+        ✅ SMART: Check for scheduled campaigns and trigger them
         """
         triggered_count = 0
         
         with SessionLocal() as session:
             now = datetime.now(UTC)
             
-            # Find campaigns that should be triggered
+            # ✅ CRITICAL: Only get campaigns with status=scheduled
             campaigns = session.query(Campaign).filter(
+                Campaign.status == CampaignStatus.scheduled,
                 Campaign.scheduled_at.isnot(None),
                 Campaign.scheduled_at <= now,
             ).with_for_update(skip_locked=True).all()
+            
             if not campaigns:
-                logger.debug(f"No scheduled campaigns found (checked up to {now.strftime('%Y-%m-%d %H:%M:%S UTC')})")
+                logger.debug(
+                    f"No scheduled campaigns found "
+                    f"(checked up to {now.strftime('%Y-%m-%d %H:%M:%S UTC')})"
+                )
                 return 0
             
-            logger.info(f"📬 logging this now {campaigns} campaign(s) ready to trigger:")
+            logger.info(
+                f"📬 Found {len(campaigns)} campaign(s) ready to trigger:"
+            )
             for campaign in campaigns:
-                logger.info(f"   - {campaign.campaign_name} (ID: {campaign.campaign_id}, scheduled: {campaign.scheduled_at})")
-                logger.info(f"📬 logging this now {campaign} campaign(s) ready to trigger:")
+                logger.info(
+                    f"   - {campaign.campaign_name} "
+                    f"(ID: {campaign.campaign_id}, "
+                    f"scheduled: {campaign.scheduled_at})"
+                )
 
             for campaign in campaigns:
                 try:
                     self._trigger_campaign(session, campaign)
                     session.commit()
                     triggered_count += 1
-                    logger.info(f"✅ Successfully triggered campaign: {campaign.campaign_name}")
+                    logger.info(
+                        f"✅ Successfully triggered: {campaign.campaign_name}"
+                    )
                 except Exception as e:
                     session.rollback()
                     logger.error(
-                        f"❌ Error triggering campaign {campaign.campaign_id} ({campaign.campaign_name}): {e}",
+                        f"❌ Error triggering campaign "
+                        f"{campaign.campaign_id} ({campaign.campaign_name}): {e}",
                         exc_info=True
                     )
         
         return triggered_count
     
     def _trigger_campaign(self, session: Session, campaign: Campaign):
-        """Trigger a single campaign"""
-        logger.info(f"🚀 Triggering campaign: {campaign.campaign_name} (ID: {campaign.campaign_id})")
+        """
+        ✅ SMART: Trigger a single campaign with validation
+        """
+        logger.info(
+            f"🚀 Triggering campaign: {campaign.campaign_name} "
+            f"(ID: {campaign.campaign_id})"
+        )
         
         # ✅ Validate contact list exists
         if campaign.contact_list_id:
@@ -139,7 +181,9 @@ class CampaignScheduler:
             ).first()
             
             if not contact_list:
-                logger.error(f"❌ Contact list {campaign.contact_list_id} not found or deleted")
+                logger.error(
+                    f"❌ Contact list {campaign.contact_list_id} not found or deleted"
+                )
                 campaign.status = CampaignStatus.cancelled
                 campaign.meta_data = campaign.meta_data or {}
                 campaign.meta_data["cancel_reason"] = "Contact list not found"
@@ -151,7 +195,8 @@ class CampaignScheduler:
         # Validate campaign has content
         if not campaign.validate_content_for_channel(campaign.channel):
             logger.error(
-                f"❌ Campaign {campaign.campaign_id} missing content for channel {campaign.channel}"
+                f"❌ Campaign {campaign.campaign_id} missing content "
+                f"for channel {campaign.channel}"
             )
             campaign.status = CampaignStatus.cancelled
             campaign.meta_data = campaign.meta_data or {}
@@ -164,7 +209,9 @@ class CampaignScheduler:
         contacts = self._get_campaign_contacts(session, campaign)
         
         if not contacts:
-            logger.warning(f"⚠️  No contacts found for campaign {campaign.campaign_id}")
+            logger.warning(
+                f"⚠️  No contacts found for campaign {campaign.campaign_id}"
+            )
             campaign.status = CampaignStatus.cancelled
             campaign.meta_data = campaign.meta_data or {}
             campaign.meta_data["cancel_reason"] = "No recipients found"
@@ -173,12 +220,14 @@ class CampaignScheduler:
         
         logger.info(f"👥 Found {len(contacts)} contact(s) for campaign")
         
-        # Create campaign results
+        # ✅ SMART: Create campaign results (prevents duplicates internally)
         logger.info(f"📝 Creating campaign results...")
         results_created = create_campaign_results(session, campaign, contacts)
         
         if results_created == 0:
-            logger.warning(f"⚠️  No valid recipients for campaign {campaign.campaign_id}")
+            logger.warning(
+                f"⚠️  No valid recipients for campaign {campaign.campaign_id}"
+            )
             campaign.status = CampaignStatus.cancelled
             campaign.meta_data = campaign.meta_data or {}
             campaign.meta_data["cancel_reason"] = "No valid recipients"
@@ -187,17 +236,22 @@ class CampaignScheduler:
         
         logger.info(f"✅ Created {results_created} campaign result(s)")
         
-        # Update campaign status
+        # ✅ Update campaign status to SENDING
         campaign.status = CampaignStatus.sending
         campaign.started_at = datetime.now(UTC)
         campaign.total_recipients = results_created
         
         session.flush()
         
-        logger.info(f"📤 Campaign {campaign.campaign_id} status updated to 'sending'")
+        logger.info(
+            f"📤 Campaign {campaign.campaign_id} status → 'sending'"
+        )
         
-        # Trigger background batch processing
-        logger.info(f"🔄 Starting background batch processing for campaign {campaign.campaign_id}...")
+        # ✅ Start background processing
+        logger.info(
+            f"🔄 Starting background batch processing for "
+            f"campaign {campaign.campaign_id}..."
+        )
         threading.Thread(
             target=self._process_campaign_async,
             args=(campaign.campaign_id,),
@@ -206,14 +260,13 @@ class CampaignScheduler:
         ).start()
         
         logger.info(
-            f"✅ Campaign {campaign.campaign_id} ({campaign.campaign_name}) triggered successfully "
-            f"with {results_created} recipient(s)"
+            f"✅ Campaign {campaign.campaign_id} ({campaign.campaign_name}) "
+            f"triggered successfully with {results_created} recipient(s)"
         )
     
     def _get_campaign_contacts(self, session: Session, campaign: Campaign) -> list:
-        """Get contacts for a campaign based on contact_list_id or filters"""
+        """Get contacts for a campaign"""
         
-        # ✅ Eager load emails and phones to avoid N+1 queries
         query = session.query(Contact).options(
             joinedload(Contact.emails),
             joinedload(Contact.phones),
@@ -242,7 +295,9 @@ class CampaignScheduler:
             
             if "contact_type" in filters and filters["contact_type"]:
                 from ..models.contact import ContactType
-                query = query.filter(Contact.contact_type == ContactType(filters["contact_type"]))
+                query = query.filter(
+                    Contact.contact_type == ContactType(filters["contact_type"])
+                )
         
         contacts = query.all()
         logger.info(f"✅ Query returned {len(contacts)} contact(s)")
@@ -250,19 +305,33 @@ class CampaignScheduler:
         return contacts
     
     def _process_campaign_async(self, campaign_id: str):
-        """Process campaign batches asynchronously"""
+        """
+        ✅ SMART: Process campaign batches with completion checking
+        """
         logger.info(f"🔄 Starting async processing for campaign {campaign_id}")
         
         try:
             # Process first batch
             result = process_campaign_batch(campaign_id, batch_size=100)
-            logger.info(f"✅ Processed first batch for campaign {campaign_id}: {result}")
+            logger.info(
+                f"✅ Processed first batch for campaign {campaign_id}: {result}"
+            )
+            
+            # ✅ If campaign is completed, log success
+            if result.get("completed"):
+                logger.info(
+                    f"🎉 Campaign {campaign_id} completed after first batch!"
+                )
         except Exception as e:
             logger.error(
                 f"❌ Error processing campaign batch {campaign_id}: {e}",
                 exc_info=True
             )
 
+
+# ============================================
+# GLOBAL SCHEDULER INSTANCE
+# ============================================
 
 _scheduler_instance: Optional[CampaignScheduler] = None
 
@@ -273,7 +342,9 @@ def get_scheduler(check_interval: int = 60) -> CampaignScheduler:
     
     if _scheduler_instance is None:
         _scheduler_instance = CampaignScheduler(check_interval=check_interval)
-        logger.info(f"Created new CampaignScheduler instance with {check_interval}s interval")
+        logger.info(
+            f"Created new CampaignScheduler instance with {check_interval}s interval"
+        )
     
     return _scheduler_instance
 
@@ -297,12 +368,13 @@ def stop_scheduler():
         logger.warning("No scheduler instance to stop")
 
 
-# ==================== MANUAL TRIGGER FUNCTION ====================
+# ============================================
+# MANUAL TRIGGER FUNCTION
+# ============================================
 
 def trigger_scheduled_campaigns_now():
     """
     Manually trigger all scheduled campaigns that are due
-    Useful for testing or manual execution
     """
     logger.info("🔧 Manual trigger requested for scheduled campaigns")
     
@@ -337,7 +409,9 @@ def trigger_scheduled_campaigns_now():
                 logger.info(f"✅ Manually triggered: {campaign.campaign_name}")
             except Exception as e:
                 session.rollback()
-                logger.error(f"❌ Error manually triggering campaign {campaign.campaign_id}: {e}")
+                logger.error(
+                    f"❌ Error manually triggering campaign {campaign.campaign_id}: {e}"
+                )
         
         result = {
             "triggered": len(triggered),
@@ -348,7 +422,9 @@ def trigger_scheduled_campaigns_now():
         return result
 
 
-# ==================== SCHEDULER STATUS ====================
+# ============================================
+# SCHEDULER STATUS
+# ============================================
 
 def get_scheduler_status() -> dict:
     """Get current scheduler status"""
@@ -364,6 +440,14 @@ def get_scheduler_status() -> dict:
         "running": _scheduler_instance.running,
         "check_interval": _scheduler_instance.check_interval,
         "total_checks": _scheduler_instance.check_count,
-        "last_check": _scheduler_instance.last_check_time.isoformat() if _scheduler_instance.last_check_time else None,
-        "thread_alive": _scheduler_instance.thread.is_alive() if _scheduler_instance.thread else False
+        "last_check": (
+            _scheduler_instance.last_check_time.isoformat() 
+            if _scheduler_instance.last_check_time 
+            else None
+        ),
+        "thread_alive": (
+            _scheduler_instance.thread.is_alive() 
+            if _scheduler_instance.thread 
+            else False
+        )
     }

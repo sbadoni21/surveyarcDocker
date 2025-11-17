@@ -13,7 +13,6 @@ class ResultStatus(str, enum.Enum):
     queued = "queued"
     sending = "sending"
     sent = "sent"
-    delivered = "delivered"
     failed = "failed"
     bounced = "bounced"
     skipped = "skipped"
@@ -113,3 +112,4 @@ class CampaignResult(Base):
     # Relationships
     campaign = relationship("Campaign", back_populates="results")
     contact = relationship("Contact")
+

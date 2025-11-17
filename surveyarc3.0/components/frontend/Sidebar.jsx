@@ -10,6 +10,7 @@ import {
   Ticket,
   X,
   Building2,
+  Contact2,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { deleteCookie, getCookie } from "cookies-next";
@@ -116,6 +117,8 @@ export default function Sidebar() {
         { icon: FolderOpen, label: "Survey Management", path: "projects" },
 
     ...(shouldShowOrgTickets ? [{ icon: Building2, label: "Tickets Management", path: getOrgTicketsPath() }] : []),
+        { icon: Contact2, label: "Contacts Management", path: "contacts" },
+
     { icon: Users, label: "Team", path: "team" },
     { icon: Settings, label: "Settings", path: "settings" },
   ];

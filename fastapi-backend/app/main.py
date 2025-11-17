@@ -60,7 +60,7 @@ def start_outbox_processor():
     try:
         run_outbox_processor(
             poll_interval=OUTBOX_POLL_INTERVAL,
-            batch=OUTBOX_BATCH_SIZE
+            batch_size=OUTBOX_BATCH_SIZE
         )
     except Exception as e:
         logger.error(f"❌ Outbox processor error: {e}")

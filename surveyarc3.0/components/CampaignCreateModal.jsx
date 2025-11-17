@@ -52,38 +52,31 @@ const CampaignCreateModal = ({
 
   const [selectedContacts, setSelectedContacts] = useState([]);
   const [showContactSelector, setShowContactSelector] = useState(false);
+  const [showVariableMenu, setShowVariableMenu] = useState(false);
   
-  // FIXED: Use refs to track if data has been loaded
   const hasLoadedLists = useRef(false);
   const hasLoadedContacts = useRef(false);
   const hasLoadedSurveys = useRef(false);
+  const emailBodyRef = useRef(null);
 
-  useEffect (()=> {
-   console.log(formData);
-  })
-
-  // FIXED: Load data only once when modal opens
   useEffect(() => {
     if (isOpen) {
-      // Load lists only if not already loaded
       if (!hasLoadedLists.current && onLoadLists && lists.length === 0) {
         onLoadLists();
         hasLoadedLists.current = true;
       }
       
-      // Load contacts only if not already loaded
       if (!hasLoadedContacts.current && onLoadContacts && contacts.length === 0) {
         onLoadContacts();
         hasLoadedContacts.current = true;
       }
       
-      // Load surveys only if not already loaded
       if (!hasLoadedSurveys.current && onLoadSurveys && surveys.length === 0) {
         onLoadSurveys();
         hasLoadedSurveys.current = true;
       }
     }
-  }, [isOpen]); // Only depend on isOpen
+  }, [isOpen]);
 
   const handleSubmit = async () => {
     if (!formData.campaignName || !formData.surveyId) {
@@ -98,37 +91,33 @@ const CampaignCreateModal = ({
 
     const submitData = {
       ...formData,
-      // If using individual contacts instead of a list
       contactFilters: selectedContacts.length > 0 
         ? { contactIds: selectedContacts }
         : formData.contactFilters,
     };
 
-  // ✅ FIX: Convert local datetime to UTC ISO string
-  let scheduledAtUTC = null;
-  if (formData.scheduledAt) {
-    // The datetime-local input gives us a string like "2025-11-13T11:00"
-    // We need to convert this to UTC
-    const localDate = new Date(formData.scheduledAt);
-    scheduledAtUTC = localDate.toISOString(); // Converts to UTC
-  }
+    let scheduledAtUTC = null;
+    if (formData.scheduledAt) {
+      const localDate = new Date(formData.scheduledAt);
+      scheduledAtUTC = localDate.toISOString();
+    }
+
     try {
       await onCreate(submitData);
-      // Reset form
       setFormData({
         campaignName: '',
         surveyId: '',
-            orgId:orgId,
-    userId:userId,
-    status:"scheduled",
-
+        orgId:orgId,
+        userId:userId,
+        status:"scheduled",
         channel: 'email',
         fallbackChannel: null,
         channelPriority: [],
         contactListId: '',
         contactFilters: selectedContacts.length > 0 
-      ? { contactIds: selectedContacts }
-      : formData.contactFilters,        emailSubject: '',
+          ? { contactIds: selectedContacts }
+          : formData.contactFilters,
+        emailSubject: '',
         emailBodyHtml: '',
         emailFromName: '',
         emailReplyTo: '',
@@ -136,7 +125,7 @@ const CampaignCreateModal = ({
         whatsappMessage: '',
         whatsappTemplateId: '',
         voiceScript: '',
-        scheduledAt: scheduledAtUTC, // ✅ Send UTC time
+        scheduledAt: scheduledAtUTC,
         metaData: {},
       });
       setSelectedContacts([]);
@@ -154,21 +143,57 @@ const CampaignCreateModal = ({
         : [...prev, contactId]
     );
   };
-// Add this helper function at the top of your component
-const getUserTimezone = () => {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone;
-};
 
-// Add this helper to format the selected time for display
-const formatScheduledTime = (isoString) => {
-  if (!isoString) return '';
-  const date = new Date(isoString);
-  return date.toLocaleString('en-IN', { 
-    dateStyle: 'medium', 
-    timeStyle: 'short',
-    timeZone: getUserTimezone()
-  });
-};
+  const getUserTimezone = () => {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  };
+
+  // ============================================
+  // EMAIL VARIABLE INSERTION
+  // ============================================
+  
+  const insertVariable = (variable) => {
+    const textarea = emailBodyRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = formData.emailBodyHtml || '';
+    
+    const newText = text.substring(0, start) + variable + text.substring(end);
+    
+    setFormData({
+      ...formData,
+      emailBodyHtml: newText
+    });
+
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + variable.length, start + variable.length);
+    }, 0);
+
+    setShowVariableMenu(false);
+  };
+
+  // Generate survey link with tracking parameters
+  const insertSurveyLink = () => {
+    const params = [
+      'campaign_id={{campaign_id}}',
+      'survey_id={{survey_id}}',
+      'contact_id={{contact_id}}',
+      'tracking_token={{tracking_token}}',
+      'email={{email}}',
+      'org_id={{org_id}}',
+      'user_id={{user_id}}',
+      'phone={{phone}}',
+      'source=email',
+      'channel=campaign'
+    ].join('&');
+
+    const surveyLink = `{{survey_link}}?${params}`;
+    insertVariable(surveyLink);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -283,7 +308,7 @@ const formatScheduledTime = (isoString) => {
                   value={formData.contactListId}
                   onChange={(e) => {
                     setFormData({ ...formData, contactListId: e.target.value });
-                    setSelectedContacts([]); // Clear individual selections
+                    setSelectedContacts([]);
                   }}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
@@ -386,19 +411,63 @@ const formatScheduledTime = (isoString) => {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+              {/* Variable Insertion Toolbar */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">
                   Email Body (HTML)
                 </label>
+                
+                <div className="flex flex-wrap gap-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={insertSurveyLink}
+                    className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 flex items-center gap-1"
+                  >
+                    🔗 Insert Survey Link
+                  </button>
+                  
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowVariableMenu(!showVariableMenu)}
+                      className="px-3 py-1 bg-gray-600 text-white text-sm rounded hover:bg-gray-700"
+                    >
+                      + Add Variable
+                    </button>
+                    
+                    {showVariableMenu && (
+                      <div className="absolute top-full left-0 mt-1 bg-white border rounded-lg shadow-lg z-10 w-64">
+                        <div className="p-2 max-h-64 overflow-y-auto">
+                          <div className="text-xs font-semibold text-gray-500 px-2 py-1">Contact Info</div>
+                          <button onClick={() => insertVariable('{{name}}')} className="w-full text-left px-3 py-1 hover:bg-gray-100 text-sm">{'{{name}}'}</button>
+                          <button onClick={() => insertVariable('{{email}}')} className="w-full text-left px-3 py-1 hover:bg-gray-100 text-sm">{'{{email}}'}</button>
+                          <button onClick={() => insertVariable('{{contact_id}}')} className="w-full text-left px-3 py-1 hover:bg-gray-100 text-sm">{'{{contact_id}}'}</button>
+                          <button onClick={() => insertVariable('{{phone}}')} className="w-full text-left px-3 py-1 hover:bg-gray-100 text-sm">{'{{phone}}'}</button>
+                          
+                          <div className="text-xs font-semibold text-gray-500 px-2 py-1 mt-2">Campaign Info</div>
+                          <button onClick={() => insertVariable('{{campaign_id}}')} className="w-full text-left px-3 py-1 hover:bg-gray-100 text-sm">{'{{campaign_id}}'}</button>
+                          <button onClick={() => insertVariable('{{campaign_name}}')} className="w-full text-left px-3 py-1 hover:bg-gray-100 text-sm">{'{{campaign_name}}'}</button>
+                          <button onClick={() => insertVariable('{{survey_id}}')} className="w-full text-left px-3 py-1 hover:bg-gray-100 text-sm">{'{{survey_id}}'}</button>
+                          <button onClick={() => insertVariable('{{org_id}}')} className="w-full text-left px-3 py-1 hover:bg-gray-100 text-sm">{'{{org_id}}'}</button>
+                          <button onClick={() => insertVariable('{{user_id}}')} className="w-full text-left px-3 py-1 hover:bg-gray-100 text-sm">{'{{user_id}}'}</button>
+                          <button onClick={() => insertVariable('{{tracking_token}}')} className="w-full text-left px-3 py-1 hover:bg-gray-100 text-sm">{'{{tracking_token}}'}</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 <textarea
+                  ref={emailBodyRef}
                   value={formData.emailBodyHtml}
                   onChange={(e) => setFormData({ ...formData, emailBodyHtml: e.target.value })}
                   rows={8}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
                   placeholder="<p>Hi {{name}},</p><p>We'd love to hear your feedback...</p>"
                 />
+                
                 <p className="text-xs text-gray-500 mt-1">
-                  Available variables: {'{'}{'{'} name {'}'}{'}'},  {'{'}{'{'} email {'}'}{'}'}, {'{'}{'{'} survey_link {'}'}{'}'}
+                  💡 Click "Insert Survey Link" to add a tracked survey link with all parameters
                 </p>
               </div>
             </div>
@@ -481,55 +550,52 @@ const formatScheduledTime = (isoString) => {
             </div>
           )}
 
-       {/* Scheduling */}
-<div className="space-y-4">
-  <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">
-    Scheduling (Optional)
-  </h3>
-  
- <div>
-  <label className="block text-sm font-medium text-gray-700 mb-2">
-    Schedule Send Time
-    <span className="text-xs text-gray-500 ml-2">
-      (Your timezone: {getUserTimezone()})
-    </span>
-  </label>
+          {/* Scheduling */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">
+              Scheduling (Optional)
+            </h3>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Schedule Send Time
+                <span className="text-xs text-gray-500 ml-2">
+                  (Your timezone: {getUserTimezone()})
+                </span>
+              </label>
 
-  <input
-    type="datetime-local"
-    value={
-      formData.scheduledAt
-        ? new Date(formData.scheduledAt).toLocaleString("sv-SE").replace(" ", "T").slice(0, 16) // Convert UTC → local for display
-        : ""
-    }
-  onChange={(e) => {
-  const local = e.target.value;
+              <input
+                type="datetime-local"
+                value={
+                  formData.scheduledAt
+                    ? new Date(formData.scheduledAt).toLocaleString("sv-SE").replace(" ", "T").slice(0, 16)
+                    : ""
+                }
+                onChange={(e) => {
+                  const local = e.target.value;
+                  const utc = new Date(local).toISOString();
+                  setFormData({ ...formData, scheduledAt: utc });
+                }}
+                className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+                  .toISOString()
+                  .slice(0, 16)}
+              />
 
-  const utc = new Date(local).toISOString();
-  setFormData({ ...formData, scheduledAt: utc });
-}}
-
-    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-    min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
-  .toISOString()
-  .slice(0, 16)} // Local min
-  />
-
-  {formData.scheduledAt && (
-    <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
-      ℹ️ Will be sent at (your time):{" "}
-      <strong>
-        {new Date(formData.scheduledAt).toLocaleString()}
-      </strong>
-      <br />
-      <span className="text-gray-600">
-        Server UTC time: {formData.scheduledAt}
-      </span>
-    </div>
-  )}
-</div>
-
-</div>
+              {formData.scheduledAt && (
+                <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
+                  ℹ️ Will be sent at (your time):{" "}
+                  <strong>
+                    {new Date(formData.scheduledAt).toLocaleString()}
+                  </strong>
+                  <br />
+                  <span className="text-gray-600">
+                    Server UTC time: {formData.scheduledAt}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Footer */}

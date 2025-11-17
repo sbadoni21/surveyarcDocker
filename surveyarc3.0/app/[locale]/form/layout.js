@@ -17,7 +17,7 @@ export default async function Layout(props) {
     notFound();
   }
   return (
-    <body lang={locale}>
+    <div lang={locale}>
       <OrganisationProvider>
         <QuestionProvider>
           <ThemeProvider>
@@ -30,6 +30,6 @@ export default async function Layout(props) {
           </ThemeProvider>
         </QuestionProvider>
       </OrganisationProvider>
-    </body>
+    </div>
   );
 }

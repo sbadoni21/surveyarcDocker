@@ -17,12 +17,12 @@ export default function FormPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const orgId = searchParams.get("orgId");
-  const projectId = searchParams.get("projects");
-  const surveyId = searchParams.get("survey");
-  const campaignID = searchParams.get("campaignID") || null;
-  const campaignType = searchParams.get("campaignType") || null;
-  const userKey = searchParams.get("userKey") || null;
+  const orgId = searchParams.get("org_id");
+  const projectId = searchParams.get("projects") || null;
+  const surveyId = searchParams.get("survey_id");
+  const campaignID = searchParams.get("campaign_id") || null;
+  const campaignType = searchParams.get("campaign_type") || null;
+  const userKey = searchParams.get("user_id") || null;
   const [startTime] = useState(() => new Date());
 
   const platform = useMemo(() => {
@@ -88,7 +88,7 @@ export default function FormPage() {
 
   useEffect(() => {
     const init = async () => {
-      if (!orgId || !surveyId || !projectId) return;
+      if (!orgId || !surveyId ) return;
 
       let completedSurveys = [];
       try {
@@ -174,7 +174,7 @@ export default function FormPage() {
 
     init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, projectId, surveyId]);
+  }, [orgId, surveyId]);
 
   useEffect(() => {
     if (blocks.length && questions.length) {

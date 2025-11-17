@@ -2,15 +2,15 @@
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from enum import Enum
+from enum import Enum  # Python Enum
 
 # ==================== ENUMS ====================
-
 class CampaignStatusEnum(str, Enum):
     draft = "draft"
     scheduled = "scheduled"
     sending = "sending"
-    sent = "sent"
+    completed = "completed"   # ADD THIS
+    sent = "sent"             # ADD THIS
     paused = "paused"
     cancelled = "cancelled"
 

@@ -8,21 +8,24 @@ from sqlalchemy.orm import relationship
 from ..db import Base
 import enum
 from sqlalchemy.ext.mutable import MutableDict
+from sqlalchemy import Enum as SQLEnum
 
-class CampaignStatus(str, enum.Enum):
+class CampaignStatus(str, Enum):
     draft = "draft"
     scheduled = "scheduled"
     sending = "sending"
+    completed = "completed"
     sent = "sent"
     paused = "paused"
     cancelled = "cancelled"
+
 
 class CampaignChannel(str, enum.Enum):
     email = "email"
     sms = "sms"
     whatsapp = "whatsapp"
     voice = "voice"
-    multi = "multi"  # use contact's preferred method
+    multi = "multi"  
 
 class Campaign(Base):
     __tablename__ = "campaigns"
@@ -58,7 +61,7 @@ class Campaign(Base):
     voice_script = Column(Text, nullable=True)
     
     # Scheduling
-    status = Column(Enum(CampaignStatus), default=CampaignStatus.draft, index=True)
+    status = Column(String, default="draft", index=True)
     scheduled_at = Column(DateTime(timezone=True), nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
