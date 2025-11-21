@@ -37,6 +37,7 @@ export default function TicketsPage() {
   const { list: listTags, getCachedTags } = useTags();
   const availableTags = getCachedTags(orgId);
   const { tickets, list, create, count, loading } = useTickets();
+  console.log(tickets)
 
   const [filters, setFilters] = useState({
     orgId,

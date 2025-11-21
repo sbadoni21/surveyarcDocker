@@ -19,6 +19,70 @@ const omitNullish = (obj) => {
   return out;
 };
 
+// 🆕 Helper to convert SLA pause history to camelCase
+const toCamelPauseHistory = (ph) => ({
+  pauseId: ph.pause_id,
+  ticketId: ph.ticket_id,
+  dimension: ph.dimension,
+  action: ph.action,
+  actionAt: ph.action_at,
+  actorId: ph.actor_id,
+  reason: ph.reason ?? null,
+  reasonNote: ph.reason_note ?? null,
+  pauseDurationMinutes: ph.pause_duration_minutes ?? null,
+  dueDateExtensionMinutes: ph.due_date_extension_minutes ?? null,
+  meta: ph.meta || {},
+  createdAt: ph.created_at,
+});
+
+// 🆕 Helper to convert SLA status to camelCase
+const toCamelSLAStatus = (sla) => {
+  if (!sla) return null;
+  
+  return {
+    ticketId: sla.ticket_id,
+    slaId: sla.sla_id ?? null,
+    
+    // First Response
+    firstResponseDueAt: sla.first_response_due_at ?? null,
+    firstResponseStartedAt: sla.first_response_started_at ?? null,
+    firstResponseCompletedAt: sla.first_response_completed_at ?? null,
+    firstResponsePaused: sla.first_response_paused ?? false,
+    firstResponsePausedAt: sla.first_response_paused_at ?? null,
+    elapsedFirstResponseMinutes: sla.elapsed_first_response_minutes ?? 0,
+    totalPausedFirstResponseMinutes: sla.total_paused_first_response_minutes ?? 0,
+    breachedFirstResponse: sla.breached_first_response ?? false,
+    lastResumeFirstResponse: sla.last_resume_first_response ?? null,
+    
+    // Resolution
+    resolutionDueAt: sla.resolution_due_at ?? null,
+    resolutionStartedAt: sla.resolution_started_at ?? null,
+    resolutionCompletedAt: sla.resolution_completed_at ?? null,
+    resolutionPaused: sla.resolution_paused ?? false,
+    resolutionPausedAt: sla.resolution_paused_at ?? null,
+    elapsedResolutionMinutes: sla.elapsed_resolution_minutes ?? 0,
+    totalPausedResolutionMinutes: sla.total_paused_resolution_minutes ?? 0,
+    breachedResolution: sla.breached_resolution ?? false,
+    lastResumeResolution: sla.last_resume_resolution ?? null,
+    
+    // Legacy
+    paused: sla.paused ?? false,
+    pauseReason: sla.pause_reason ?? null,
+    
+    // Calendar
+    calendarId: sla.calendar_id ?? null,
+    
+    // Pause history (if included)
+    pauseHistory: Array.isArray(sla.pause_history) 
+      ? sla.pause_history.map(toCamelPauseHistory)
+      : [],
+    
+    // Meta
+    meta: sla.meta || {},
+    updatedAt: sla.updated_at ?? null,
+  };
+};
+
 const toCamel = (t) => ({
   ticketId: t.ticket_id,
   orgId: t.org_id,
@@ -48,12 +112,15 @@ const toCamel = (t) => ({
   impactId: t.impact_id ?? null,
   rcaId: t.rca_id ?? null,
   rcaNote: t.rca_note ?? null,
+  rcaSetBy: t.rca_set_by ?? null,
+  rcaSetAt: t.rca_set_at ?? null,
 
   slaId: t.sla_id ?? null,
   dueAt: t.due_at ?? null,
 
   createdAt: t.created_at,
   updatedAt: t.updated_at,
+  firstResponseAt: t.first_response_at ?? null,
   resolvedAt: t.resolved_at ?? null,
   closedAt: t.closed_at ?? null,
   lastActivityAt: t.last_activity_at ?? null,
@@ -61,6 +128,8 @@ const toCamel = (t) => ({
 
   replyCount: t.reply_count ?? 0,
   followerCount: t.follower_count ?? 0,
+  attachmentCount: t.attachment_count ?? 0,
+  commentCount: t.comment_count ?? 0,
   number: t.number ?? null,
 
   tags: t.tags || [],
@@ -69,39 +138,52 @@ const toCamel = (t) => ({
   agentId: t.agent_id ?? null,
   meta: t.meta || {},
 
-  slaStatus: t.sla_status ?? null,
+  // 🆕 Enhanced SLA status with pause history
+  slaStatus: toCamelSLAStatus(t.sla_status),
+  
+  // 🆕 SLA-related events (if included)
+  slaEvents: Array.isArray(t.sla_events) 
+    ? t.sla_events.map(e => ({
+        eventId: e.event_id,
+        ticketId: e.ticket_id,
+        actorId: e.actor_id,
+        eventType: e.event_type,
+        fromValue: e.from_value || {},
+        toValue: e.to_value || {},
+        meta: e.meta || {},
+        createdAt: e.created_at,
+      }))
+    : [],
 });
-
 
 const TicketModel = {
   // ---------------- core CRUD ----------------
-async list({
-  orgId, status, assigneeId, teamId, agentId, q,
-  limit = 50, offset = 0, groupId, categoryId, subcategoryId,
-  productId,                 // 🔵 optionally expose product filter too
-  featureId, impactId, rcaId // 🔵 NEW
-} = {}) {
-  const qs = new URLSearchParams();
-  if (orgId) qs.set("org_id", orgId);
-  if (status) qs.set("status", status);
-  if (assigneeId) qs.set("assignee_id", assigneeId);
-  if (teamId) qs.set("team_id", teamId);
-  if (agentId) qs.set("agent_id", agentId);
-  if (groupId) qs.set("group_id", groupId);
-  if (categoryId) qs.set("category_id", categoryId);
-  if (subcategoryId) qs.set("subcategory_id", subcategoryId);
-  if (productId) qs.set("product_id", productId);     // 🔵
-  if (featureId) qs.set("feature_id", featureId);     // 🔵
-  if (impactId) qs.set("impact_id", impactId);        // 🔵
-  if (rcaId) qs.set("rca_id", rcaId);                 // 🔵
-  if (q) qs.set("q", q);
-  if (limit != null) qs.set("limit", String(limit));
-  if (offset != null) qs.set("offset", String(offset));
-  const res = await fetch(`${BASE}?${qs.toString()}`, { cache: "no-store" });
-  const arr = await json(res);
-  return (arr || []).map(toCamel);
-}
-,
+  async list({
+    orgId, status, assigneeId, teamId, agentId, q,
+    limit = 50, offset = 0, groupId, categoryId, subcategoryId,
+    productId,
+    featureId, impactId, rcaId
+  } = {}) {
+    const qs = new URLSearchParams();
+    if (orgId) qs.set("org_id", orgId);
+    if (status) qs.set("status", status);
+    if (assigneeId) qs.set("assignee_id", assigneeId);
+    if (teamId) qs.set("team_id", teamId);
+    if (agentId) qs.set("agent_id", agentId);
+    if (groupId) qs.set("group_id", groupId);
+    if (categoryId) qs.set("category_id", categoryId);
+    if (subcategoryId) qs.set("subcategory_id", subcategoryId);
+    if (productId) qs.set("product_id", productId);
+    if (featureId) qs.set("feature_id", featureId);
+    if (impactId) qs.set("impact_id", impactId);
+    if (rcaId) qs.set("rca_id", rcaId);
+    if (q) qs.set("q", q);
+    if (limit != null) qs.set("limit", String(limit));
+    if (offset != null) qs.set("offset", String(offset));
+    const res = await fetch(`${BASE}?${qs.toString()}`, { cache: "no-store" });
+    const arr = await json(res);
+    return (arr || []).map(toCamel);
+  },
 
   async get(ticketId) {
     const res = await fetch(`${BASE}/${ticketId}`, { cache: "no-store" });
@@ -109,51 +191,51 @@ async list({
     return toCamel(t);
   },
 
-async create(data) {
-  const payloadRaw = {
-    org_id: data.orgId,
-    project_id: data.projectId ?? null,
-    requester_id: data.requesterId,
-    assignee_id: data.assigneeId ?? null,
-    subject: data.subject,
-    description: data.description ?? "",
-    priority: normalizePriority(data.priority ?? "normal"),
-    severity: data.severity ? data.severity : undefined,
-    status: data.status ?? "new",
+  async create(data) {
+    const payloadRaw = {
+      org_id: data.orgId,
+      project_id: data.projectId ?? null,
+      requester_id: data.requesterId,
+      assignee_id: data.assigneeId ?? null,
+      subject: data.subject,
+      description: data.description ?? "",
+      priority: normalizePriority(data.priority ?? "normal"),
+      severity: data.severity ? data.severity : undefined,
+      status: data.status ?? "new",
 
-    category: data.category ?? null,
-    subcategory: data.subcategory ?? null,
+      category: data.category ?? null,
+      subcategory: data.subcategory ?? null,
 
-    group_id: data.groupId ?? null,
-    category_id: data.categoryId ?? null,
-    subcategory_id: data.subcategoryId ?? null,
-    product_id: data.productId ?? null,
-    feature_id: data.featureId ?? null,
-    impact_id: data.impactId ?? null,
-    rca_id: data.rcaId ?? null,
-    rca_note: data.rcaNote ?? null,
+      group_id: data.groupId ?? null,
+      category_id: data.categoryId ?? null,
+      subcategory_id: data.subcategoryId ?? null,
+      product_id: data.productId ?? null,
+      feature_id: data.featureId ?? null,
+      impact_id: data.impactId ?? null,
+      rca_id: data.rcaId ?? null,
+      rca_note: data.rcaNote ?? null,
 
-    sla_id: data.slaId ?? null,
-    due_at: data.dueAt ?? null,
+      sla_id: data.slaId ?? null,
+      due_at: data.dueAt ?? null,
 
-    tags: Array.isArray(data.tags) ? data.tags : undefined,
-    custom_fields: data.custom ?? {},
+      tags: Array.isArray(data.tags) ? data.tags : undefined,
+      custom_fields: data.custom ?? {},
 
-    team_id: data.teamId ?? null,
-    agent_id: data.agentId ?? null,
+      team_id: data.teamId ?? null,
+      agent_id: data.agentId ?? null,
 
-    assignment: data.assignment ?? undefined,
+      assignment: data.assignment ?? undefined,
 
-    sla_processing: {
-      first_response_due_at: data.firstResponseDueAt ?? null,
-      resolution_due_at: data.resolutionDueAt ?? null,
-      sla_mode: data.slaMode ?? null,
-      calendar_id: data.calendarId ?? null,
-    },
-    meta: data.meta ?? {},
-  };
+      sla_processing: {
+        first_response_due_at: data.firstResponseDueAt ?? null,
+        resolution_due_at: data.resolutionDueAt ?? null,
+        sla_mode: data.slaMode ?? null,
+        calendar_id: data.calendarId ?? null,
+      },
+      meta: data.meta ?? {},
+    };
 
-  const payload = omitNullish(payloadRaw);
+    const payload = omitNullish(payloadRaw);
     const res = await fetch(`${BASE}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -161,42 +243,36 @@ async create(data) {
       cache: "no-store",
     });
     const t = await json(res);
-    return toCamel(t);}
-,
+    return toCamel(t);
+  },
 
   async update(ticketId, patch) {
+    const map = (p) => {
+      const out = { ...p };
 
-  const map = (p) => {
-    const out = { ...p };
+      if ("priority" in out) out.priority = normalizePriority(out.priority);
+      if ("orgId" in out) { out.org_id = out.orgId; delete out.orgId; }
+      if ("requesterId" in out) { out.requester_id = out.requesterId; delete out.requesterId; }
+      if ("assigneeId" in out) { out.assignee_id = out.assigneeId; delete out.assigneeId; }
+      if ("slaId" in out) { out.sla_id = out.slaId; delete out.slaId; }
+      if ("projectId" in out) { out.project_id = out.projectId; delete out.projectId; }
+      if ("dueAt" in out) { out.due_at = out.dueAt; delete out.dueAt; }
 
-    if ("priority" in out) out.priority = normalizePriority(out.priority);
-    if ("orgId" in out) { out.org_id = out.orgId; delete out.orgId; }
-    if ("requesterId" in out) { out.requester_id = out.requesterId; delete out.requesterId; }
-    if ("assigneeId" in out) { out.assignee_id = out.assigneeId; delete out.assigneeId; }
-    if ("slaId" in out) { out.sla_id = out.slaId; delete out.slaId; }
-    if ("projectId" in out) { out.project_id = out.projectId; delete out.projectId; }
-    if ("dueAt" in out) { out.due_at = out.dueAt; delete out.dueAt; }
+      if ("groupId" in out) { out.group_id = out.groupId; delete out.groupId; }
+      if ("categoryId" in out) { out.category_id = out.categoryId; delete out.categoryId; }
+      if ("subcategoryId" in out) { out.subcategory_id = out.subcategoryId; delete out.subcategoryId; }
+      if ("productId" in out) { out.product_id = out.productId; delete out.productId; }
 
-    if ("groupId" in out) { out.group_id = out.groupId; delete out.groupId; }
-    if ("categoryId" in out) { out.category_id = out.categoryId; delete out.categoryId; }
-    if ("subcategoryId" in out) { out.subcategory_id = out.subcategoryId; delete out.subcategoryId; }
-    if ("productId" in out) { out.product_id = out.productId; delete out.productId; }
+      if ("featureId" in out) { out.feature_id = out.featureId; delete out.featureId; }
+      if ("impactId" in out) { out.impact_id = out.impactId; delete out.impactId; }
+      if ("rcaId" in out) { out.rca_id = out.rcaId; delete out.rcaId; }
+      if ("rcaNote" in out) { out.rca_note = out.rcaNote; delete out.rcaNote; }
 
-    // 🔵 NEW taxonomy ids
-    if ("featureId" in out) { out.feature_id = out.featureId; delete out.featureId; }
-    if ("impactId" in out) { out.impact_id = out.impactId; delete out.impactId; }
-    if ("rcaId" in out) { out.rca_id = out.rcaId; delete out.rcaId; }
-    if ("rcaNote" in out) { out.rca_note = out.rcaNote; delete out.rcaNote; }
+      if ("teamId" in out) { out.team_id = out.teamId; delete out.teamId; }
+      if ("agentId" in out) { out.agent_id = out.agentId; delete out.agentId; }
 
-    if ("teamId" in out) { out.team_id = out.teamId; delete out.teamId; }
-    if ("agentId" in out) { out.agent_id = out.agentId; delete out.agentId; }
-
-    return omitNullish(out);
-  };
-
-
-
-
+      return omitNullish(out);
+    };
 
     const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}`, {
       method: "PATCH",
@@ -223,30 +299,30 @@ async create(data) {
     if (orgId) qs.set("org_id", orgId);
     if (status) qs.set("status", status);
     const res = await fetch(`${COUNT_BASE}?${qs.toString()}`, { cache: "no-store" });
-    return json(res); // { count }
+    return json(res);
   },
-async listGroupQueue({
-  orgId, groupId, status, q, limit = 50, offset = 0,
-  categoryId, subcategoryId, productId, featureId, impactId, rcaId // 🔵
-}) {
-  const qs = new URLSearchParams();
-  if (orgId) qs.set("org_id", orgId);
-  if (groupId) qs.set("group_id", groupId);
-  if (status) qs.set("status", status);
-  if (q) qs.set("q", q);
-  if (categoryId) qs.set("category_id", categoryId);
-  if (subcategoryId) qs.set("subcategory_id", subcategoryId);
-  if (productId) qs.set("product_id", productId);   // 🔵
-  if (featureId) qs.set("feature_id", featureId);   // 🔵
-  if (impactId) qs.set("impact_id", impactId);      // 🔵
-  if (rcaId) qs.set("rca_id", rcaId);               // 🔵
-  qs.set("limit", String(limit));
-  qs.set("offset", String(offset));
-  const res = await fetch(`${BASE}?${qs.toString()}`, { cache: "no-store" });
-  const arr = await json(res);
-  return (arr || []).map(toCamel);
-},
 
+  async listGroupQueue({
+    orgId, groupId, status, q, limit = 50, offset = 0,
+    categoryId, subcategoryId, productId, featureId, impactId, rcaId
+  }) {
+    const qs = new URLSearchParams();
+    if (orgId) qs.set("org_id", orgId);
+    if (groupId) qs.set("group_id", groupId);
+    if (status) qs.set("status", status);
+    if (q) qs.set("q", q);
+    if (categoryId) qs.set("category_id", categoryId);
+    if (subcategoryId) qs.set("subcategory_id", subcategoryId);
+    if (productId) qs.set("product_id", productId);
+    if (featureId) qs.set("feature_id", featureId);
+    if (impactId) qs.set("impact_id", impactId);
+    if (rcaId) qs.set("rca_id", rcaId);
+    qs.set("limit", String(limit));
+    qs.set("offset", String(offset));
+    const res = await fetch(`${BASE}?${qs.toString()}`, { cache: "no-store" });
+    const arr = await json(res);
+    return (arr || []).map(toCamel);
+  },
 
   async listCollaborating({ orgId, userId, status, limit = 50, offset = 0 }) {
     const qs = new URLSearchParams({ org_id: orgId, user_id: userId });
@@ -304,6 +380,104 @@ async listGroupQueue({
       assigneeId: payload.assignee_id ?? null,
       updatedAt: payload.updated_at ?? null,
     };
+  },
+
+  // 🆕 ---------------- SLA Management ----------------
+  
+  /**
+   * Pause an SLA timer (first_response or resolution)
+   */
+  async pauseSLA(ticketId, { dimension, reason, reasonNote }) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}/sla/pause`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dimension,
+        reason: reason ?? "agent_paused",
+        reason_note: reasonNote ?? null,
+      }),
+      cache: "no-store",
+    });
+    const slaStatus = await json(res);
+    return toCamelSLAStatus(slaStatus);
+  },
+
+  /**
+   * Resume an SLA timer (first_response or resolution)
+   */
+  async resumeSLA(ticketId, { dimension }) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}/sla/resume`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dimension }),
+      cache: "no-store",
+    });
+    const slaStatus = await json(res);
+    return toCamelSLAStatus(slaStatus);
+  },
+
+  /**
+   * Get detailed SLA timers with pause windows
+   */
+  async getSLATimers(ticketId) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}/sla/timers`, {
+      cache: "no-store",
+    });
+    const timers = await json(res);
+    
+    // Convert to camelCase
+    return {
+      ticketId: timers.ticket_id,
+      slaId: timers.sla_id ?? null,
+      paused: timers.paused ?? false,
+      pauseReason: timers.pause_reason ?? null,
+      
+      firstResponse: timers.first_response ? {
+        startedAt: timers.first_response.started_at ?? null,
+        dueAt: timers.first_response.due_at ?? null,
+        paused: timers.first_response.paused ?? false,
+        pausedAt: timers.first_response.paused_at ?? null,
+        totalPausedMinutes: timers.first_response.total_paused_minutes ?? 0,
+        breached: timers.first_response.breached ?? false,
+      } : null,
+      
+      resolution: timers.resolution ? {
+        startedAt: timers.resolution.started_at ?? null,
+        dueAt: timers.resolution.due_at ?? null,
+        paused: timers.resolution.paused ?? false,
+        pausedAt: timers.resolution.paused_at ?? null,
+        totalPausedMinutes: timers.resolution.total_paused_minutes ?? 0,
+        breached: timers.resolution.breached ?? false,
+      } : null,
+      
+      pauseWindows: Array.isArray(timers.pause_windows)
+        ? timers.pause_windows.map(w => ({
+            dimension: w.dimension,
+            reason: w.reason,
+            startedAt: w.started_at,
+            endedAt: w.ended_at ?? null,
+          }))
+        : [],
+    };
+  },
+
+  /**
+   * Set root cause for a resolved ticket
+   */
+  async setRootCause(ticketId, { rcaId, rcaNote, confirmedBy, confirmedAt }) {
+    const res = await fetch(`${BASE}/${encodeURIComponent(ticketId)}/root-cause`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rca_id: rcaId,
+        rca_note: rcaNote ?? null,
+        confirmed_by: confirmedBy,
+        confirmed_at: confirmedAt ?? null,
+      }),
+      cache: "no-store",
+    });
+    const t = await json(res);
+    return toCamel(t);
   },
 };
 

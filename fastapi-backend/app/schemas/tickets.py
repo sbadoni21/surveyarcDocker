@@ -106,59 +106,7 @@ class SLAResumeRequest(BaseModel):
     dimension: str = Field(..., description="first_response or resolution")
 
 
-class SLAPauseHistoryOut(BaseModel):
-    """Response model for pause history"""
-    pause_id: str
-    ticket_id: str
-    dimension: str
-    action: str  # "pause" or "resume"
-    action_at: datetime
-    actor_id: str
-    reason: Optional[SLAPauseReason] = None
-    reason_note: Optional[str] = None
-    pause_duration_minutes: Optional[int] = None
-    due_date_extension_minutes: Optional[int] = None
-    created_at: datetime
 
-    model_config = {"from_attributes": True}
-
-
-class TicketSLAStatusOut(BaseModel):
-    ticket_id: str
-    sla_id: Optional[str] = None
-    
-    # First Response
-    first_response_due_at: Optional[datetime] = None
-    first_response_started_at: Optional[datetime] = None
-    first_response_completed_at: Optional[datetime] = None
-    first_response_paused: bool = False
-    first_response_paused_at: Optional[datetime] = None
-    elapsed_first_response_minutes: int = 0
-    total_paused_first_response_minutes: int = 0
-    breached_first_response: bool = False
-    last_resume_first_response: Optional[datetime] = None
-    
-    # Resolution
-    resolution_due_at: Optional[datetime] = None
-    resolution_started_at: Optional[datetime] = None
-    resolution_completed_at: Optional[datetime] = None
-    resolution_paused: bool = False
-    resolution_paused_at: Optional[datetime] = None
-    elapsed_resolution_minutes: int = 0
-    total_paused_resolution_minutes: int = 0
-    breached_resolution: bool = False
-    last_resume_resolution: Optional[datetime] = None
-    
-    # Legacy fields (backward compatibility)
-    paused: bool = False
-    pause_reason: Optional[str] = None
-    
-    # General
-    calendar_id: Optional[str] = None
-    updated_at: Optional[datetime] = None
-    meta: Dict[str, Any] = Field(default_factory=dict)
-
-    model_config = {"from_attributes": True}
 
 
 # ------------------------------ Ticket ------------------------------
@@ -169,7 +117,6 @@ class TicketBase(BaseModel):
     subject: str
     description: Optional[str] = None
     status: TicketStatus = TicketStatus.new
-    ticket: TicketPlatform = TicketPlatform.in_app
     priority: TicketPriority = TicketPriority.normal
     severity: TicketSeverity = TicketSeverity.sev4
 
@@ -297,38 +244,6 @@ class TicketUpdate(BaseModel):
         return self
 
 
-class TicketOut(TicketBase):
-    ticket_id: str
-    number: Optional[int] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    first_response_at: Optional[datetime] = None
-    resolved_at: Optional[datetime] = None
-    closed_at: Optional[datetime] = None
-    last_activity_at: Optional[datetime] = None
-    last_public_comment_at: Optional[datetime] = None
-    reply_count: int = 0
-    follower_count: int = 0
-    attachment_count: int = 0
-    comment_count: int = 0
-
-    # Deprecated fields kept for backward compatibility (always empty arrays)
-    team_ids: List[str] = Field(default_factory=list, description="DEPRECATED: use team_id")
-    agent_ids: List[str] = Field(default_factory=list, description="DEPRECATED: use agent_id")
-    feature_id: Optional[str] = None
-    impact_id: Optional[str] = None
-    rca_id: Optional[str] = None
-    rca_note: Optional[str] = None
-    rca_set_by: Optional[str] = None
-    rca_set_at: Optional[datetime] = None
-
-    category_id: Optional[str] = None
-    subcategory_id: Optional[str] = None
-
-    tags: List[TagOut] = Field(default_factory=list)
-    sla_status: Optional[TicketSLAStatusOut] = None
-
-    model_config = {"from_attributes": True}
 
 class RootCauseSet(BaseModel):
     rca_id: str
@@ -525,3 +440,140 @@ class WorklogOut(BaseModel):
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+# In app/schemas/tickets.py
+
+class SLAPauseHistoryOut(BaseModel):
+    """Response model for pause history"""
+    pause_id: str
+    ticket_id: str
+    dimension: str
+    action: str  # "pause" or "resume"
+    action_at: datetime
+    actor_id: str
+    reason: Optional[SLAPauseReason] = None
+    reason_note: Optional[str] = None
+    pause_duration_minutes: Optional[int] = None
+    due_date_extension_minutes: Optional[int] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SLAPauseWindowOut(BaseModel):
+    """Legacy pause window format"""
+    id: int
+    ticket_id: str
+    dimension: str
+    reason: str
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+    model_config = {"from_attributes": True}
+
+
+class TicketSLAStatusOut(BaseModel):
+    ticket_id: str
+    sla_id: Optional[str] = None
+    
+    # First Response
+    first_response_due_at: Optional[datetime] = None
+    first_response_started_at: Optional[datetime] = None
+    first_response_completed_at: Optional[datetime] = None
+    first_response_paused: bool = False
+    first_response_paused_at: Optional[datetime] = None
+    elapsed_first_response_minutes: int = 0
+    total_paused_first_response_minutes: int = 0
+    breached_first_response: bool = False
+    last_resume_first_response: Optional[datetime] = None
+    
+    # Resolution
+    resolution_due_at: Optional[datetime] = None
+    resolution_started_at: Optional[datetime] = None
+    resolution_completed_at: Optional[datetime] = None
+    resolution_paused: bool = False
+    resolution_paused_at: Optional[datetime] = None
+    elapsed_resolution_minutes: int = 0
+    total_paused_resolution_minutes: int = 0
+    breached_resolution: bool = False
+    last_resume_resolution: Optional[datetime] = None
+    
+    # Legacy fields
+    paused: bool = False
+    pause_reason: Optional[str] = None
+    
+    # Calendar
+    calendar_id: Optional[str] = None
+    
+    # Additional data for full picture
+    pause_history: List[SLAPauseHistoryOut] = Field(default_factory=list)
+    
+    # Metadata
+    meta: Dict[str, Any] = Field(default_factory=dict)
+    updated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class TicketEventOut(BaseModel):
+    """Ticket event for audit trail"""
+    event_id: str
+    ticket_id: str
+    actor_id: str
+    event_type: str
+    from_value: Dict[str, Any]
+    to_value: Dict[str, Any]
+    meta: Dict[str, Any]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TicketOut(TicketBase):
+    ticket_id: str
+    number: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    first_response_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
+    closed_at: Optional[datetime] = None
+    last_activity_at: Optional[datetime] = None
+    last_public_comment_at: Optional[datetime] = None
+    reply_count: int = 0
+    follower_count: int = 0
+    attachment_count: int = 0
+    comment_count: int = 0
+
+    # Deprecated fields
+    team_ids: List[str] = Field(default_factory=list)
+    agent_ids: List[str] = Field(default_factory=list)
+    
+    # Taxonomies
+    feature_id: Optional[str] = None
+    impact_id: Optional[str] = None
+    rca_id: Optional[str] = None
+    rca_note: Optional[str] = None
+    rca_set_by: Optional[str] = None
+    rca_set_at: Optional[datetime] = None
+    category_id: Optional[str] = None
+    subcategory_id: Optional[str] = None
+
+    # Relations
+    tags: List[TagOut] = Field(default_factory=list)
+    sla_status: Optional[TicketSLAStatusOut] = None
+    
+    # ✨ NEW: Include SLA-related events for complete audit trail
+    sla_events: List[TicketEventOut] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def filter_sla_events(self):
+        """Extract only SLA-related events from all events"""
+        if hasattr(self, '_all_events'):
+            self.sla_events = [
+                e for e in self._all_events 
+                if e.event_type in ('sla_paused', 'sla_resumed', 'sla_assigned', 'sla_breached')
+            ]
+        return self

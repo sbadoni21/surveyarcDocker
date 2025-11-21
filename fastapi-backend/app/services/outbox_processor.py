@@ -619,7 +619,7 @@ def process_batch(batch_size: int = 25) -> dict:
     global consecutive_errors, is_processing
     
     if is_processing:
-        logger.debug("⏸️  Already processing a batch, skipping...")
+
         return {"skipped": True, "reason": "already_processing"}
     
     is_processing = True
@@ -628,9 +628,7 @@ def process_batch(batch_size: int = 25) -> dict:
     try:
         session = SessionLocal()
         
-        reset_count = reset_stuck_messages(session, timeout_minutes=30)
-        if reset_count > 0:
-            logger.info(f"🔄 Reset {reset_count} stuck message(s)")
+
         
         messages = session.query(Outbox).filter(
             Outbox.sent_at.is_(None)
@@ -639,11 +637,9 @@ def process_batch(batch_size: int = 25) -> dict:
         ).limit(batch_size).with_for_update(skip_locked=True).all()
         
         if not messages:
-            logger.debug("📭 No pending messages to process")
             consecutive_errors = 0
             return {"processed": 0, "success": 0, "failed": 0, "retrying": 0}
         
-        logger.info(f"📤 Processing {len(messages)} message(s)...")
         
         success_count = 0
         failed_count = 0
@@ -683,17 +679,12 @@ def process_batch(batch_size: int = 25) -> dict:
             "failed": failed_count,
             "retrying": retrying_count
         }
-        
-        logger.info(
-            f"✅ Batch complete: {success_count} sent, "
-            f"{retrying_count} retrying, {failed_count} failed"
-        )
+   
         
         return result
         
     except Exception as e:
         consecutive_errors += 1
-        logger.error(f"❌ Batch processing error: {e}", exc_info=True)
         
         if consecutive_errors >= 10:
             logger.critical(
@@ -777,7 +768,74 @@ def run_forever(poll_interval: float = 2.0, batch_size: int = 25):
                 consecutive_errors = 0
         
         time.sleep(poll_interval)
+# Add this function to your outbox_processor.py file
+# Place it after the check_campaign_completion function
 
+def check_all_campaigns_for_completion(session: Session):
+    """
+    Check all campaigns in 'sending' status and complete them if done
+    This is called after each batch to ensure campaigns are marked complete ASAP
+    """
+    try:
+        sending_campaigns = session.query(Campaign).filter(
+            Campaign.status == CampaignStatus.sending
+        ).all()
+        
+        if not sending_campaigns:
+            logger.debug("No campaigns in 'sending' status to check")
+            return
+        
+        logger.debug(f"🔍 Checking {len(sending_campaigns)} sending campaign(s) for completion...")
+        
+        completed_count = 0
+        
+        for campaign in sending_campaigns:
+            try:
+                # Count remaining pending/queued results
+                pending_count = session.query(CampaignResult).filter(
+                    CampaignResult.campaign_id == campaign.campaign_id,
+                    CampaignResult.status.in_([
+                        RecipientStatus.queued,
+                        RecipientStatus.pending
+                    ])
+                ).count()
+                
+                if pending_count == 0:
+                    # All messages processed - mark campaign as completed
+                    campaign.status = CampaignStatus.completed
+                    campaign.completed_at = datetime.now(UTC)
+                    
+                    completed_count += 1
+                    
+                    # Calculate final stats
+                    total_results = session.query(CampaignResult).filter(
+                        CampaignResult.campaign_id == campaign.campaign_id
+                    ).count()
+                    
+                    logger.info(
+                        f"🎉 Campaign {campaign.campaign_id} ({campaign.campaign_name}) COMPLETED! "
+                        f"Total: {total_results}, "
+                        f"Sent: {campaign.sent_count or 0}, "
+                        f"Delivered: {campaign.delivered_count or 0}, "
+                        f"Failed: {campaign.failed_count or 0}"
+                    )
+                else:
+                    logger.debug(
+                        f"Campaign {campaign.campaign_id} still has {pending_count} pending results"
+                    )
+            
+            except Exception as e:
+                logger.error(
+                    f"❌ Error checking campaign {campaign.campaign_id}: {e}",
+                    exc_info=True
+                )
+        
+        if completed_count > 0:
+            session.flush()
+            logger.info(f"✅ Marked {completed_count} campaign(s) as completed")
+    
+    except Exception as e:
+        logger.error(f"❌ Error in check_all_campaigns_for_completion: {e}", exc_info=True)
 
 # ============================================
 # STATISTICS & MONITORING

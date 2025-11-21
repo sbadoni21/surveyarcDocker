@@ -18,7 +18,7 @@ Additions in this version:
 
 from __future__ import annotations
 import json, sqlalchemy as sa
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query,Header
 from sqlalchemy.orm import Session, selectinload, joinedload
 from sqlalchemy import func, select, text  # <-- text is used for atomic counter SQL
 from typing import List, Optional, Dict, Any
@@ -30,6 +30,7 @@ from ..services.redis_ticket_service import RedisTicketService
 from ..services.redis_sla_service import get_ticket_sla_status
 from ..models.tickets import (
     Ticket,
+    TicketPlatform,
     TicketWorklog,
     TicketWatcher,
     TicketAssignment,
@@ -37,7 +38,7 @@ from ..models.tickets import (
     TicketSeverity,
 )
 from ..models.ticket_taxonomies import TicketFeature, TicketImpactArea, TicketRootCauseType  # ▶ ADD
-from ..schemas.tickets import RootCauseSet  # ▶ ADD (if you added the schema)
+from ..schemas.tickets import RootCauseSet,SLAPauseRequest, SLAResumeRequest,TicketSLAStatusOut # ▶ ADD (if you added the schema)
 from ..services.sla_notify import (
     compute_business_elapsed,
     crossed_threshold,
@@ -255,21 +256,38 @@ def coerce_severity(v: str | None) -> TicketSeverity | None:
 # SLA utilities
 # ---------------------------------------------------------------------
 
+# Snippet from app/routers/tickets.py - Replace the relevant functions
+
 def _ensure_sla_status_if_needed(db: Session, t: Ticket) -> None:
     """
-    Ensure a TicketSLAStatus exists for a ticket that references an SLA.
+    ✅ FIXED: Ensure a TicketSLAStatus exists and has proper due dates calculated.
     Safe to call on create/update.
     """
     if not t.sla_id:
         return
     if t.sla_status:
+        # Status exists, just ensure due dates are set
+        sla_obj = db.get(SLA, t.sla_id)
+        if sla_obj and (not t.sla_status.first_response_due_at or not t.sla_status.resolution_due_at):
+            sla_service.initialize_due_dates(db, t.sla_status, sla_obj)
         return
-    st = TicketSLAStatus(ticket_id=t.ticket_id, sla_id=t.sla_id, paused=False, meta={})
+    
+    # Create new status
+    st = TicketSLAStatus(
+        ticket_id=t.ticket_id, 
+        sla_id=t.sla_id, 
+        paused=False, 
+        meta={}
+    )
     db.add(st)
+    db.flush()
+    
+    # Initialize timers and calculate due dates
     sla_service.ensure_started(st)
     sla_obj = db.get(SLA, t.sla_id)
     if sla_obj:
-        sla_service._recompute_due(db, st, sla_obj)
+        sla_service.initialize_due_dates(db, st, sla_obj)
+
 
 
 def _create_sla_status_with_processing(
@@ -278,8 +296,8 @@ def _create_sla_status_with_processing(
     sla_processing: Optional[SLAProcessingData],
 ):
     """
-    Create SLA status, honoring any pre-computed due dates and calendar coming
-    from the frontend (optional). Falls back to server-side computation.
+    ✅ FIXED: Create SLA status, honoring pre-computed due dates from frontend.
+    Only calculate server-side if frontend didn't provide them.
     """
     if not ticket.sla_id:
         return
@@ -304,24 +322,31 @@ def _create_sla_status_with_processing(
         },
     }
 
+    # Parse frontend-provided due dates
+    has_frontend_dates = False
     if sla_processing:
         sla_status_data["meta"]["sla_mode"] = sla_processing.sla_mode
+        
         if sla_processing.first_response_due_at:
             s = sla_processing.first_response_due_at
             if s.endswith("Z"):
                 s = s[:-1] + "+00:00"
             try:
                 sla_status_data["first_response_due_at"] = datetime.fromisoformat(s)
+                has_frontend_dates = True
             except Exception:
                 pass
+        
         if sla_processing.resolution_due_at:
             s = sla_processing.resolution_due_at
             if s.endswith("Z"):
                 s = s[:-1] + "+00:00"
             try:
                 sla_status_data["resolution_due_at"] = datetime.fromisoformat(s)
+                has_frontend_dates = True
             except Exception:
                 pass
+        
         if sla_processing.calendar_id:
             sla_status_data["calendar_id"] = sla_processing.calendar_id
 
@@ -330,23 +355,22 @@ def _create_sla_status_with_processing(
     ticket.sla_status = sla_status
     db.flush()
 
-    # If due dates were not provided, compute them.
-    if not sla_status.first_response_due_at or not sla_status.resolution_due_at:
+    # ✅ FIXED: Only calculate server-side if frontend didn't provide dates
+    if not has_frontend_dates or not sla_status.first_response_due_at or not sla_status.resolution_due_at:
         mode = sla_status.meta.get("sla_mode") or ("priority" if ticket.priority else "severity")
         sla_status.meta["sla_mode"] = mode
         sla_status.meta["basis_priority"] = ticket.priority.value if ticket.priority else None
         sla_status.meta["basis_severity"] = ticket.severity.value if ticket.severity else None
         sla_status.meta["source"] = "server"
-        sla_service.ensure_started(sla_status)
+        
         sla_obj = db.get(SLA, ticket.sla_id)
         if sla_obj:
-            sla_service._recompute_due(db, sla_status, sla_obj)
+            # This will only set dates that are still None
+            sla_service.initialize_due_dates(db, sla_status, sla_obj)
 
-    # Set ticket.due_at from SLA resolution due date if not explicitly provided.
+    # Set ticket.due_at from SLA resolution due date if not explicitly provided
     if not ticket.due_at and sla_status.resolution_due_at:
         ticket.due_at = sla_status.resolution_due_at
-
-
 # ---------------------------------------------------------------------
 # Assignment / caching helpers
 # ---------------------------------------------------------------------
@@ -533,7 +557,8 @@ def _next_ticket_number(db: Session, org_id: str) -> int:
 @router.get("/{ticket_id}", response_model=TicketOut)
 def get_ticket(ticket_id: str, db: Session = Depends(get_db)):
     """
-    Fetch a single ticket (with SLA status and tags). Uses Redis cache if present.
+    Fetch a single ticket with complete SLA tracking data.
+    Includes: SLA status, pause history, pause windows, and events.
     """
     cached = RedisTicketService.get_ticket(ticket_id)
     if cached is not None:
@@ -541,7 +566,15 @@ def get_ticket(ticket_id: str, db: Session = Depends(get_db)):
 
     t = (
         db.query(Ticket)
-        .options(joinedload(Ticket.sla_status), joinedload(Ticket.tags))
+        .options(
+            joinedload(Ticket.sla_status).joinedload(TicketSLAStatus.pause_history),
+            joinedload(Ticket.sla_status).joinedload(TicketSLAStatus.sla),
+            joinedload(Ticket.tags),
+            selectinload(Ticket.events).options(
+                # Only load SLA-related events
+                # You might want to filter these in the schema instead
+            ),
+        )
         .filter(Ticket.ticket_id == ticket_id)
         .first()
     )
@@ -740,13 +773,15 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db)):
 
     # Exclude deprecated list fields before instantiating SQLAlchemy model
     ticket_data = payload.model_dump(
-        exclude={"tags", "ticket_id", "assignment", "sla_processing", "team_ids", "agent_ids"}
+        exclude={"tags", "ticket_id", "assignment", "sla_processing", "team_ids", "agent_ids","ticket", }
     )
 
     if "priority" in ticket_data:
         ticket_data["priority"] = coerce_priority(ticket_data["priority"]) or TicketPriority.normal
     if "severity" in ticket_data:
         ticket_data["severity"] = coerce_severity(ticket_data["severity"]) or TicketSeverity.sev4
+    print(ticket_data)
+    ticket_data["platform"] = getattr(payload, "platform", TicketPlatform.in_app)
 
     t = Ticket(ticket_id=ticket_id, **ticket_data)
 
@@ -1446,3 +1481,90 @@ def create_worklog(
     db.commit()
     db.refresh(wl)
     return wl
+
+# In app/routers/tickets.py - update the pause/resume endpoints
+
+@router.post("/{ticket_id}/sla/pause", response_model=TicketSLAStatusOut, status_code=200)
+def pause_sla_endpoint(
+    ticket_id: str,
+    payload: SLAPauseRequest,
+    db: Session = Depends(get_db),
+    current_user_id: str = Header(None, alias="X-User-Id"),  # Get from header
+):
+    """Pause an SLA timer with full audit trail"""
+    t = db.get(Ticket, ticket_id)
+    if not t:
+        raise HTTPException(404, "Ticket not found")
+    
+    if not t.sla_id or not t.sla_status:
+        raise HTTPException(400, "Ticket has no active SLA")
+    
+    try:
+        dimension = SLADimension(payload.dimension)
+    except ValueError:
+        raise HTTPException(400, f"Invalid dimension: {payload.dimension}")
+    
+    # Call enhanced pause with actor tracking
+    sla_service.pause_sla(
+        db, t, dimension,
+        reason=payload.reason.value if payload.reason else None,
+        actor_id=current_user_id or t.requester_id,
+        reason_note=payload.reason_note
+    )
+    
+    t.last_activity_at = datetime.utcnow()
+    db.commit()
+    db.refresh(t)
+    
+    _invalidate_all(db, t)
+    
+    return TicketSLAStatusOut.model_validate(t.sla_status, from_attributes=True)
+
+
+@router.post("/{ticket_id}/sla/resume", response_model=TicketSLAStatusOut, status_code=200)
+def resume_sla_endpoint(
+    ticket_id: str,
+    payload: SLAResumeRequest,
+    db: Session = Depends(get_db),
+    current_user_id: str = Header(None, alias="X-User-Id"),
+):
+    """Resume an SLA timer with full audit trail"""
+    t = db.get(Ticket, ticket_id)
+    if not t:
+        raise HTTPException(404, "Ticket not found")
+    
+    if not t.sla_id or not t.sla_status:
+        raise HTTPException(400, "Ticket has no active SLA")
+    
+    try:
+        dimension = SLADimension(payload.dimension)
+    except ValueError:
+        raise HTTPException(400, f"Invalid dimension: {payload.dimension}")
+    
+    # Call enhanced resume with actor tracking
+    sla_service.resume_sla(
+        db, t, dimension,
+        actor_id=current_user_id or t.requester_id
+    )
+    
+    t.last_activity_at = datetime.utcnow()
+    db.commit()
+    db.refresh(t)
+    
+    _invalidate_all(db, t)
+    
+    return TicketSLAStatusOut.model_validate(t.sla_status, from_attributes=True)
+
+
+@router.get("/{ticket_id}/sla/timers", response_model=dict)
+def get_sla_timers(
+    ticket_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Get detailed SLA timer status including pause windows.
+    """
+    timers = sla_service.get_timers(db, ticket_id)
+    if not timers:
+        raise HTTPException(404, "Ticket not found or has no SLA")
+    return timers

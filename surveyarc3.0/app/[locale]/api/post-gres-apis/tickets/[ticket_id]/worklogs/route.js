@@ -47,3 +47,47 @@ export async function GET(req, { params }) {
     }, { status: 500 });
   }
 }
+
+
+export async function POST(req, { params }) {
+  const { ticket_id } = await params;
+
+  // Get body
+  let body;
+  try {
+    body = await req.json();
+  } catch (e) {
+    return NextResponse.json(
+      { detail: "Invalid JSON body", message: e.message },
+      { status: 400 }
+    );
+  }
+
+  // Prepare headers
+  const headers = new Headers();
+  headers.set("Content-Type", "application/json");
+
+  // Get user ID
+  const cookieStore = await cookies();
+  const userId = cookieStore.get("currentUserId")?.value || req.headers.get("x-user-id");
+  if (userId) headers.set("X-User-Id", userId);
+
+  try {
+    const res = await fetch(
+      `${BASE}/tickets/${encodeURIComponent(ticket_id)}/worklogs`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30000),
+      }
+    );
+
+    return forceDecryptResponse(res);
+  } catch (e) {
+    return NextResponse.json(
+      { detail: "Upstream error", message: String(e?.message || e) },
+      { status: 500 }
+    );
+  }
+}

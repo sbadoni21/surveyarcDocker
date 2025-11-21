@@ -51,7 +51,6 @@ class CampaignScheduler:
             return
         
         self.running = True
-        self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
         logger.info(
             f"📅 Smart campaign scheduler v3 started "
@@ -68,51 +67,7 @@ class CampaignScheduler:
             self.thread.join(timeout=5)
         logger.info(f"📅 Scheduler stopped after {self.check_count} checks")
     
-    def _run_loop(self):
-        """Main scheduler loop"""
-        logger.info(
-            f"🔄 Scheduler loop started - checking every {self.check_interval}s"
-        )
-        
-        while self.running:
-            try:
-                self.check_count += 1
-                self.last_check_time = datetime.now(UTC)
-                
-                logger.info(
-                    f"🔍 [Check #{self.check_count}] "
-                    f"Scanning at {self.last_check_time.strftime('%Y-%m-%d %H:%M:%S UTC')}"
-                )
-                
-                # ✅ TASK 1: Trigger scheduled campaigns
-                triggered_count = self._check_and_trigger_campaigns()
-                
-                if triggered_count > 0:
-                    logger.info(
-                        f"✅ [Check #{self.check_count}] "
-                        f"Triggered {triggered_count} campaign(s)"
-                    )
-                
-                # ✅ TASK 2: Check for campaigns that should be completed
-                completion_result = check_and_complete_campaigns()
-                
-                if completion_result["completed"] > 0:
-                    logger.info(
-                        f"🎉 [Check #{self.check_count}] "
-                        f"Completed {completion_result['completed']} campaign(s)"
-                    )
-                
-                if triggered_count == 0 and completion_result["completed"] == 0:
-                    logger.info(f"ℹ️  [Check #{self.check_count}] No actions taken")
-                    
-            except Exception as e:
-                logger.error(f"❌ Error in scheduler loop: {e}", exc_info=True)
-            
-            logger.debug(f"😴 Sleeping for {self.check_interval}s...")
-            time.sleep(self.check_interval)
-        
-        logger.info("🛑 Scheduler loop ended")
-    
+  
     def _check_and_trigger_campaigns(self) -> int:
         """
         ✅ SMART: Check for scheduled campaigns and trigger them

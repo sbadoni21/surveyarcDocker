@@ -38,7 +38,7 @@ async function forceDecryptResponse(res) {
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const qs = new URLSearchParams();
-  for (const k of ["org_id", "status", "assignee_id", "q", "limit", "offset"]) {
+  for (const k of ["org_id", "status", "assignee_id", "q", "limit", "offset", "agent_id"]) {
     const v = searchParams.get(k);
     if (v !== null && v !== "") qs.set(k, v);
   }

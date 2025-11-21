@@ -193,16 +193,15 @@ export default function BusinessCalendarsPage() {
   const [counts, setCounts] = useState({});
   const [countsLoading, setCountsLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
-
-  const refresh = async () => {
+const refresh = async () => {
     await list({
       orgId,
-      active: filters.active,
       q: filters.q || undefined,
     });
   };
 
-  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [filters, orgId]);
+  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [filters.q, orgId]);
+
 
   useEffect(() => {
     let mounted = true;

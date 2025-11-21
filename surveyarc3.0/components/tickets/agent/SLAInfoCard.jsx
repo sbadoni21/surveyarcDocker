@@ -6,6 +6,8 @@ import {
   Shield, Target, AlertTriangle, DollarSign, Info, Clock, Pause, CheckCircle, History
 } from "lucide-react";
 import SlaMakingModel from "@/models/postGresModels/slaMakingModel";
+import { usePathname } from "next/navigation";
+import SLAModel from "@/models/slaModel";
 
 // ------------------------------- Utilities -------------------------------
 
@@ -72,6 +74,8 @@ export default function SLAInfoCard({ slaId, ticket, dimension = "resolution", c
   const [objectives, setObjectives] = useState([]);
   const [creditRules, setCreditRules] = useState([]);
   const [status, setStatus] = useState(ticket?.sla_status || ticket?.slaStatus || null);
+  const path = usePathname();
+  const orgId = path.split("/")[3]; // /[locale]/postgres-org/[organizations]/...
 
   // Pause history state
   const [history, setHistory] = useState([]);
@@ -86,9 +90,9 @@ export default function SLAInfoCard({ slaId, ticket, dimension = "resolution", c
       try {
         setLoading(true);
         const [s, objs, rules] = await Promise.all([
-          SlaMakingModel.get(slaId),
-          SlaMakingModel.listObjectives(slaId),
-          SlaMakingModel.listCreditRules(slaId),
+          SLAModel.get(orgId,slaId),
+          SlaMakingModel.listObjectives(orgId,slaId),
+          SlaMakingModel.listCreditRules(orgId,slaId),
         ]);
         if (!mounted) return;
         setSla(s || null);

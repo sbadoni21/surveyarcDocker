@@ -16,6 +16,7 @@ import enum
 from sqlalchemy import Enum as SAEnum  # <-- important: alias Enum
 from .sla import SLADimension
 from ..db import Base
+from enum import Enum
 
 
 # ------------------------------- Pydantic payloads -------------------------------
@@ -32,7 +33,7 @@ class AssignAgentBody(BaseModel):
 
 # ------------------------------- Python Enums -------------------------------
 
-class TicketStatus(str, enum.Enum):
+class TicketStatus(str, Enum):  # ← Note: inherit from str
     new = "new"
     open = "open"
     pending = "pending"
