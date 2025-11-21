@@ -3,6 +3,7 @@ import Sidebar from "@/components/frontend/Sidebar";
 import BusinessCalendarsProvider from "@/providers/BusinessCalendarsProvider";
 import { OrganisationProvider } from "@/providers/postGresPorviders/organisationProvider";
 import { ProjectProvider } from "@/providers/postGresPorviders/projectProvider";
+import { QuotaProvider } from "@/providers/postGresPorviders/quotaProvider";
 import { SupportGroupProvider } from "@/providers/postGresPorviders/SupportGroupProvider";
 import { SupportTeamProvider } from "@/providers/postGresPorviders/SupportTeamProvider";
 import { TagProvider } from "@/providers/postGresPorviders/TagProvider";
@@ -30,21 +31,23 @@ export default function Layout({ children }) {
                       <SupportTeamProvider>
                         <BusinessCalendarsProvider>
                           <ProjectProvider>
-                            <Sidebar
-                              isCollapsed={isCollapsed}
-                              setIsCollapsed={setIsCollapsed}
-                            />
-                            <SLAProvider>
-                              <main
-                                className={`transition-all  duration-300 ${
-                                  isCollapsed
-                                    ? "w-[calc(100%-30px)] "
-                                    : "w-[calc(100%-200px)]"
-                                }`}
-                              >
-                                {children}
-                              </main>
-                            </SLAProvider>
+                            <QuotaProvider>
+                              <Sidebar
+                                isCollapsed={isCollapsed}
+                                setIsCollapsed={setIsCollapsed}
+                              />
+                              <SLAProvider>
+                                <main
+                                  className={`transition-all  duration-300 ${
+                                    isCollapsed
+                                      ? "w-[calc(100%-30px)] "
+                                      : "w-[calc(100%-200px)]"
+                                  }`}
+                                >
+                                  {children}
+                                </main>
+                              </SLAProvider>
+                            </QuotaProvider>
                           </ProjectProvider>
                         </BusinessCalendarsProvider>
                       </SupportTeamProvider>
