@@ -93,6 +93,8 @@ export default function ContactListCard(props) {
     getContactTypeBadge = () => "bg-gray-100 text-gray-700 border-gray-200",
     getContactTypeIcon = () => <Users className="w-3.5 h-3.5" />,
     setSelectedContacts = () => {},
+        setManualContactOpen = () => {},
+    setManualContactListId = () => {},
   } = props;
 
   const listContacts = getListContacts(list) || [];
@@ -140,7 +142,17 @@ export default function ContactListCard(props) {
                 <ChevronRight className="w-5 h-5 text-gray-600" />
               )}
             </button>
-
+<button
+  onClick={() => {
+    setManualContactListId(list.listId);
+    setManualContactOpen(true);
+  }}
+  className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition"
+  title="Add contact manually"
+>
+  <UserPlus className="w-4 h-4" />
+  <span className="text-xs ml-1">Manual</span>
+</button>
             <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
               <FolderOpen className="w-5 h-5 text-blue-600" />
             </div>
@@ -535,6 +547,7 @@ export default function ContactListCard(props) {
           )}
         </div>
       )}
+
     </div>
   );
 }
