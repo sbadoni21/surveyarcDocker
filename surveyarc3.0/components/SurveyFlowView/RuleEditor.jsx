@@ -27,6 +27,7 @@ export function RuleEditor({
   setTicketActIndex,
   orgId,
   currentUserId,
+  emptyCondition,
 }) {
   const blockOrder = useMemo(
     () => blocksResolved.map((b) => b.blockId),

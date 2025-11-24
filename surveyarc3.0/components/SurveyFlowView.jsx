@@ -1034,6 +1034,8 @@ export default function SurveyFlowScreen({
             orgId={orgId}
             currentUserId={currentUserId}
             emptyAction={emptyAction}
+            emptyCondition={emptyCondition}
+
           />
         )}
       </div>
