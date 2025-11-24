@@ -50,8 +50,6 @@ export default function QuotaCreateForm({ surveyId, orgId, onCreated }) {
 
   return (
     <div className="p-4 space-y-6 border rounded-md bg-white">
-
-      {/* QUOTA BASIC FIELDS */}
       <div>
         <label className="font-semibold">Quota Name *</label>
         <input
@@ -72,7 +70,6 @@ export default function QuotaCreateForm({ surveyId, orgId, onCreated }) {
         />
       </div>
 
-      {/* STOP CONDITION */}
       <div>
         <label className="font-semibold">Stop Condition</label>
         <select
@@ -87,7 +84,6 @@ export default function QuotaCreateForm({ surveyId, orgId, onCreated }) {
         </select>
       </div>
 
-      {/* WHEN QUOTA IS REACHED */}
       <div>
         <label className="font-semibold">When Met</label>
         <select
@@ -101,7 +97,6 @@ export default function QuotaCreateForm({ surveyId, orgId, onCreated }) {
         </select>
       </div>
 
-      {/* QUOTA CELLS */}
       <div>
         <h3 className="font-bold text-lg">Quota Cells</h3>
 

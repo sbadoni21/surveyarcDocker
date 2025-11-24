@@ -46,7 +46,7 @@ export default function Dist() {
 
   const domain =
     process.env.NEXT_PUBLIC_DOMAIN || "https://surveyarc-docker.vercel.app";
-  const publicSurveyUrl = `${domain}/en/form?orgId=${orgId}&projects=${projectId}&survey=${surveyId}`;
+  const publicSurveyUrl = `${domain}/en/form?org_id=${orgId}&projects=${projectId}&survey_id=${surveyId}`;
 
   const { getAllQuestions } = useQuestion();
   const { updateSurvey, getSurvey } = useSurvey();
