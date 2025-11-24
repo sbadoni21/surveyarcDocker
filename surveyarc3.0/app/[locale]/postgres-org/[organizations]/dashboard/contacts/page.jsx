@@ -62,6 +62,8 @@ export default function ListsPage() {
   const [viewOpen, setViewOpen] = useState(false);
   const [listPagination, setListPagination] = useState({});
   const [selectedContacts, setSelectedContacts] = useState(new Set());
+  const [manualContactOpen, setManualContactOpen] = useState(false);
+  const [manualContactListId, setManualContactListId] = useState(null);
   useEffect(() => {
     (async () => {
       if (!orgId) return;
@@ -104,7 +106,37 @@ export default function ListsPage() {
       alert("Failed to update list status");
     }
   };
+const handleCreateManualContact = async (contactData, listId) => {
+  try {
+    const newContactId = crypto.randomUUID();
+    
+    await createContact({
+      contactId: newContactId,
+      orgId,
+      userId: null,
+      name: contactData.name,
+      primaryIdentifier: contactData.primaryIdentifier,
+      contactType: contactData.contactType,
+      status: "active",
+      meta: {}, // Don't duplicate emails/phones/socials here since they're already in the main payload
+      emails: contactData.emails || [],
+      phones: contactData.phones || [],
+      socials: contactData.socials || [],
+    });
 
+    if (listId) {
+      await addContactsToList(listId, [newContactId]);
+    }
+
+    await refresh();
+    setManualContactOpen(false);
+    setManualContactListId(null);
+    alert("✅ Contact created successfully");
+  } catch (error) {
+    console.error("Failed to create contact:", error);
+    alert("❌ Failed to create contact: " + (error.message || "Unknown error"));
+  }
+};
   // Duplicate list handler
   const handleDuplicateList = async (list) => {
     try {
@@ -582,6 +614,8 @@ const filteredLists = (lists ?? []).filter(list =>
           <div className="space-y-4">
          {filteredLists.map((list) => (
   <ContactListCard
+    setManualContactOpen={setManualContactOpen}
+  setManualContactListId={setManualContactListId}
     key={list.listId}
     list={list}
     lists={lists}
@@ -689,6 +723,15 @@ const filteredLists = (lists ?? []).filter(list =>
         existingPhones={contactPhones}
         existingSocials={contactSocials}
       />
+                  <ManualContactModal
+  isOpen={manualContactOpen}
+  listId={manualContactListId}
+  onClose={() => {
+    setManualContactOpen(false);
+    setManualContactListId(null);
+  }}
+  onSave={handleCreateManualContact}
+/>
     </div>
   );
 }
@@ -863,7 +906,258 @@ function ContactProfileModal({ contact, isOpen, onClose }) {
           </div>
         </div>
       </div>
+
     </div>
   );
 
 }
+const ManualContactModal = ({ isOpen, listId, onClose, onSave }) => {
+  const [form, setForm] = useState({
+    name: "",
+    primaryIdentifier: "",
+    contactType: "email",
+    emails: [{ email: "", is_primary: true, is_verified: false }],
+    phones: [{ country_code: "+91", phone_number: "", is_whatsapp: false, is_primary: true }],
+    socials: [],
+  });
+
+  const addEmail = () => {
+    setForm({
+      ...form,
+      emails: [...form.emails, { email: "", is_primary: false, is_verified: false }],
+    });
+  };
+
+  const addPhone = () => {
+    setForm({
+      ...form,
+      phones: [...form.phones, { country_code: "+91", phone_number: "", is_whatsapp: false, is_primary: false }],
+    });
+  };
+
+  const addSocial = () => {
+    setForm({
+      ...form,
+      socials: [...form.socials, { platform: "", handle: "", link: "" }],
+    });
+  };
+
+  const updateEmail = (index, field, value) => {
+    const updated = [...form.emails];
+    updated[index][field] = value;
+    setForm({ ...form, emails: updated });
+  };
+
+  const updatePhone = (index, field, value) => {
+    const updated = [...form.phones];
+    updated[index][field] = value;
+    setForm({ ...form, phones: updated });
+  };
+
+  const updateSocial = (index, field, value) => {
+    const updated = [...form.socials];
+    updated[index][field] = value;
+    setForm({ ...form, socials: updated });
+  };
+
+  const removeEmail = (index) => {
+    setForm({ ...form, emails: form.emails.filter((_, i) => i !== index) });
+  };
+
+  const removePhone = (index) => {
+    setForm({ ...form, phones: form.phones.filter((_, i) => i !== index) });
+  };
+
+  const removeSocial = (index) => {
+    setForm({ ...form, socials: form.socials.filter((_, i) => i !== index) });
+  };
+
+  const handleSubmit = () => {
+    if (!form.name.trim() || !form.primaryIdentifier.trim()) {
+      return alert("Name and Primary Identifier are required");
+    }
+
+    const cleanEmails = form.emails.filter(e => e.email.trim());
+    const cleanPhones = form.phones.filter(p => p.phone_number.trim());
+    const cleanSocials = form.socials.filter(s => s.platform.trim() && s.handle.trim());
+
+    onSave({
+      ...form,
+      emails: cleanEmails,
+      phones: cleanPhones,
+      socials: cleanSocials,
+    }, listId);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white p-6 rounded-lg w-full max-w-2xl shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-semibold">Add Contact Manually</h3>
+          <button onClick={onClose} className="text-gray-600 hover:text-gray-800">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {/* Basic Info */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+              placeholder="John Doe"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Primary Identifier *</label>
+            <input
+              type="text"
+              value={form.primaryIdentifier}
+              onChange={(e) => setForm({ ...form, primaryIdentifier: e.target.value })}
+              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+              placeholder="john@example.com or +1234567890"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Contact Type</label>
+            <select
+              value={form.contactType}
+              onChange={(e) => setForm({ ...form, contactType: e.target.value })}
+              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="email">Email</option>
+              <option value="phone">Phone</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="social">Social</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          {/* Emails */}
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-sm font-medium text-gray-700">Emails</label>
+              <button onClick={addEmail} className="text-sm text-blue-600 hover:text-blue-800">
+                + Add Email
+              </button>
+            </div>
+            {form.emails.map((email, index) => (
+              <div key={index} className="flex gap-2 mb-2">
+                <input
+                  type="email"
+                  value={email.email}
+                  onChange={(e) => updateEmail(index, "email", e.target.value)}
+                  className="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                  placeholder="email@example.com"
+                />
+                <label className="flex items-center gap-1 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={email.is_primary}
+                    onChange={(e) => updateEmail(index, "is_primary", e.target.checked)}
+                  />
+                  Primary
+                </label>
+                <button onClick={() => removeEmail(index)} className="text-red-600 hover:text-red-800">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Phones */}
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-sm font-medium text-gray-700">Phones</label>
+              <button onClick={addPhone} className="text-sm text-blue-600 hover:text-blue-800">
+                + Add Phone
+              </button>
+            </div>
+            {form.phones.map((phone, index) => (
+              <div key={index} className="flex gap-2 mb-2">
+                <input
+                  type="text"
+                  value={phone.country_code}
+                  onChange={(e) => updatePhone(index, "country_code", e.target.value)}
+                  className="w-20 p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                  placeholder="+91"
+                />
+                <input
+                  type="text"
+                  value={phone.phone_number}
+                  onChange={(e) => updatePhone(index, "phone_number", e.target.value)}
+                  className="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                  placeholder="1234567890"
+                />
+                <label className="flex items-center gap-1 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={phone.is_whatsapp}
+                    onChange={(e) => updatePhone(index, "is_whatsapp", e.target.checked)}
+                  />
+                  WA
+                </label>
+                <button onClick={() => removePhone(index)} className="text-red-600 hover:text-red-800">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Socials */}
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-sm font-medium text-gray-700">Social Media</label>
+              <button onClick={addSocial} className="text-sm text-blue-600 hover:text-blue-800">
+                + Add Social
+              </button>
+            </div>
+            {form.socials.map((social, index) => (
+              <div key={index} className="flex gap-2 mb-2">
+                <input
+                  type="text"
+                  value={social.platform}
+                  onChange={(e) => updateSocial(index, "platform", e.target.value)}
+                  className="w-32 p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                  placeholder="Platform"
+                />
+                <input
+                  type="text"
+                  value={social.handle}
+                  onChange={(e) => updateSocial(index, "handle", e.target.value)}
+                  className="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                  placeholder="@username"
+                />
+                <button onClick={() => removeSocial(index)} className="text-red-600 hover:text-red-800">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-2 justify-end mt-6 pt-4 border-t">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Create Contact
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};

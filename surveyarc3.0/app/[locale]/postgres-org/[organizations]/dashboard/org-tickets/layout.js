@@ -3,6 +3,18 @@
 import { usePathname, useRouter } from 'next/navigation'
 import { useMemo, useEffect } from 'react'
 import { useUser } from '@/providers/postGresPorviders/UserProvider'
+import BusinessCalendarsProvider from "@/providers/BusinessCalendarsProvider";
+import { OrganisationProvider } from "@/providers/postGresPorviders/organisationProvider";
+import { ProjectProvider } from "@/providers/postGresPorviders/projectProvider";
+import { SupportGroupProvider } from "@/providers/postGresPorviders/SupportGroupProvider";
+import { SupportTeamProvider } from "@/providers/postGresPorviders/SupportTeamProvider";
+import { TagProvider } from "@/providers/postGresPorviders/TagProvider";
+import { ThemeProvider } from "@/providers/postGresPorviders/themeProvider";
+import { TicketCategoryProvider } from "@/providers/postGresPorviders/TicketCategoryProvider";
+import { TicketTaxonomyProvider } from "@/providers/postGresPorviders/TicketTaxonomyProvider";
+import { UserProvider } from "@/providers/postGresPorviders/UserProvider";
+import { SLAProvider } from "@/providers/slaProvider";
+import { TicketProvider } from "@/providers/ticketsProvider";
 
 export default function OrgTicketsLayout({ children }) {
   const pathname = usePathname()
@@ -137,10 +149,23 @@ export default function OrgTicketsLayout({ children }) {
           </nav>
         </div>
       </div>
-
+      <TagProvider>
+        <TicketCategoryProvider>
+                          <TicketTaxonomyProvider>
+          <TicketProvider>
+                              <SupportGroupProvider>
+                                <SupportTeamProvider>
+                                  <BusinessCalendarsProvider>
       <main className="mx-auto px-4 py-6">
         {children}
-      </main>
+      </main>            </BusinessCalendarsProvider>
+                            </SupportTeamProvider>
+                          </SupportGroupProvider>
+                        </TicketProvider>
+                                </TicketTaxonomyProvider>
+
+              </TicketCategoryProvider>
+            </TagProvider>
     </div>
   )
 }

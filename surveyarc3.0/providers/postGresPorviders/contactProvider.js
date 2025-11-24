@@ -230,7 +230,6 @@ export const ContactProvider = ({ children }) => {
     }
   }, [invalidateCache]);
 const addContactsToList = useCallback(async (listId, contactIds) => {
-  console.log(listId, contactIds)
   setLoading(true);
   try {
     const updated = await ListModel.addContacts(listId, contactIds);

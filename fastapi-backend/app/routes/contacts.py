@@ -565,3 +565,123 @@ def delete_list(list_id: str, db: Session = Depends(get_db)):
     )
 
     return {"detail": "List deleted (soft)"}
+# Replace the existing /lists/{list_id}/add and /lists/{list_id}/remove endpoints with:
+
+@router.patch("/lists/{list_id}/contacts")
+def add_contacts_to_list_patch(
+    list_id: str, 
+    contact_ids: List[str],
+    db: Session = Depends(get_db)
+):
+    """PATCH endpoint to add contacts to a list"""
+    l = (
+        db.query(ContactList)
+        .options(
+            joinedload(ContactList.contacts).joinedload(Contact.emails),
+            joinedload(ContactList.contacts).joinedload(Contact.phones),
+            joinedload(ContactList.contacts).joinedload(Contact.socials)
+        )
+        .filter(ContactList.list_id == list_id)
+        .first()
+    )
+    
+    if not l:
+        raise HTTPException(status_code=404, detail="List not found")
+
+    existing = {c.contact_id for c in l.contacts}
+
+    new_contacts = (
+        db.query(Contact)
+        .options(
+            joinedload(Contact.emails),
+            joinedload(Contact.phones),
+            joinedload(Contact.socials)
+        )
+        .filter(Contact.contact_id.in_(contact_ids))
+        .all()
+    )
+
+    added = 0
+    for c in new_contacts:
+        if c.contact_id not in existing:
+            l.contacts.append(c)
+            added += 1
+
+    db.commit()
+    
+    # Reload with all relationships
+    l = (
+        db.query(ContactList)
+        .options(
+            joinedload(ContactList.contacts).joinedload(Contact.emails),
+            joinedload(ContactList.contacts).joinedload(Contact.phones),
+            joinedload(ContactList.contacts).joinedload(Contact.socials)
+        )
+        .filter(ContactList.list_id == list_id)
+        .first()
+    )
+
+    RedisContactsService.invalidate_lists(l.org_id)
+
+    record_audit(
+        db=db,
+        event_type="list.contacts_added",
+        entity_id=list_id,
+        org_id=l.org_id,
+        entity_type="contact_list",
+        meta={"contact_ids": contact_ids, "added_count": added},
+    )
+
+    return list_to_out(l)
+
+
+@router.delete("/lists/{list_id}/contacts")
+def remove_contacts_from_list_delete(
+    list_id: str,
+    contact_ids: List[str],
+    db: Session = Depends(get_db)
+):
+    """DELETE endpoint to remove contacts from a list"""
+    l = (
+        db.query(ContactList)
+        .options(
+            joinedload(ContactList.contacts).joinedload(Contact.emails),
+            joinedload(ContactList.contacts).joinedload(Contact.phones),
+            joinedload(ContactList.contacts).joinedload(Contact.socials)
+        )
+        .filter(ContactList.list_id == list_id)
+        .first()
+    )
+    
+    if not l:
+        raise HTTPException(status_code=404, detail="List not found")
+
+    contact_ids_set = set(contact_ids)
+    l.contacts = [c for c in l.contacts if c.contact_id not in contact_ids_set]
+
+    db.commit()
+    
+    # Reload with all relationships
+    l = (
+        db.query(ContactList)
+        .options(
+            joinedload(ContactList.contacts).joinedload(Contact.emails),
+            joinedload(ContactList.contacts).joinedload(Contact.phones),
+            joinedload(ContactList.contacts).joinedload(Contact.socials)
+        )
+        .filter(ContactList.list_id == list_id)
+        .first()
+    )
+
+    RedisContactsService.invalidate_lists(l.org_id)
+
+    record_audit(
+        db=db,
+        event_type="list.contacts_removed",
+        entity_id=list_id,
+        org_id=l.org_id,
+        entity_type="contact_list",
+        meta={"contact_ids": contact_ids, "removed_count": len(contact_ids)},
+    )
+
+    return list_to_out(l)

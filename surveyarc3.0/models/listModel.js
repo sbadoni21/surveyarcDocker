@@ -73,7 +73,7 @@ const ListModel = {
   },
  async addContacts(listId, contactIds) {
     const response = await fetch(`${BASE}/${listId}/contacts`, {
-      method: "POST",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ contact_ids: contactIds }),
     });

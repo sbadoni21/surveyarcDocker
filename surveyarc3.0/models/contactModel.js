@@ -111,15 +111,23 @@ const ContactModel = {
 
     // ✅ FIX: Build phones array
     const phones = [];
-    if (contact.phone) {
-      phones.push({
-        country_code: contact.countryCode || "",
-        phone_number: contact.phone,
-        is_primary: true,
-        is_whatsapp: contact.isWhatsapp || false,
-        is_verified: contact.phoneVerified || false,
-      });
-    }
+if (contact.phone) {
+  phones.push({
+    country_code: contact.countryCode || "",
+    phone_number: contact.phone,
+    is_primary: true,
+    is_whatsapp: contact.isWhatsapp || false,
+    is_verified: contact.phoneVerified || false,
+  });
+}if (contact.phones && Array.isArray(contact.phones)) {
+  phones.push(...contact.phones.map(p => ({
+    country_code: p.countryCode || "",
+    phone_number: p.phoneNumber,  // ⚠️ This could be undefined/empty!
+    is_primary: p.isPrimary || false,
+    is_whatsapp: p.isWhatsapp || false,
+    is_verified: p.isVerified || false,
+  })));
+}
     // Include any additional phones from contact.phones array
     if (contact.phones && Array.isArray(contact.phones)) {
       phones.push(...contact.phones.map(p => ({

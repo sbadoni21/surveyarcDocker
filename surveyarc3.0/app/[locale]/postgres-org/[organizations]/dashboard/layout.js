@@ -20,16 +20,10 @@ export default function Layout({ children }) {
 
   return (
     <div className="flex w-full bg-[#F5F5F5] dark:bg-[#121214]">
-      <TagProvider>
-        <TicketCategoryProvider>
           <OrganisationProvider>
             <UserProvider>
               <ThemeProvider>
-                <TicketTaxonomyProvider>
-                  <TicketProvider>
-                    <SupportGroupProvider>
-                      <SupportTeamProvider>
-                        <BusinessCalendarsProvider>
+                  
                           <ProjectProvider>
                             <QuotaProvider>
                               <Sidebar
@@ -49,16 +43,10 @@ export default function Layout({ children }) {
                               </SLAProvider>
                             </QuotaProvider>
                           </ProjectProvider>
-                        </BusinessCalendarsProvider>
-                      </SupportTeamProvider>
-                    </SupportGroupProvider>
-                  </TicketProvider>
-                </TicketTaxonomyProvider>
+            
               </ThemeProvider>
             </UserProvider>
           </OrganisationProvider>
-        </TicketCategoryProvider>
-      </TagProvider>
     </div>
   );
 }

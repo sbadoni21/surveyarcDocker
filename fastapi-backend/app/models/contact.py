@@ -120,3 +120,4 @@ class ContactList(Base):
     deleted_at  = Column(DateTime(timezone=True), nullable=True)
 
     contacts    = relationship("Contact", secondary="list_members", back_populates="lists")
+
