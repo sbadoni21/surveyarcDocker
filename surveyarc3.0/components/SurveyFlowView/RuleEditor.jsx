@@ -133,6 +133,7 @@ export function RuleEditor({
 
       case "number":
       case "rating":
+      case "osat":
       case "opinion_scale":
         return [
           ...base,

@@ -48,7 +48,7 @@ export function calculateAnalytics(questions, responses) {
         cols: matrixCols,
         data: transformed,
       };
-    } else if (qType === "rating") {
+    } else if (qType === "rating" || qType === "osat") {
       const numbers = answersForQuestion.filter((a) => typeof a === "number");
       const counts = {};
       numbers.forEach((n) => {

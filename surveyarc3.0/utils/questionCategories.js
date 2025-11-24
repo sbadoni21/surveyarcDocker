@@ -13,7 +13,7 @@ export const QUESTION_CATEGORIES = {
     "LEGAL",
     "CHECKBOX",
   ],
-  "Rating & Opinion": ["NPS", "OPINION_SCALE", "RATING", "RANKING", "MATRIX"],
+  "Rating & Opinion": ["NPS", "OPINION_SCALE", "RATING", "RANKING", "MATRIX",  "OSAT" ],
   "Text & Media": ["LONG_TEXT", "SHORT_TEXT", "VIDEO"],
   "Data Collection": [
     "NUMBER",

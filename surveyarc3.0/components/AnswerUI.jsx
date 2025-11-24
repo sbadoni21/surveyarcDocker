@@ -10,6 +10,11 @@ import {
   Star,
   Upload,
   GripVertical,
+  Smile,
+  Frown,
+  Meh,
+  SmilePlus,
+  Laugh,
 } from "lucide-react";
 import { useState } from "react";
 import {
@@ -163,6 +168,63 @@ export default function RenderQuestion({
           ))}
         </div>
       );
+
+    case QUESTION_TYPES.OSAT: {
+      const min = config.min || 1;
+      const max = config.max || 5;
+      const scaleLabels = config.labels || {};
+
+      const [hoverValue, setHoverValue] = useState(null);
+
+      return (
+        <div className="flex flex-col items-center gap-3 w-full mt-4">
+          <div className="flex gap-2">
+            {Array.from({ length: max - min + 1 }, (_, i) => {
+              const score = i + min;
+              const activeValue = hoverValue || value;
+
+              return (
+                <button
+                  key={score}
+                  type="button"
+                  onMouseEnter={() => setHoverValue(score)}
+                  onMouseLeave={() => setHoverValue(null)}
+                  onClick={() => onChange(score)}
+                  className="focus:outline-none relative"
+                >
+                  <Star
+                    className={`w-8 h-8 transition-transform transform hover:scale-110 ${
+                      activeValue >= score
+                        ? "text-[color:var(--primary-light)]"
+                        : "text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]"
+                    }`}
+                    fill={activeValue >= score ? "#f97316" : "none"}
+                  />
+
+                  {hoverValue === score && (
+                    <div
+                      className="
+                  absolute -bottom-8 left-1/2 -translate-x-1/2 
+                  px-2 py-1 text-xs rounded-md whitespace-nowrap 
+                  bg-[color:var(--primary-light)] text-white shadow-md
+                "
+                    >
+                      {scaleLabels[score] || ""}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {value && (
+            <div className="text-sm  mt-4 text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
+              {scaleLabels[value] || `Selected: ${value}`}
+            </div>
+          )}
+        </div>
+      );
+    }
 
     case QUESTION_TYPES.DROPDOWN:
       return (
@@ -709,9 +771,7 @@ export default function RenderQuestion({
                               }
                               className="hidden peer"
                             />
-                            <div
-                              className="w-6 h-6 rounded border border-[color:var(--secondary-light)] bg-[color:var(--bg-light)] peer-checked:bg-[color:var(--primary-light)] flex items-center justify-center transition-colors duration-200"
-                            >
+                            <div className="w-6 h-6 rounded border border-[color:var(--secondary-light)] bg-[color:var(--bg-light)] peer-checked:bg-[color:var(--primary-light)] flex items-center justify-center transition-colors duration-200">
                               <svg
                                 className={`w-4 h-4 text-[color:var(--text-dark)] ${
                                   isChecked ? "block" : "hidden"

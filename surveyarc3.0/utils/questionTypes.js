@@ -5,7 +5,7 @@ import { MdMailOutline, MdOutlineLocalPhone } from "react-icons/md";
 import { Icon } from "@iconify/react";
 import { IoCaretDown } from "react-icons/io5";
 
-export const  ICONS_MAP = {
+export const ICONS_MAP = {
   // Contact Information
   CONTACT_EMAIL: <MdMailOutline className="text-[#CD7323]" size={22} />,
   CONTACT_PHONE: <MdOutlineLocalPhone className="text-[#CD7323]" size={22} />,
@@ -29,6 +29,14 @@ export const  ICONS_MAP = {
     <Icon
       color="#9F2929"
       icon="material-symbols:timer-10-rounded"
+      width="22"
+      height="22"
+    />
+  ),
+  OSAT: (
+    <Icon
+      color="#9F2929"
+      icon="material-symbols:star-outline-rounded"
       width="22"
       height="22"
     />

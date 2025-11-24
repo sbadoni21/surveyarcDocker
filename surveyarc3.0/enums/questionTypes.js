@@ -16,6 +16,7 @@ const QUESTION_TYPES = {
   RATING: 'rating',
   RANKING: 'ranking',
   MATRIX: 'matrix',
+  OSAT: "osat",
 
   LONG_TEXT: 'long_text',
   SHORT_TEXT: 'short_text',
