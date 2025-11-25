@@ -1,5 +1,5 @@
 # ============================================
-# SINGLE-ATTEMPT OUTBOX PROCESSOR
+# FIXED OUTBOX PROCESSOR WITH HEALTH CHECKS
 # app/services/outbox_processor_single.py
 # ============================================
 
@@ -11,16 +11,14 @@ import httpx
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
-from sqlalchemy import and_, or_, cast, DateTime
+from sqlalchemy import and_, or_
 from typing import Optional
-from enum import Enum
 
 from ..db import SessionLocal
 from ..models.outbox import Outbox
 from ..models.campaigns import (
     Campaign, 
     CampaignResult, 
-    CampaignChannel, 
     RecipientStatus,
     CampaignStatus
 )
@@ -35,19 +33,65 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-MAIL_RELAY_URL = os.getenv("MAIL_RELAY_URL", "http://localhost:4001")
-MAIL_API_TOKEN = os.getenv("MAIL_API_TOKEN", "supersecrettoken")
+MAIL_RELAY_URL = "http://localhost:4001"
+MAIL_API_TOKEN =  "supersecrettoken"
 UTC = timezone.utc
 
-# ✅ SINGLE ATTEMPT ONLY - NO RETRIES
-MAX_RETRY_ATTEMPTS = 0  # Changed from 2 to 0
+MAX_RETRY_ATTEMPTS = 0  # Single attempt only
 PROCESSING_TIMEOUT_MINUTES = 10
+HEALTH_CHECK_INTERVAL = 30  # Check health every 30 seconds
 
 consecutive_errors = 0
 is_processing = False
+last_health_check = None
+relay_is_healthy = False
 
 logger.info(f"📧 Mail Relay URL: {MAIL_RELAY_URL}")
-logger.info(f"🎯 SINGLE ATTEMPT MODE - No retries, move to next message")
+logger.info(f"🎯 SINGLE ATTEMPT MODE - No retries")
+
+
+# ============================================
+# HEALTH CHECK
+# ============================================
+
+async def check_relay_health() -> bool:
+    """Check if mail relay is accessible"""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            # Try to reach the relay service (you may need to adjust endpoint)
+            response = await client.get(
+                f"{MAIL_RELAY_URL}/health",
+                headers={"Authorization": f"Bearer {MAIL_API_TOKEN}"} if MAIL_API_TOKEN else {}
+            )
+            return response.status_code == 200
+    except Exception as e:
+        logger.warning(f"⚠️  Mail relay health check failed: {e}")
+        return False
+
+
+def should_check_health() -> bool:
+    """Check if we should run health check"""
+    global last_health_check
+    if last_health_check is None:
+        return True
+    
+    elapsed = (datetime.now(UTC) - last_health_check).total_seconds()
+    return elapsed >= HEALTH_CHECK_INTERVAL
+
+
+async def update_relay_health():
+    """Update relay health status"""
+    global relay_is_healthy, last_health_check
+    
+    relay_is_healthy = await check_relay_health()
+    last_health_check = datetime.now(UTC)
+    
+    if relay_is_healthy:
+        logger.info("✅ Mail relay is healthy")
+    else:
+        logger.error("❌ Mail relay is NOT reachable!")
+    
+    return relay_is_healthy
 
 
 # ============================================
@@ -59,11 +103,13 @@ class ProcessingResult:
         self,
         success: bool,
         message_id: Optional[str] = None,
-        error: Optional[str] = None
+        error: Optional[str] = None,
+        should_skip: bool = False
     ):
         self.success = success
         self.message_id = message_id
         self.error = error
+        self.should_skip = should_skip  # If True, don't mark as processed
 
 
 # ============================================
@@ -71,7 +117,7 @@ class ProcessingResult:
 # ============================================
 
 async def send_to_mail_relay(kind: str, payload: dict) -> dict:
-    """Send message to mail relay service - single attempt"""
+    """Send message to mail relay service"""
     try:
         headers = {"Content-Type": "application/json"}
         
@@ -94,6 +140,12 @@ async def send_to_mail_relay(kind: str, payload: dict) -> dict:
             logger.info(f"✅ Mail sent successfully: {message_id}")
             return result
             
+    except httpx.ConnectError as e:
+        # Connection failed - relay might be down
+        error_msg = f"Connection failed: {str(e)[:100]}"
+        logger.error(f"🔌 {error_msg} - Mail relay may be down!")
+        raise ConnectionError(error_msg) from e
+        
     except httpx.HTTPStatusError as e:
         error_msg = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
         logger.error(f"❌ {error_msg}")
@@ -101,12 +153,7 @@ async def send_to_mail_relay(kind: str, payload: dict) -> dict:
         
     except httpx.TimeoutException as e:
         error_msg = "Request timeout (30s)"
-        logger.error(f"❌ {error_msg}")
-        raise Exception(error_msg) from e
-        
-    except httpx.NetworkError as e:
-        error_msg = f"Network error: {str(e)[:100]}"
-        logger.error(f"❌ {error_msg}")
+        logger.error(f"⏱️  {error_msg}")
         raise Exception(error_msg) from e
         
     except Exception as e:
@@ -199,7 +246,7 @@ def update_campaign_result_failed(
         result.status = RecipientStatus.failed
         result.error = error_message[:500]
         result.failed_at = datetime.now(UTC)
-        result.retry_count = 1  # Always 1 since we only try once
+        result.retry_count = 1
         
         logger.debug(f"❌ Result {result_id} → failed")
         
@@ -256,21 +303,20 @@ def check_campaign_completion(session: Session, campaign_id: str):
         ).count()
         
         logger.debug(
-            f"📊 Campaign {campaign_id}: {pending_count} pending/queued results remaining"
+            f"📊 Campaign {campaign_id}: {pending_count} pending/queued results"
         )
         
         if pending_count == 0:
             campaign.status = CampaignStatus.completed
             campaign.completed_at = datetime.now(UTC)
             
-            total_results = session.query(CampaignResult).filter(
+            total = session.query(CampaignResult).filter(
                 CampaignResult.campaign_id == campaign_id
             ).count()
             
             logger.info(
                 f"🎉 Campaign {campaign_id} COMPLETED! "
-                f"Total: {total_results}, "
-                f"Sent: {campaign.sent_count or 0}, "
+                f"Total: {total}, "
                 f"Delivered: {campaign.delivered_count or 0}, "
                 f"Failed: {campaign.failed_count or 0}"
             )
@@ -278,23 +324,23 @@ def check_campaign_completion(session: Session, campaign_id: str):
             session.flush()
     
     except Exception as e:
-        logger.error(f"❌ Error checking campaign completion: {e}", exc_info=True)
+        logger.error(f"❌ Error checking completion: {e}", exc_info=True)
 
 
 # ============================================
-# CORE PROCESSING LOGIC - SINGLE ATTEMPT
+# CORE PROCESSING - WITH CONNECTION HANDLING
 # ============================================
 
 def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult:
     """
-    Process a single outbox message - ONE ATTEMPT ONLY
-    Always marks message as processed (sent_at set) regardless of outcome
+    Process outbox message - single attempt
+    Returns should_skip=True if relay is down (don't mark as processed)
     """
     try:
         session.refresh(outbox)
         
         if outbox.sent_at is not None:
-            logger.info(f"⏭️  Outbox #{outbox.id} already processed - skipping")
+            logger.info(f"⏭️  Outbox #{outbox.id} already processed")
             return ProcessingResult(success=True, message_id="already-processed")
         
         logger.info(f"📤 Processing outbox #{outbox.id}: {outbox.kind}")
@@ -302,7 +348,6 @@ def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult
         import asyncio
         
         try:
-            # ✅ ATTEMPT TO SEND - ONLY ONCE
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             result = loop.run_until_complete(
@@ -313,7 +358,7 @@ def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult
             message_id = result.get("messageId", "unknown")
             sent_timestamp = datetime.now(UTC)
             
-            # ✅ MARK AS SENT
+            # ✅ SUCCESS - Mark as sent
             outbox.sent_at = sent_timestamp
             
             if not hasattr(outbox, 'meta_data') or outbox.meta_data is None:
@@ -324,21 +369,18 @@ def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult
             outbox.meta_data["sent_timestamp"] = sent_timestamp.isoformat()
             
             flag_modified(outbox, "meta_data")
-            
             session.commit()
-            logger.info(f"✅ Outbox #{outbox.id} sent successfully: {message_id}")
             
-            # Update campaign if applicable
+            logger.info(f"✅ Outbox #{outbox.id} sent: {message_id}")
+            
+            # Update campaign
             if outbox.kind.startswith("campaign."):
                 result_id = outbox.payload.get("result_id")
                 campaign_id = outbox.payload.get("campaign_id")
                 
                 if result_id:
                     update_campaign_result_sent(
-                        session,
-                        result_id,
-                        sent_timestamp,
-                        message_id
+                        session, result_id, sent_timestamp, message_id
                     )
                 
                 if campaign_id:
@@ -348,13 +390,29 @@ def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult
             
             return ProcessingResult(success=True, message_id=message_id)
             
-        except Exception as e:
-            # ✅ FAILED - BUT MARK AS PROCESSED (NO RETRY)
+        except ConnectionError as e:
+            # 🔌 CONNECTION FAILED - Don't mark as processed, skip for now
             error_msg = str(e)[:500]
+            logger.error(
+                f"🔌 Outbox #{outbox.id} - Connection failed: {error_msg}"
+            )
+            logger.warning("⚠️  Message NOT marked as processed - will retry later")
             
-            logger.error(f"❌ Outbox #{outbox.id} failed: {error_msg} - SKIPPING (no retry)")
+            # DON'T commit, DON'T set sent_at
+            session.rollback()
             
-            # Mark as sent (processed) even though it failed
+            return ProcessingResult(
+                success=False,
+                error=error_msg,
+                should_skip=True  # Skip this batch, try again later
+            )
+            
+        except Exception as e:
+            # ❌ OTHER ERROR - Mark as permanently failed
+            error_msg = str(e)[:500]
+            logger.error(f"❌ Outbox #{outbox.id} failed: {error_msg}")
+            
+            # Mark as processed (failed)
             outbox.sent_at = datetime.now(UTC)
             
             if not hasattr(outbox, 'meta_data') or outbox.meta_data is None:
@@ -367,7 +425,7 @@ def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult
             flag_modified(outbox, "meta_data")
             session.commit()
             
-            # Update campaign result as failed
+            # Update campaign as failed
             if outbox.kind.startswith("campaign."):
                 result_id = outbox.payload.get("result_id")
                 campaign_id = outbox.payload.get("campaign_id")
@@ -383,18 +441,22 @@ def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult
             return ProcessingResult(success=False, error=error_msg)
     
     except Exception as e:
-        logger.error(f"❌ Unexpected error in outbox #{outbox.id}: {e}", exc_info=True)
+        logger.error(f"❌ Unexpected error: {e}", exc_info=True)
         session.rollback()
-        return ProcessingResult(success=False, error=f"Unexpected: {str(e)[:200]}")
+        return ProcessingResult(
+            success=False,
+            error=f"Unexpected: {str(e)[:200]}",
+            should_skip=True
+        )
 
 
 # ============================================
-# BATCH PROCESSING
+# BATCH PROCESSING WITH HEALTH CHECKS
 # ============================================
 
 def process_batch(batch_size: int = 25) -> dict:
-    """Process a batch of outbox messages - single attempt each"""
-    global consecutive_errors, is_processing
+    """Process batch with health checking"""
+    global consecutive_errors, is_processing, relay_is_healthy
     
     if is_processing:
         return {"skipped": True, "reason": "already_processing"}
@@ -403,6 +465,25 @@ def process_batch(batch_size: int = 25) -> dict:
     session = None
     
     try:
+        # Check relay health periodically
+        if should_check_health():
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(update_relay_health())
+            loop.close()
+        
+        # If relay is known to be down, skip processing
+        if not relay_is_healthy:
+            logger.warning("⚠️  Skipping batch - relay is down")
+            return {
+                "skipped": True,
+                "reason": "relay_down",
+                "processed": 0,
+                "success": 0,
+                "failed": 0
+            }
+        
         session = SessionLocal()
         
         messages = session.query(Outbox).filter(
@@ -417,47 +498,46 @@ def process_batch(batch_size: int = 25) -> dict:
         
         success_count = 0
         failed_count = 0
+        connection_errors = 0
         
         for msg in messages:
             try:
                 result = process_outbox_message(session, msg)
                 
-                if result.success:
+                if result.should_skip:
+                    # Connection error - stop processing this batch
+                    connection_errors += 1
+                    if connection_errors >= 3:
+                        logger.error("🔌 Multiple connection failures - stopping batch")
+                        relay_is_healthy = False
+                        break
+                elif result.success:
                     success_count += 1
                 else:
                     failed_count += 1
                 
             except Exception as e:
                 session.rollback()
-                logger.error(f"❌ Error processing message #{msg.id}: {e}", exc_info=True)
+                logger.error(f"❌ Error processing #{msg.id}: {e}", exc_info=True)
                 failed_count += 1
                 session = SessionLocal()
         
         if success_count > 0:
             consecutive_errors = 0
         
-        # Check campaigns for completion
-        check_all_campaigns_for_completion(session)
-        
-        result = {
-            "processed": len(messages),
+        return {
+            "processed": success_count + failed_count,
             "success": success_count,
-            "failed": failed_count
+            "failed": failed_count,
+            "connection_errors": connection_errors
         }
-        
-        return result
         
     except Exception as e:
         consecutive_errors += 1
-        
-        if consecutive_errors >= 10:
-            logger.critical(
-                f"🚨 CRITICAL: {consecutive_errors} consecutive errors! "
-                f"Outbox processor may need restart"
-            )
+        logger.error(f"❌ Batch error: {e}", exc_info=True)
         
         return {
-            "error": str(e), 
+            "error": str(e),
             "consecutive_errors": consecutive_errors,
             "processed": 0,
             "success": 0,
@@ -470,123 +550,66 @@ def process_batch(batch_size: int = 25) -> dict:
             session.close()
 
 
-def check_all_campaigns_for_completion(session: Session):
-    """Check all campaigns in 'sending' status and complete them if done"""
-    try:
-        sending_campaigns = session.query(Campaign).filter(
-            Campaign.status == CampaignStatus.sending
-        ).all()
-        
-        if not sending_campaigns:
-            return
-        
-        logger.debug(f"🔍 Checking {len(sending_campaigns)} sending campaign(s)...")
-        
-        completed_count = 0
-        
-        for campaign in sending_campaigns:
-            try:
-                pending_count = session.query(CampaignResult).filter(
-                    CampaignResult.campaign_id == campaign.campaign_id,
-                    CampaignResult.status.in_([
-                        RecipientStatus.queued,
-                        RecipientStatus.pending
-                    ])
-                ).count()
-                
-                if pending_count == 0:
-                    campaign.status = CampaignStatus.completed
-                    campaign.completed_at = datetime.now(UTC)
-                    completed_count += 1
-                    
-                    total_results = session.query(CampaignResult).filter(
-                        CampaignResult.campaign_id == campaign.campaign_id
-                    ).count()
-                    
-                    logger.info(
-                        f"🎉 Campaign {campaign.campaign_id} COMPLETED! "
-                        f"Total: {total_results}, "
-                        f"Sent: {campaign.sent_count or 0}, "
-                        f"Failed: {campaign.failed_count or 0}"
-                    )
-            
-            except Exception as e:
-                logger.error(f"❌ Error checking campaign {campaign.campaign_id}: {e}")
-        
-        if completed_count > 0:
-            session.flush()
-            logger.info(f"✅ Marked {completed_count} campaign(s) as completed")
-    
-    except Exception as e:
-        logger.error(f"❌ Error in check_all_campaigns_for_completion: {e}", exc_info=True)
-
-
 # ============================================
-# MAIN PROCESSOR LOOP
+# MAIN LOOP
 # ============================================
 
 def run_forever(poll_interval: float = 2.0, batch_size: int = 25):
-    """Run outbox processor continuously - single attempt mode"""
+    """Run processor with health monitoring"""
     global consecutive_errors
     
-    logger.info("🚀 Single-attempt outbox processor started")
+    logger.info("🚀 Outbox processor started with health checks")
     logger.info(f"   ⚙️  Batch size: {batch_size}")
     logger.info(f"   ⏱️  Poll interval: {poll_interval}s")
-    logger.info(f"   🎯 SINGLE ATTEMPT MODE - No retries")
+    logger.info(f"   🏥 Health check interval: {HEALTH_CHECK_INTERVAL}s")
     
     iteration = 0
-    max_consecutive_errors = 10
     
     while True:
         try:
             iteration += 1
-            
             result = process_batch(batch_size=batch_size)
             
-            if "error" in result:
-                logger.error(
-                    f"⚠️  Consecutive errors: "
-                    f"{consecutive_errors}/{max_consecutive_errors}"
-                )
-                
-                if consecutive_errors >= max_consecutive_errors:
-                    logger.critical("🚨 Too many errors, backing off...")
-                    time.sleep(poll_interval * 5)
-                    consecutive_errors = 0
-            else:
-                consecutive_errors = 0
+            if result.get("skipped"):
+                reason = result.get("reason", "unknown")
+                if reason == "relay_down":
+                    logger.warning(
+                        f"[#{iteration}] ⏸️  Paused - waiting for relay to recover"
+                    )
+                    time.sleep(poll_interval * 3)  # Wait longer
+                continue
             
             if result.get("processed", 0) > 0:
                 logger.info(
                     f"[#{iteration}] "
                     f"✅ {result['success']} sent | "
-                    f"❌ {result['failed']} failed (skipped)"
+                    f"❌ {result['failed']} failed"
                 )
+                
+                if result.get("connection_errors", 0) > 0:
+                    logger.warning(
+                        f"   🔌 {result['connection_errors']} connection errors"
+                    )
             else:
-                logger.debug(f"[#{iteration}] Queue empty, sleeping...")
+                logger.debug(f"[#{iteration}] Queue empty")
         
         except KeyboardInterrupt:
-            logger.info("🛑 Gracefully shutting down...")
+            logger.info("🛑 Shutting down...")
             break
         
         except Exception as e:
             consecutive_errors += 1
             logger.error(f"❌ Critical error: {e}", exc_info=True)
-            
-            if consecutive_errors >= max_consecutive_errors:
-                logger.critical("🚨 Too many errors, sleeping 30s...")
-                time.sleep(30)
-                consecutive_errors = 0
         
         time.sleep(poll_interval)
 
 
 # ============================================
-# STATISTICS & MONITORING
+# STATS
 # ============================================
 
 def get_outbox_stats() -> dict:
-    """Get comprehensive outbox statistics"""
+    """Get outbox statistics"""
     import sqlalchemy as sa
     
     with SessionLocal() as session:
@@ -622,5 +645,10 @@ def get_outbox_stats() -> dict:
             "sent": sent,
             "failed": failed,
             "total": pending + sent + failed,
+            "relay_healthy": relay_is_healthy,
             "timestamp": datetime.now(UTC).isoformat()
         }
+
+
+if __name__ == "__main__":
+    run_forever()

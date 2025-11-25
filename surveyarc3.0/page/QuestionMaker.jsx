@@ -412,25 +412,35 @@ export default function Dist() {
   useEffect(() => {
     setShowTypePopup(false);
   }, []);
+const handleToggleStatus = async () => {
+  try {
+    const newStatus = survey.status === "test" ? "published" : "test";
+
+    await updateSurvey(orgId, surveyId, { status: newStatus });
+
+    // 🔥 After backend saves, fetch updated survey
+    const refreshed = await getSurvey(surveyId);
+    setSurvey(normalizeSurveyFromApi(refreshed));
+  } catch (err) {
+    console.error("Failed to update status", err);
+  }
+};
 
   if (loading) return <Loading />;
-
   return (
     <div className="flex flex-col min-h-screen">
       <TopTabsNavbar activeTab={activeTab} setActiveTab={handleSetActiveTab} />
 <Button
-  onClick={() => {
-    const newStatus = survey.status === "test" ? "published" : "test";
-    updateSurvey(orgId, survey.surveyId, { status: newStatus });
-  }}
+  onClick={handleToggleStatus}
   disabled={loading}
   variant="outlined"
   size="small"
 >
-  {survey.status === "test"
+  {survey?.status === "test"
     ? "Change Status to Published"
     : "Change Status to Test"}
 </Button>
+
 
       <div className="flex-1 overflow-auto bg-[#f5f5f5] dark:bg-[#121214] p-4">
         {activeTab === "questions" && (
