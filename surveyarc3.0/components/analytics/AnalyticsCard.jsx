@@ -4,7 +4,6 @@ import { Divider, Paper, Typography } from "@mui/material";
 
 export const AnalyticsCard = ({ data }) => {
   const { label, type, data: chartData, responseCount } = data;
-  console.log(data)
   return (
     <Paper
       elevation={3}
@@ -35,6 +34,10 @@ export const AnalyticsCard = ({ data }) => {
       ) : null}
 
       {type === "rating" && chartData ? (
+        <RatingBarChart data={chartData} />
+      ) : null}
+
+      {type === "osat" && chartData ? (
         <RatingBarChart data={chartData} />
       ) : null}
 

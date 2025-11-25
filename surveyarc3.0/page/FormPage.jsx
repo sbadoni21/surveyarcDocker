@@ -46,7 +46,7 @@ export default function FormPage() {
   const { saveResponse } = useResponse();
   const { updateContact } = useContacts();
   const { organisation, update } = useOrganisation();
-  const { getById } = useTheme(); 
+  const { getById } = useTheme();
 
   const shuffleArray = (array) => {
     const shuffled = [...array];
@@ -89,7 +89,7 @@ export default function FormPage() {
 
   useEffect(() => {
     const init = async () => {
-      if (!orgId || !surveyId ) return;
+      if (!orgId || !surveyId) return;
 
       let completedSurveys = [];
       try {
@@ -160,11 +160,7 @@ export default function FormPage() {
           }
         };
 
-        await Promise.all([
-          fetchSurveyData(),
-          fetchQuestions(),
-          fetchRules(),
-        ]);
+        await Promise.all([fetchSurveyData(), fetchQuestions(), fetchRules()]);
       } catch (err) {
         console.error(err);
         router.push("/404");
@@ -211,6 +207,7 @@ export default function FormPage() {
 
     try {
       setStatus("Saving response…");
+      const surveyStatus = survey?.status;
       const endTime = new Date();
       const totalMs = endTime - startTime;
       const totalMinutes = Math.floor(totalMs / 60000);
@@ -219,7 +216,7 @@ export default function FormPage() {
 
       const responseData = {
         respondent_id: respondentId,
-        status: "completed",
+        status: surveyStatus === "test" ? "test_completed" : "completed",
         meta_data: {
           orgId,
           projectId,

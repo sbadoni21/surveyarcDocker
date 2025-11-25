@@ -502,7 +502,7 @@ export default function Dist() {
         {activeTab === "demo" && <SurveyDemoPage />}
         {activeTab === "distribution" && <DistributionPage />}
         {activeTab === "campaign" && <CampaignPage />}
-        {activeTab === "responses" && <SurveyResponsesPage />}
+        {activeTab === "responses" && <SurveyResponsesPage survey={survey} />}
         {activeTab === "theme" && <ThemeManager />}
       </div>
     </div>

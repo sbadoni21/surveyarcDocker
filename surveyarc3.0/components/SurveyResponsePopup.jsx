@@ -1,15 +1,12 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
-
+import React, { useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { calculateAnalytics } from "@/utils/analytics/calculateAnalytics";
 import { formatAnswer } from "@/utils/analytics/formatAnswer";
 import { AnalyticsCard } from "./analytics/AnalyticsCard";
 import { useQuestion } from "@/providers/questionPProvider";
 import { useResponse } from "@/providers/postGresPorviders/responsePProvider";
-import { findDuplicateSurveys } from "@/utils/analytics/duplicateDetection";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { Button } from "@mui/material";
@@ -26,29 +23,36 @@ const ANALYTICS_SUPPORTED_TYPES = new Set([
   "opinion_scale",
   "nps",
   "ranking",
+  "osat",
   "matrix",
   "number",
 ]);
 
-const SurveyResponsesPage = () => {
+const SurveyResponsesPage = ({survey}) => {
   const router = usePathname();
   const [tab, setTab] = useState(0);
   const [analytics, setAnalytics] = useState({});
-
   const { questions } = useQuestion();
   const { responses, deleteResponse } = useResponse();
+  const surveyStatus = survey?.status;
+  const filteredResponses = useMemo(() => {
+    if (!responses) return [];
+    if (surveyStatus === "test") {
+      return responses.filter((r) => r.status === "test_completed");
+    }
+    return responses;
+  }, [responses, surveyStatus]);
 
   useEffect(() => {
-    if (questions.length > 0 && responses.length > 0) {
-      const analyticsData = calculateAnalytics(questions, responses);
+    if (questions.length > 0 && filteredResponses.length > 0) {
+      const analyticsData = calculateAnalytics(questions, filteredResponses);
       setAnalytics(analyticsData);
     } else {
       setAnalytics({});
     }
-  }, [questions, responses]);
+  }, [questions, filteredResponses]);
 
   const surveyId = router.split("/")[7];
-  console.log(responses);
   const downloadPDF = async () => {
     const element = document.getElementById("analytics-page");
     const canvas = await html2canvas(element, {
@@ -112,8 +116,8 @@ const SurveyResponsesPage = () => {
 
           <div className="ml-auto">
             <span className="text-xl text-gray-600">
-              {responses.length}{" "}
-              {responses.length === 1 ? "response" : "responses"}
+              {filteredResponses.length}{" "}
+              {filteredResponses.length === 1 ? "response" : "responses"}
             </span>
           </div>
         </div>
@@ -143,12 +147,12 @@ const SurveyResponsesPage = () => {
           </div>
         </div>
       </div>
-<ExportSurveyButton responses ={responses} questions={questions}  />
+      <ExportSurveyButton responses={filteredResponses} questions={questions} />
       {/* Content Section */}
       <div className="min-h-[60vh]">
         {tab === 0 && (
           <>
-            {responses.length === 0 ? (
+            {filteredResponses.length === 0 ? (
               <div className="flex items-center justify-center min-h-[400px]">
                 <div className="text-center">
                   <svg
@@ -175,7 +179,7 @@ const SurveyResponsesPage = () => {
               </div>
             ) : (
               <div className="space-y-6">
-                {responses.map((response, idx) => (
+                {filteredResponses.map((response, idx) => (
                   <div
                     key={idx}
                     className="bg-white border border-gray-200 rounded-lg overflow-hidden"
