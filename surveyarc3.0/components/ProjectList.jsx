@@ -669,6 +669,8 @@ export default function ProjectsList({
                         <Typography
                           variant="body2"
                           fontWeight={600}
+                            onClick={() =>handleEnter(effective)}
+
                           sx={{ color: allowed ? 'text.primary' : 'text.disabled' }}
                         >
                           {effective.name}
