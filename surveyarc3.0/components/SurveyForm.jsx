@@ -297,6 +297,7 @@ export default function SurveyForm({
         setSubmitting(true);
         try {
           await handleSubmit(answers);
+          setSubmitting(false);
         } catch (err) {
           console.error("Submit error:", err);
           setSubmitting(false);
@@ -390,6 +391,7 @@ export default function SurveyForm({
         setSubmitting(true);
         try {
           await handleSubmit(answers);
+          setSubmitting(false);
         } catch (err) {
           console.error("Submit error:", err);
           setSubmitting(false); // allow retry
@@ -584,6 +586,7 @@ export default function SurveyForm({
                   setSubmitting(true);
                   try {
                     await handleSubmit(answers);
+                    setSubmitting(false);
                   } catch (err) {
                     console.error("Submit failed:", err);
                     setSubmitting(false);

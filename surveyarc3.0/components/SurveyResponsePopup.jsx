@@ -28,7 +28,7 @@ const ANALYTICS_SUPPORTED_TYPES = new Set([
   "number",
 ]);
 
-const SurveyResponsesPage = ({survey}) => {
+const SurveyResponsesPage = ({ survey }) => {
   const router = usePathname();
   const [tab, setTab] = useState(0);
   const [analytics, setAnalytics] = useState({});
@@ -37,10 +37,12 @@ const SurveyResponsesPage = ({survey}) => {
   const surveyStatus = survey?.status;
   const filteredResponses = useMemo(() => {
     if (!responses) return [];
+
     if (surveyStatus === "test") {
       return responses.filter((r) => r.status === "test_completed");
     }
-    return responses;
+
+    return responses.filter((r) => r.status !== "test_completed");
   }, [responses, surveyStatus]);
 
   useEffect(() => {
