@@ -1,19 +1,16 @@
-
-
-// ==================== REACT COMPONENT ====================
 // components/ExportSurveyButton.jsx
 'use client';
 
 import React, { useState } from 'react';
 
 import { exportSurveyToExcel } from '@/utils/exportToExcel';
-import { useResponse } from '@/providers/postGresPorviders/responsePProvider';
-import { useQuestion } from '@/providers/questionPProvider';
 
 const ExportSurveyButton = ({ surveyName, responses, questions }) => {
   const [exporting, setExporting] = useState(false);
 
+
   const handleExport = async () => {
+    // Validate data
     if (!responses || responses.length === 0) {
       alert('No responses to export');
       return;
@@ -27,32 +24,72 @@ const ExportSurveyButton = ({ surveyName, responses, questions }) => {
     setExporting(true);
 
     try {
+      // Debug: Log the raw data
+      console.log('Raw responses:', responses);
+      console.log('First response structure:', responses[0]);
+      
+      // Transform responses to match expected format
+      const transformedResponses = responses.map(response => {
+        // Get answers from any possible field
+        const answers = response.answers || response.answersBlob || response.answers_blob || [];
+        
+        console.log('Response ID:', response.responseId || response.response_id);
+        console.log('Answers found:', answers.length);
+        
+        return {
+          response_id: response.responseId || response.response_id,
+          respondent_id: response.respondentId || response.respondent_id,
+          status: response.status,
+          started_at: response.startedAt || response.started_at,
+          completed_at: response.completedAt || response.completed_at,
+          // Important: use the correct field name
+          answers: answers
+        };
+      });
+
+      // Transform questions to match expected format
+      const transformedQuestions = questions.map(question => ({
+        question_id: question.questionId || question.question_id,
+        label: question.label,
+        type: question.type,
+        description: question.description || '',
+        required: question.required,
+        config: question.config || {}
+      }));
+
+      console.log('Transformed responses:', transformedResponses);
+      console.log('Transformed questions:', transformedQuestions);
+
       const result = await exportSurveyToExcel(
-        responses, 
-        questions, 
+        transformedResponses,
+        transformedQuestions,
         surveyName || 'Survey'
       );
 
       if (result.success) {
-        console.log(`Exported: ${result.fileName}`);
+        console.log(`✅ Exported: ${result.fileName}`);
+        alert(`Successfully exported ${result.fileName}`);
       } else {
         alert(`Export failed: ${result.error}`);
       }
     } catch (error) {
       console.error('Export error:', error);
-      alert('Failed to export data');
+      alert('Failed to export data: ' + error.message);
     } finally {
       setExporting(false);
     }
   };
 
+  const responseCount = responses?.length || 0;
+
   return (
     <button
       onClick={handleExport}
-      disabled={exporting}
+      disabled={exporting || responseCount === 0}
       className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 
                  disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors
-                 flex items-center gap-2"
+                 flex items-center gap-2 font-medium shadow-sm"
+      title={responseCount === 0 ? 'No responses to export' : `Export ${responseCount} responses`}
     >
       {exporting ? (
         <>
@@ -90,6 +127,11 @@ const ExportSurveyButton = ({ surveyName, responses, questions }) => {
             />
           </svg>
           Export to Excel
+          {responseCount > 0 && (
+            <span className="text-xs bg-green-800 px-2 py-0.5 rounded-full">
+              {responseCount}
+            </span>
+          )}
         </>
       )}
     </button>
@@ -97,4 +139,3 @@ const ExportSurveyButton = ({ surveyName, responses, questions }) => {
 };
 
 export default ExportSurveyButton;
-
