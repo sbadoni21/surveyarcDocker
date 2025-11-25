@@ -591,21 +591,37 @@ export default function RenderQuestion({
       const cols = Array.from({ length: max - min + 1 }, (_, i) => i + min);
       const neutralIdx = Math.round((min + max) / 2);
 
-      // sizes for mobile (px); keep tap target >=44px
-      const BTN = 44; // button size
-      const GAP = 8; // gap between buttons
-      const trackMinWidth = cols.length * BTN + (cols.length - 1) * GAP; // prevents wrap
+      // color logic (same as builder UI)
+      const isDetractor = (n) => n >= 0 && n <= 5;
+      const isPassive = (n) => n >= 6 && n <= 8;
+      const isPromoter = (n) => n >= 9 && n <= 10;
+
+      const baseShade = (n) =>
+        isDetractor(n)
+          ? "bg-red-100 text-red-900 dark:bg-red-950/40 dark:text-red-200"
+          : isPassive(n)
+          ? "bg-yellow-100 text-yellow-900 dark:bg-yellow-950/40 dark:text-yellow-200"
+          : "bg-emerald-100 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200";
+
+      const activeShade = (n) =>
+        isDetractor(n)
+          ? "bg-red-500 text-white"
+          : isPassive(n)
+          ? "bg-yellow-500 text-white"
+          : "bg-emerald-500 text-white";
+
+      const BTN = 44;
+      const GAP = 8;
+      const trackMinWidth = cols.length * BTN + (cols.length - 1) * GAP;
 
       return (
-        <div className="text-center space-y-2 sm:space-y-3">
-          {/* horizontal scroll container on mobile */}
+        <div className="text-center space-y-3">
           <div className="w-full overflow-x-auto scrollbar-hide">
             <div className="mx-auto sm:max-w-xl">
-              {/* buttons grid — fixed minWidth so it doesn't wrap */}
               <div
                 role="radiogroup"
                 aria-label="Net Promoter Score"
-                className="grid sm:gap-2"
+                className="grid"
                 style={{
                   gridTemplateColumns: `repeat(${cols.length}, ${BTN}px)`,
                   columnGap: GAP,
@@ -613,32 +629,33 @@ export default function RenderQuestion({
                   justifyContent: "center",
                 }}
               >
-                {cols.map((score) => (
-                  <button
-                    key={score}
-                    type="button"
-                    role="radio"
-                    aria-checked={value === score}
-                    aria-label={`Score ${score}`}
-                    onClick={() => onChange(score)}
-                    className={[
-                      "rounded-full font-semibold transition-colors outline-none",
-                      "focus:outline-none focus:ring-2 focus:ring-[color:var(--primary-light)] focus:ring-offset-2 dark:focus:ring-offset-[color:var(--primary-dark)]",
-                      "sm:w-12 sm:h-12 sm:text-sm",
-                      value === score
-                        ? "bg-[color:var(--primary-light)] text-[color:var(--text-light)]"
-                        : "bg-[color:var(--bg-light)] dark:bg-[color:var(--bg-dark)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] hover:bg-[color:var(--primary-light)] dark:hover:bg-[color:var(--primary-dark)]",
-                    ].join(" ")}
-                    style={{ width: BTN, height: BTN, fontSize: 12 }}
-                  >
-                    {score}
-                  </button>
-                ))}
+                {cols.map((score) => {
+                  const selected = value === score;
+                  return (
+                    <button
+                      key={score}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      aria-label={`Score ${score}`}
+                      onClick={() => onChange(score)}
+                      className={[
+                        "rounded-full font-semibold transition-colors outline-none",
+                        "focus:ring-2 focus:ring-offset-2",
+                        selected ? activeShade(score) : baseShade(score),
+                        "hover:brightness-105",
+                      ].join(" ")}
+                      style={{ width: BTN, height: BTN, fontSize: 12 }}
+                    >
+                      {score}
+                    </button>
+                  );
+                })}
               </div>
 
-              {/* labels row aligned to 0 / mid / max */}
+              {/* labels */}
               <div
-                className="grid mt-1 sm:mt-2 text-[11px] sm:text-xs text-[color:var(--text-light)] dark:text-[color:var(--primary-dark)]"
+                className="grid mt-2 text-[11px] sm:text-xs text-gray-600 dark:text-gray-300"
                 style={{
                   gridTemplateColumns: `repeat(${cols.length}, ${BTN}px)`,
                   columnGap: GAP,
@@ -653,17 +670,13 @@ export default function RenderQuestion({
                   else if (score === max) text = maxLabel;
 
                   return (
-                    <div key={`lbl-${score}`} className="min-h-[1rem] flex">
+                    <div
+                      key={`lbl-${score}`}
+                      className="min-h-[1rem] flex justify-center"
+                    >
                       {text && (
                         <span
-                          className={[
-                            "whitespace-nowrap",
-                            score === min
-                              ? "ml-0 text-left"
-                              : score === max
-                              ? "mr-0 text-right"
-                              : "mr-0 text-center",
-                          ].join(" ")}
+                          className="whitespace-nowrap"
                           style={{ width: BTN }}
                         >
                           {text}
@@ -676,8 +689,7 @@ export default function RenderQuestion({
             </div>
           </div>
 
-          {/* optional selection helper */}
-          <div className="text-[11px] sm:text-xs text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] h-4">
+          <div className="text-xs text-gray-500 dark:text-gray-400 h-4">
             {value != null ? `Selected: ${value}` : "\u00A0"}
           </div>
         </div>

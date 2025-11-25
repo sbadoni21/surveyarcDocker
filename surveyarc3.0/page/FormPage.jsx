@@ -23,6 +23,7 @@ export default function FormPage() {
   const campaignID = searchParams.get("campaign_id") || null;
   const campaignType = searchParams.get("campaign_type") || null;
   const userKey = searchParams.get("user_id") || null;
+  const contactID = searchParams.get("contact_id") || null;
   const [startTime] = useState(() => new Date());
 
   const platform = useMemo(() => {
@@ -239,8 +240,8 @@ export default function FormPage() {
 
       const savedResponse = await saveResponse(orgId, surveyId, responseData);
 
-      if (userKey) {
-        await updateContact(userKey, {
+      if (contactID) {
+        await updateContact(contactID, {
           surveys: [
             {
               surveyId,
