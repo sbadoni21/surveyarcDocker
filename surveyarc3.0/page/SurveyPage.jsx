@@ -640,7 +640,7 @@ const handleResponseCountClick = async (surveyId) => {
                             <EditIcon fontSize="small" sx={{ mr: 1 }} /> Edit
                             Survey
                           </MenuItem>
-                          {survey.status === "draft" ? (
+    {survey.status !== "published" && (
   <MenuItem
     onClick={() => {
       updateSurvey(orgId, survey.surveyId, { status: "published" });
@@ -649,25 +649,41 @@ const handleResponseCountClick = async (surveyId) => {
   >
     <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Published
   </MenuItem>
-) : survey.status === "published" ? (
+)}
+
+{survey.status !== "draft" && (
+  <MenuItem
+    onClick={() => {
+      updateSurvey(orgId, survey.surveyId, { status: "draft" });
+    }}
+    disabled={loading}
+  >
+    <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Draft
+  </MenuItem>
+)}
+
+{survey.status !== "archived" && (
   <MenuItem
     onClick={() => {
       updateSurvey(orgId, survey.surveyId, { status: "archived" });
     }}
     disabled={loading}
   >
-    <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Archive
+    <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Archived
   </MenuItem>
-) : survey.status === "archived" ? (
+)}
+
+{survey.status !== "test" && (
   <MenuItem
     onClick={() => {
-      updateSurvey(orgId, survey.surveyId, { status: "published" });
+      updateSurvey(orgId, survey.surveyId, { status: "test" });
     }}
     disabled={loading}
   >
-    <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Published
+    <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Test
   </MenuItem>
-) : null}
+)}
+
 
 
                           <MenuItem

@@ -20,6 +20,7 @@ import SurveyFlowView from "@/components/SurveyFlowView";
 import CampaignPage from "./CampaignPage";
 import SurveyResponsesPage from "@/components/SurveyResponsePopup";
 import ThemeManager from "@/components/theme";
+import { Button } from "@mui/material";
 
 export default function Dist() {
   const [selectedType, setSelectedType] = useState(null);
@@ -417,6 +418,19 @@ export default function Dist() {
   return (
     <div className="flex flex-col min-h-screen">
       <TopTabsNavbar activeTab={activeTab} setActiveTab={handleSetActiveTab} />
+<Button
+  onClick={() => {
+    const newStatus = survey.status === "test" ? "published" : "test";
+    updateSurvey(orgId, survey.surveyId, { status: newStatus });
+  }}
+  disabled={loading}
+  variant="outlined"
+  size="small"
+>
+  {survey.status === "test"
+    ? "Change Status to Published"
+    : "Change Status to Test"}
+</Button>
 
       <div className="flex-1 overflow-auto bg-[#f5f5f5] dark:bg-[#121214] p-4">
         {activeTab === "questions" && (
