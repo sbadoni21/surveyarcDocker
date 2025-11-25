@@ -37,7 +37,8 @@ const SurveyResponsesPage = () => {
 
   const { questions } = useQuestion();
   const { responses, deleteResponse } = useResponse();
-
+  console.log(responses)
+  console.log(questions)
   useEffect(() => {
     if (questions.length > 0 && responses.length > 0) {
       const analyticsData = calculateAnalytics(questions, responses);
