@@ -1,6 +1,6 @@
 # ============================================
-# SMART FAIL-SAFE OUTBOX PROCESSOR V3 (CORRECTED)
-# app/services/outbox_processor_v3.py
+# SINGLE-ATTEMPT OUTBOX PROCESSOR
+# app/services/outbox_processor_single.py
 # ============================================
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import and_, or_, cast, DateTime
-from typing import Optional, Tuple
+from typing import Optional
 from enum import Enum
 
 from ..db import SessionLocal
@@ -39,89 +39,31 @@ MAIL_RELAY_URL = os.getenv("MAIL_RELAY_URL", "http://localhost:4001")
 MAIL_API_TOKEN = os.getenv("MAIL_API_TOKEN", "supersecrettoken")
 UTC = timezone.utc
 
-MAX_RETRY_ATTEMPTS = 2
-RETRY_BACKOFF_MINUTES = [5, 15]
+# ✅ SINGLE ATTEMPT ONLY - NO RETRIES
+MAX_RETRY_ATTEMPTS = 0  # Changed from 2 to 0
 PROCESSING_TIMEOUT_MINUTES = 10
-PERMANENT_ERROR_CODES = [400, 401, 403, 404, 422]
-TEMPORARY_ERROR_CODES = [429, 500, 502, 503, 504]
 
-# ✅ FIXED: Initialize global variables
 consecutive_errors = 0
 is_processing = False
 
 logger.info(f"📧 Mail Relay URL: {MAIL_RELAY_URL}")
-logger.info(f"🔄 Smart Retries: {MAX_RETRY_ATTEMPTS} attempts only")
-logger.info(f"⏰ Retry Backoff: {RETRY_BACKOFF_MINUTES} minutes")
+logger.info(f"🎯 SINGLE ATTEMPT MODE - No retries, move to next message")
 
 
 # ============================================
-# ERROR CLASSIFICATION
+# PROCESSING RESULT
 # ============================================
-
-class ErrorType(str, Enum):
-    PERMANENT = "permanent"
-    TEMPORARY = "temporary"
-    UNKNOWN = "unknown"
-
 
 class ProcessingResult:
     def __init__(
         self,
         success: bool,
         message_id: Optional[str] = None,
-        error: Optional[str] = None,
-        error_type: ErrorType = ErrorType.UNKNOWN,
-        should_retry: bool = False
+        error: Optional[str] = None
     ):
         self.success = success
         self.message_id = message_id
         self.error = error
-        self.error_type = error_type
-        self.should_retry = should_retry
-
-
-def classify_error(exception: Exception) -> ErrorType:
-    """Classify error to determine retry strategy"""
-    error_str = str(exception).lower()
-    
-    if isinstance(exception, httpx.HTTPStatusError):
-        status = exception.response.status_code
-        
-        if status in PERMANENT_ERROR_CODES:
-            return ErrorType.PERMANENT
-        
-        if status in TEMPORARY_ERROR_CODES:
-            return ErrorType.TEMPORARY
-        
-        if 500 <= status < 600:
-            return ErrorType.TEMPORARY
-    
-    if isinstance(exception, (
-        httpx.TimeoutException,
-        httpx.NetworkError,
-        httpx.ConnectError,
-        httpx.ReadTimeout,
-        httpx.WriteTimeout,
-        httpx.PoolTimeout
-    )):
-        return ErrorType.TEMPORARY
-    
-    permanent_patterns = [
-        "invalid email", "malformed", "authentication failed",
-        "unauthorized", "forbidden", "not found", "bad request",
-        "validation error"
-    ]
-    if any(pattern in error_str for pattern in permanent_patterns):
-        return ErrorType.PERMANENT
-    
-    temporary_patterns = [
-        "timeout", "connection", "network", "temporary",
-        "rate limit", "service unavailable", "too many requests", "gateway"
-    ]
-    if any(pattern in error_str for pattern in temporary_patterns):
-        return ErrorType.TEMPORARY
-    
-    return ErrorType.UNKNOWN
 
 
 # ============================================
@@ -129,7 +71,7 @@ def classify_error(exception: Exception) -> ErrorType:
 # ============================================
 
 async def send_to_mail_relay(kind: str, payload: dict) -> dict:
-    """Send message to mail relay service"""
+    """Send message to mail relay service - single attempt"""
     try:
         headers = {"Content-Type": "application/json"}
         
@@ -171,39 +113,6 @@ async def send_to_mail_relay(kind: str, payload: dict) -> dict:
         error_msg = f"Unexpected error: {str(e)[:100]}"
         logger.error(f"❌ {error_msg}")
         raise Exception(error_msg) from e
-
-
-# ============================================
-# RETRY LOGIC
-# ============================================
-
-def should_retry_message(outbox: Outbox, error_type: ErrorType) -> Tuple[bool, Optional[datetime]]:
-    """Determine if message should be retried"""
-    # ✅ FIXED: Safely get meta_data
-    meta_data = getattr(outbox, 'meta_data', None) or {}
-    retry_count = meta_data.get("retry_count", 0)
-    
-    if error_type == ErrorType.PERMANENT:
-        logger.info(f"⛔ Permanent error - outbox #{outbox.id} will not retry")
-        return False, None
-    
-    if retry_count >= MAX_RETRY_ATTEMPTS:
-        logger.info(f"⛔ Max retries ({MAX_RETRY_ATTEMPTS}) reached for outbox #{outbox.id}")
-        return False, None
-    
-    if retry_count < len(RETRY_BACKOFF_MINUTES):
-        backoff_minutes = RETRY_BACKOFF_MINUTES[retry_count]
-    else:
-        backoff_minutes = RETRY_BACKOFF_MINUTES[-1]
-    
-    retry_at = datetime.now(UTC) + timedelta(minutes=backoff_minutes)
-    
-    logger.info(
-        f"🔄 Outbox #{outbox.id} will retry in {backoff_minutes}min "
-        f"(attempt {retry_count + 1}/{MAX_RETRY_ATTEMPTS})"
-    )
-    
-    return True, retry_at
 
 
 # ============================================
@@ -273,7 +182,7 @@ def update_campaign_result_failed(
     result_id: str,
     error_message: str
 ):
-    """Update CampaignResult when message permanently fails"""
+    """Update CampaignResult when message fails"""
     try:
         result = session.query(CampaignResult).filter(
             CampaignResult.result_id == result_id
@@ -290,7 +199,7 @@ def update_campaign_result_failed(
         result.status = RecipientStatus.failed
         result.error = error_message[:500]
         result.failed_at = datetime.now(UTC)
-        result.retry_count = (result.retry_count or 0) + 1
+        result.retry_count = 1  # Always 1 since we only try once
         
         logger.debug(f"❌ Result {result_id} → failed")
         
@@ -326,10 +235,7 @@ def update_campaign_result_failed(
 # ============================================
 
 def check_campaign_completion(session: Session, campaign_id: str):
-    """
-    ✅ ENHANCED: Check if campaign should be marked as completed
-    More aggressive completion checking
-    """
+    """Check if campaign should be marked as completed"""
     try:
         campaign = session.query(Campaign).filter(
             Campaign.campaign_id == campaign_id
@@ -338,11 +244,9 @@ def check_campaign_completion(session: Session, campaign_id: str):
         if not campaign:
             return
         
-        # Only check campaigns in "sending" status
         if campaign.status != CampaignStatus.sending:
             return
         
-        # Count remaining pending/queued results
         pending_count = session.query(CampaignResult).filter(
             CampaignResult.campaign_id == campaign_id,
             CampaignResult.status.in_([
@@ -356,11 +260,9 @@ def check_campaign_completion(session: Session, campaign_id: str):
         )
         
         if pending_count == 0:
-            # ✅ All messages processed - mark campaign as completed
             campaign.status = CampaignStatus.completed
             campaign.completed_at = datetime.now(UTC)
             
-            # Calculate final stats
             total_results = session.query(CampaignResult).filter(
                 CampaignResult.campaign_id == campaign_id
             ).count()
@@ -380,76 +282,27 @@ def check_campaign_completion(session: Session, campaign_id: str):
 
 
 # ============================================
-# CORE PROCESSING LOGIC
+# CORE PROCESSING LOGIC - SINGLE ATTEMPT
 # ============================================
 
 def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult:
-    """Process a single outbox message with smart retry logic"""
+    """
+    Process a single outbox message - ONE ATTEMPT ONLY
+    Always marks message as processed (sent_at set) regardless of outcome
+    """
     try:
         session.refresh(outbox)
         
         if outbox.sent_at is not None:
-            logger.info(f"⏭️  Outbox #{outbox.id} already sent - skipping")
-            return ProcessingResult(success=True, message_id="already-sent")
+            logger.info(f"⏭️  Outbox #{outbox.id} already processed - skipping")
+            return ProcessingResult(success=True, message_id="already-processed")
         
-        # ✅ FIXED: Safely check if meta_data attribute exists
-        meta_data = getattr(outbox, 'meta_data', None) or {}
-        
-        # ✅ FIXED: Safely check if meta_data attribute exists
-        meta_data = getattr(outbox, 'meta_data', None) or {}
-        
-        if meta_data:
-            retry_at_str = meta_data.get("retry_at")
-            if retry_at_str:
-                retry_at = datetime.fromisoformat(retry_at_str)
-                if retry_at > datetime.now(UTC):
-                    logger.debug(f"⏰ Outbox #{outbox.id} scheduled for {retry_at}")
-                    return ProcessingResult(
-                        success=False,
-                        should_retry=True,
-                        error="Scheduled for future"
-                    )
-            
-            retry_count = meta_data.get("retry_count", 0)
-            if retry_count >= MAX_RETRY_ATTEMPTS:
-                logger.error(f"⛔ Outbox #{outbox.id} max retries exceeded")
-                
-                outbox.sent_at = datetime.now(UTC)
-                if not hasattr(outbox, 'meta_data'):
-                    outbox.meta_data = {}
-                outbox.meta_data["failed"] = True
-                outbox.meta_data["failure_reason"] = "Max retries exceeded"
-                flag_modified(outbox, "meta_data")
-                
-                if outbox.kind.startswith("campaign."):
-                    result_id = outbox.payload.get("result_id")
-                    campaign_id = outbox.payload.get("campaign_id")
-                    
-                    if result_id:
-                        update_campaign_result_failed(
-                            session,
-                            result_id,
-                            "Max retries exceeded after 2 attempts"
-                        )
-                    
-                    if campaign_id:
-                        check_campaign_completion(session, campaign_id)
-                
-                session.commit()
-                
-                return ProcessingResult(
-                    success=False,
-                    error="Max retries exceeded",
-                    error_type=ErrorType.PERMANENT
-                )
-        
-        # ✅ FIXED: Safely get retry count
-        attempt = (meta_data.get("retry_count", 0) if meta_data else 0) + 1
-        logger.info(f"📤 Processing outbox #{outbox.id} (attempt {attempt}/{MAX_RETRY_ATTEMPTS}): {outbox.kind}")
+        logger.info(f"📤 Processing outbox #{outbox.id}: {outbox.kind}")
         
         import asyncio
         
         try:
+            # ✅ ATTEMPT TO SEND - ONLY ONCE
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             result = loop.run_until_complete(
@@ -460,9 +313,9 @@ def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult
             message_id = result.get("messageId", "unknown")
             sent_timestamp = datetime.now(UTC)
             
+            # ✅ MARK AS SENT
             outbox.sent_at = sent_timestamp
             
-            # ✅ FIXED: Safely handle meta_data attribute
             if not hasattr(outbox, 'meta_data') or outbox.meta_data is None:
                 outbox.meta_data = {}
             
@@ -470,24 +323,12 @@ def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult
             outbox.meta_data["sent_successfully"] = True
             outbox.meta_data["sent_timestamp"] = sent_timestamp.isoformat()
             
-            if "processing_started" in outbox.meta_data:
-                del outbox.meta_data["processing_started"]
-            
             flag_modified(outbox, "meta_data")
             
-            try:
-                session.commit()
-                logger.info(f"✅ Outbox #{outbox.id} committed as sent: {message_id}")
-            except Exception as commit_error:
-                logger.error(f"❌ Failed to commit: {commit_error}")
-                session.rollback()
-                logger.critical(
-                    f"🚨 MESSAGE SENT BUT COMMIT FAILED: "
-                    f"outbox_id={outbox.id}, message_id={message_id}"
-                )
-                raise
+            session.commit()
+            logger.info(f"✅ Outbox #{outbox.id} sent successfully: {message_id}")
             
-            # ✅ ENHANCED: Update campaign and check completion immediately
+            # Update campaign if applicable
             if outbox.kind.startswith("campaign."):
                 result_id = outbox.payload.get("result_id")
                 campaign_id = outbox.payload.get("campaign_id")
@@ -500,112 +341,51 @@ def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult
                         message_id
                     )
                 
-                # ✅ CRITICAL: Check completion after EVERY successful send
                 if campaign_id:
                     check_campaign_completion(session, campaign_id)
                 
                 session.commit()
-                logger.info(f"✅ Outbox #{outbox.id} sent, campaign {campaign_id} checked")
-            else:
-                logger.info(f"✅ Outbox #{outbox.id} sent successfully: {message_id}")
             
             return ProcessingResult(success=True, message_id=message_id)
             
         except Exception as e:
-            error_type = classify_error(e)
+            # ✅ FAILED - BUT MARK AS PROCESSED (NO RETRY)
             error_msg = str(e)[:500]
             
-            logger.error(
-                f"❌ Outbox #{outbox.id} failed: {error_msg} "
-                f"(type: {error_type.value})"
-            )
+            logger.error(f"❌ Outbox #{outbox.id} failed: {error_msg} - SKIPPING (no retry)")
             
-            should_retry, retry_at = should_retry_message(outbox, error_type)
+            # Mark as sent (processed) even though it failed
+            outbox.sent_at = datetime.now(UTC)
             
-            # ✅ FIXED: Safely handle meta_data
             if not hasattr(outbox, 'meta_data') or outbox.meta_data is None:
                 outbox.meta_data = {}
             
-            retry_count = outbox.meta_data.get("retry_count", 0)
-            outbox.meta_data["retry_count"] = retry_count + 1
-            outbox.meta_data["last_error"] = error_msg
-            outbox.meta_data["error_type"] = error_type.value
-            outbox.meta_data["last_attempt"] = datetime.now(UTC).isoformat()
-            
-            if should_retry and retry_at:
-                outbox.meta_data["retry_at"] = retry_at.isoformat()
-                logger.info(f"🔄 Will retry at {retry_at}")
-            else:
-                outbox.sent_at = datetime.now(UTC)
-                outbox.meta_data["failed"] = True
-                outbox.meta_data["failure_reason"] = error_msg
-                
-                # Update campaign result
-                if outbox.kind.startswith("campaign."):
-                    result_id = outbox.payload.get("result_id")
-                    campaign_id = outbox.payload.get("campaign_id")
-                    
-                    if result_id:
-                        update_campaign_result_failed(session, result_id, error_msg)
-                    
-                    # ✅ CRITICAL: Check completion even after failures
-                    if campaign_id:
-                        check_campaign_completion(session, campaign_id)
-            
-            if "processing_started" in outbox.meta_data:
-                del outbox.meta_data["processing_started"]
+            outbox.meta_data["failed"] = True
+            outbox.meta_data["failure_reason"] = error_msg
+            outbox.meta_data["attempt_timestamp"] = datetime.now(UTC).isoformat()
             
             flag_modified(outbox, "meta_data")
             session.commit()
             
-            return ProcessingResult(
-                success=False,
-                error=error_msg,
-                error_type=error_type,
-                should_retry=should_retry
-            )
+            # Update campaign result as failed
+            if outbox.kind.startswith("campaign."):
+                result_id = outbox.payload.get("result_id")
+                campaign_id = outbox.payload.get("campaign_id")
+                
+                if result_id:
+                    update_campaign_result_failed(session, result_id, error_msg)
+                
+                if campaign_id:
+                    check_campaign_completion(session, campaign_id)
+                
+                session.commit()
+            
+            return ProcessingResult(success=False, error=error_msg)
     
     except Exception as e:
         logger.error(f"❌ Unexpected error in outbox #{outbox.id}: {e}", exc_info=True)
         session.rollback()
-        return ProcessingResult(
-            success=False,
-            error=f"Unexpected: {str(e)[:200]}",
-            error_type=ErrorType.UNKNOWN,
-            should_retry=False
-        )
-
-
-# ============================================
-# STUCK MESSAGE RECOVERY
-# ============================================
-
-def reset_stuck_messages(session: Session, timeout_minutes: int = 30) -> int:
-    """Reset messages stuck in processing state"""
-    timeout_threshold = datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)
-    
-    try:
-        stuck_messages = session.query(Outbox).filter(
-            Outbox.sent_at.is_(None),
-            Outbox.created_at < timeout_threshold
-        ).all()
-        
-        reset_count = 0
-        for msg in stuck_messages:
-            logger.warning(
-                f"⚠️  Stuck message found: #{msg.id} (kind: {msg.kind}, "
-                f"age: {(datetime.now(timezone.utc) - msg.created_at).total_seconds() / 60:.1f} minutes)"
-            )
-            reset_count += 1
-        
-        if reset_count > 0:
-            logger.info(f"🔄 Found {reset_count} stuck message(s)")
-        
-        return reset_count
-        
-    except Exception as e:
-        logger.error(f"❌ Error checking stuck messages: {e}", exc_info=True)
-        return 0
+        return ProcessingResult(success=False, error=f"Unexpected: {str(e)[:200]}")
 
 
 # ============================================
@@ -613,13 +393,10 @@ def reset_stuck_messages(session: Session, timeout_minutes: int = 30) -> int:
 # ============================================
 
 def process_batch(batch_size: int = 25) -> dict:
-    """
-    ✅ FIXED: Process a batch of outbox messages (synchronous)
-    """
+    """Process a batch of outbox messages - single attempt each"""
     global consecutive_errors, is_processing
     
     if is_processing:
-
         return {"skipped": True, "reason": "already_processing"}
     
     is_processing = True
@@ -627,8 +404,6 @@ def process_batch(batch_size: int = 25) -> dict:
     
     try:
         session = SessionLocal()
-        
-
         
         messages = session.query(Outbox).filter(
             Outbox.sent_at.is_(None)
@@ -638,48 +413,37 @@ def process_batch(batch_size: int = 25) -> dict:
         
         if not messages:
             consecutive_errors = 0
-            return {"processed": 0, "success": 0, "failed": 0, "retrying": 0}
-        
+            return {"processed": 0, "success": 0, "failed": 0}
         
         success_count = 0
         failed_count = 0
-        retrying_count = 0
         
         for msg in messages:
             try:
-                # ✅ FIXED: Call the correct function
                 result = process_outbox_message(session, msg)
                 
                 if result.success:
                     success_count += 1
-                elif result.should_retry:
-                    retrying_count += 1
                 else:
                     failed_count += 1
                 
             except Exception as e:
                 session.rollback()
-                logger.error(
-                    f"❌ Error processing message #{msg.id}: {e}",
-                    exc_info=True
-                )
+                logger.error(f"❌ Error processing message #{msg.id}: {e}", exc_info=True)
                 failed_count += 1
-                # Recreate session after rollback
                 session = SessionLocal()
         
         if success_count > 0:
             consecutive_errors = 0
         
-        # ✅ NEW: Check all campaigns for completion after batch
+        # Check campaigns for completion
         check_all_campaigns_for_completion(session)
         
         result = {
             "processed": len(messages),
             "success": success_count,
-            "failed": failed_count,
-            "retrying": retrying_count
+            "failed": failed_count
         }
-   
         
         return result
         
@@ -697,8 +461,7 @@ def process_batch(batch_size: int = 25) -> dict:
             "consecutive_errors": consecutive_errors,
             "processed": 0,
             "success": 0,
-            "failed": 0,
-            "retrying": 0
+            "failed": 0
         }
         
     finally:
@@ -707,19 +470,69 @@ def process_batch(batch_size: int = 25) -> dict:
             session.close()
 
 
+def check_all_campaigns_for_completion(session: Session):
+    """Check all campaigns in 'sending' status and complete them if done"""
+    try:
+        sending_campaigns = session.query(Campaign).filter(
+            Campaign.status == CampaignStatus.sending
+        ).all()
+        
+        if not sending_campaigns:
+            return
+        
+        logger.debug(f"🔍 Checking {len(sending_campaigns)} sending campaign(s)...")
+        
+        completed_count = 0
+        
+        for campaign in sending_campaigns:
+            try:
+                pending_count = session.query(CampaignResult).filter(
+                    CampaignResult.campaign_id == campaign.campaign_id,
+                    CampaignResult.status.in_([
+                        RecipientStatus.queued,
+                        RecipientStatus.pending
+                    ])
+                ).count()
+                
+                if pending_count == 0:
+                    campaign.status = CampaignStatus.completed
+                    campaign.completed_at = datetime.now(UTC)
+                    completed_count += 1
+                    
+                    total_results = session.query(CampaignResult).filter(
+                        CampaignResult.campaign_id == campaign.campaign_id
+                    ).count()
+                    
+                    logger.info(
+                        f"🎉 Campaign {campaign.campaign_id} COMPLETED! "
+                        f"Total: {total_results}, "
+                        f"Sent: {campaign.sent_count or 0}, "
+                        f"Failed: {campaign.failed_count or 0}"
+                    )
+            
+            except Exception as e:
+                logger.error(f"❌ Error checking campaign {campaign.campaign_id}: {e}")
+        
+        if completed_count > 0:
+            session.flush()
+            logger.info(f"✅ Marked {completed_count} campaign(s) as completed")
+    
+    except Exception as e:
+        logger.error(f"❌ Error in check_all_campaigns_for_completion: {e}", exc_info=True)
+
+
 # ============================================
 # MAIN PROCESSOR LOOP
 # ============================================
 
 def run_forever(poll_interval: float = 2.0, batch_size: int = 25):
-    """Run outbox processor continuously"""
+    """Run outbox processor continuously - single attempt mode"""
     global consecutive_errors
     
-    logger.info("🚀 Smart fail-safe outbox processor v3 started")
+    logger.info("🚀 Single-attempt outbox processor started")
     logger.info(f"   ⚙️  Batch size: {batch_size}")
     logger.info(f"   ⏱️  Poll interval: {poll_interval}s")
-    logger.info(f"   🔄 Max retries: {MAX_RETRY_ATTEMPTS} (SMART MODE)")
-    logger.info(f"   ⏰ Retry backoff: {RETRY_BACKOFF_MINUTES} min")
+    logger.info(f"   🎯 SINGLE ATTEMPT MODE - No retries")
     
     iteration = 0
     max_consecutive_errors = 10
@@ -743,13 +556,11 @@ def run_forever(poll_interval: float = 2.0, batch_size: int = 25):
             else:
                 consecutive_errors = 0
             
-            # ✅ FIXED: Access correct keys
             if result.get("processed", 0) > 0:
                 logger.info(
                     f"[#{iteration}] "
                     f"✅ {result['success']} sent | "
-                    f"🔄 {result['retrying']} retrying | "
-                    f"❌ {result['failed']} failed"
+                    f"❌ {result['failed']} failed (skipped)"
                 )
             else:
                 logger.debug(f"[#{iteration}] Queue empty, sleeping...")
@@ -768,74 +579,7 @@ def run_forever(poll_interval: float = 2.0, batch_size: int = 25):
                 consecutive_errors = 0
         
         time.sleep(poll_interval)
-# Add this function to your outbox_processor.py file
-# Place it after the check_campaign_completion function
 
-def check_all_campaigns_for_completion(session: Session):
-    """
-    Check all campaigns in 'sending' status and complete them if done
-    This is called after each batch to ensure campaigns are marked complete ASAP
-    """
-    try:
-        sending_campaigns = session.query(Campaign).filter(
-            Campaign.status == CampaignStatus.sending
-        ).all()
-        
-        if not sending_campaigns:
-            logger.debug("No campaigns in 'sending' status to check")
-            return
-        
-        logger.debug(f"🔍 Checking {len(sending_campaigns)} sending campaign(s) for completion...")
-        
-        completed_count = 0
-        
-        for campaign in sending_campaigns:
-            try:
-                # Count remaining pending/queued results
-                pending_count = session.query(CampaignResult).filter(
-                    CampaignResult.campaign_id == campaign.campaign_id,
-                    CampaignResult.status.in_([
-                        RecipientStatus.queued,
-                        RecipientStatus.pending
-                    ])
-                ).count()
-                
-                if pending_count == 0:
-                    # All messages processed - mark campaign as completed
-                    campaign.status = CampaignStatus.completed
-                    campaign.completed_at = datetime.now(UTC)
-                    
-                    completed_count += 1
-                    
-                    # Calculate final stats
-                    total_results = session.query(CampaignResult).filter(
-                        CampaignResult.campaign_id == campaign.campaign_id
-                    ).count()
-                    
-                    logger.info(
-                        f"🎉 Campaign {campaign.campaign_id} ({campaign.campaign_name}) COMPLETED! "
-                        f"Total: {total_results}, "
-                        f"Sent: {campaign.sent_count or 0}, "
-                        f"Delivered: {campaign.delivered_count or 0}, "
-                        f"Failed: {campaign.failed_count or 0}"
-                    )
-                else:
-                    logger.debug(
-                        f"Campaign {campaign.campaign_id} still has {pending_count} pending results"
-                    )
-            
-            except Exception as e:
-                logger.error(
-                    f"❌ Error checking campaign {campaign.campaign_id}: {e}",
-                    exc_info=True
-                )
-        
-        if completed_count > 0:
-            session.flush()
-            logger.info(f"✅ Marked {completed_count} campaign(s) as completed")
-    
-    except Exception as e:
-        logger.error(f"❌ Error in check_all_campaigns_for_completion: {e}", exc_info=True)
 
 # ============================================
 # STATISTICS & MONITORING
@@ -846,8 +590,6 @@ def get_outbox_stats() -> dict:
     import sqlalchemy as sa
     
     with SessionLocal() as session:
-        now = datetime.now(UTC)
-        
         pending = session.execute(
             sa.select(sa.func.count(Outbox.id)).where(
                 Outbox.sent_at.is_(None)
@@ -875,21 +617,10 @@ def get_outbox_stats() -> dict:
             )
         ).scalar() or 0
         
-        retrying = session.execute(
-            sa.select(sa.func.count(Outbox.id)).where(
-                and_(
-                    Outbox.sent_at.is_(None),
-                    Outbox.meta_data['retry_at'].astext.isnot(None),
-                    cast(Outbox.meta_data['retry_at'].astext, DateTime) > now
-                )
-            )
-        ).scalar() or 0
-        
         return {
             "pending": pending,
             "sent": sent,
-            "failed_permanently": failed,
-            "retrying": retrying,
+            "failed": failed,
             "total": pending + sent + failed,
             "timestamp": datetime.now(UTC).isoformat()
         }

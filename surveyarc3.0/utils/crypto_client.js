@@ -1,8 +1,9 @@
 import crypto from "crypto";
-const BASE = process.env.KEYSERVER_BASE_URL
+const BASE ="http://localhost:8001";
 
 
 export function decryptAESGCM({ ciphertext, iv, tag }, aesKeyBase64) {
+  console.log(BASE)
   const key = Buffer.from(aesKeyBase64, "base64");
   const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "base64"));
   decipher.setAuthTag(Buffer.from(tag, "base64"));

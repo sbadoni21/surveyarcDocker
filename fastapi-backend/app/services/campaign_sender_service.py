@@ -1,5 +1,5 @@
 # ============================================
-# SMART CAMPAIGN SENDER SERVICE V3 (CORRECTED)
+# SMART CAMPAIGN SENDER SERVICE V3 - DEBUG VERSION
 # app/services/campaign_sender_service_v3.py
 # ============================================
 
@@ -23,13 +23,20 @@ from ..utils.id_generator import generate_id
 
 import secrets
 
+# Configure debug logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(funcName)s:%(lineno)d] - %(message)s'
+)
 logger = logging.getLogger(__name__)
 UTC = timezone.utc
 
 
 def generate_tracking_token():
     """Generate unique tracking token for campaign results"""
-    return "camp_tracking_" + secrets.token_hex(4)
+    token = "camp_tracking_" + secrets.token_hex(4)
+    logger.debug(f"Generated tracking token: {token}")
+    return token
 
 
 def create_campaign_results(
@@ -41,6 +48,14 @@ def create_campaign_results(
     Create CampaignResult entries for all contacts
     ✅ SMART: Skip contacts that already have results
     """
+    logger.info("╔═══════════════════════════════════════════════════════════╗")
+    logger.info("║  CREATING CAMPAIGN RESULTS                                ║")
+    logger.info("╚═══════════════════════════════════════════════════════════╝")
+    logger.info(f"📊 Input: {len(contacts)} contact(s)")
+    logger.info(f"🆔 Campaign ID: {campaign.campaign_id}")
+    logger.info(f"📡 Channel: {campaign.channel.value if hasattr(campaign.channel, 'value') else campaign.channel}")
+    logger.info("")
+    
     results_created = 0
     skipped_contacts = {
         "no_channel": 0,
@@ -49,44 +64,61 @@ def create_campaign_results(
         "already_exists": 0
     }
     
-    logger.info(f"📝 Creating campaign results for {len(contacts)} contact(s)...")
-    
-    for contact in contacts:
+    for idx, contact in enumerate(contacts, 1):
+        logger.debug("─" * 60)
+        logger.debug(f"Processing contact {idx}/{len(contacts)}")
+        logger.debug(f"   - Name: {contact.name}")
+        logger.debug(f"   - ID: {contact.contact_id}")
+        logger.debug(f"   - Primary: {contact.primary_identifier}")
+        
+        # Check for existing result
+        logger.debug("🔍 Checking for existing result...")
         existing_result = session.query(CampaignResult).filter(
             CampaignResult.campaign_id == campaign.campaign_id,
             CampaignResult.contact_id == contact.contact_id
         ).first()
         
         if existing_result:
-            logger.debug(
-                f"⚠️  Skipping contact {contact.contact_id} - "
-                f"result already exists (status: {existing_result.status.value})"
-            )
+            logger.debug(f"⚠️  SKIPPED - Result already exists")
+            logger.debug(f"   - Result ID: {existing_result.result_id}")
+            logger.debug(f"   - Status: {existing_result.status.value}")
             skipped_contacts["already_exists"] += 1
             continue
         
+        # Get channel and address
+        logger.debug("🔍 Getting channel and address for contact...")
         channel, address = campaign.get_channel_for_contact(contact)
         
+        logger.debug(f"   - Channel: {channel.value if hasattr(channel, 'value') else channel if channel else 'None'}")
+        logger.debug(f"   - Address: {address or 'None'}")
+        
         if not channel or not address:
-            logger.debug(
-                f"⚠️  Skipping contact {contact.contact_id} ({contact.name}): "
-                f"No valid channel/address"
-            )
+            logger.debug(f"⚠️  SKIPPED - No valid channel/address")
             skipped_contacts["no_address"] += 1
             continue
         
-        if not campaign.validate_content_for_channel(channel):
-            logger.debug(
-                f"⚠️  Skipping contact {contact.contact_id}: "
-                f"Missing content for {channel.value}"
-            )
+        # Validate content
+        logger.debug(f"🔍 Validating content for channel: {channel.value if hasattr(channel, 'value') else channel}")
+        has_content = campaign.validate_content_for_channel(channel)
+        logger.debug(f"   - Has content: {has_content}")
+        
+        if not has_content:
+            logger.debug(f"⚠️  SKIPPED - Missing content for {channel.value if hasattr(channel, 'value') else channel}")
             skipped_contacts["no_content"] += 1
             continue
         
+        # Create result
         tracking_token = generate_tracking_token()
+        result_id = generate_id()
+        
+        logger.debug("✅ Creating CampaignResult...")
+        logger.debug(f"   - Result ID: {result_id}")
+        logger.debug(f"   - Channel: {channel.value if hasattr(channel, 'value') else channel}")
+        logger.debug(f"   - Address: {address}")
+        logger.debug(f"   - Tracking token: {tracking_token}")
         
         result = CampaignResult(
-            result_id=generate_id(),
+            result_id=result_id,
             campaign_id=campaign.campaign_id,
             contact_id=contact.contact_id,
             org_id=campaign.org_id,
@@ -100,30 +132,25 @@ def create_campaign_results(
         session.add(result)
         results_created += 1
         
-        logger.debug(
-            f"✅ Created result for {contact.name} ({address}) "
-            f"via {channel.value}"
-        )
+        logger.debug(f"✅ Result created for {contact.name}")
     
+    logger.debug("─" * 60)
+    logger.info("")
+    logger.info("📊 RESULTS SUMMARY:")
+    logger.info(f"   ✅ Created: {results_created}")
+    logger.info(f"   ⚠️  Already exists: {skipped_contacts['already_exists']}")
+    logger.info(f"   ⚠️  No address: {skipped_contacts['no_address']}")
+    logger.info(f"   ⚠️  No content: {skipped_contacts['no_content']}")
+    logger.info("")
+    
+    logger.debug("💾 Flushing session...")
     session.flush()
+    logger.debug("✅ Session flushed")
     
-    if skipped_contacts["already_exists"] > 0:
-        logger.info(
-            f"⚠️  Skipped {skipped_contacts['already_exists']} contacts "
-            f"(already have results)"
-        )
-    if skipped_contacts["no_address"] > 0:
-        logger.info(
-            f"⚠️  Skipped {skipped_contacts['no_address']} contacts "
-            f"(no valid address)"
-        )
-    if skipped_contacts["no_content"] > 0:
-        logger.info(
-            f"⚠️  Skipped {skipped_contacts['no_content']} contacts "
-            f"(missing content)"
-        )
-    
-    logger.info(f"✅ Created {results_created} NEW campaign results")
+    logger.info("╔═══════════════════════════════════════════════════════════╗")
+    logger.info(f"║  ✅ CREATED {results_created:3d} NEW CAMPAIGN RESULTS                 ║")
+    logger.info("╚═══════════════════════════════════════════════════════════╝")
+    logger.info("")
     
     return results_created
 
@@ -137,7 +164,18 @@ def queue_campaign_sends(
     ✅ SMART: Queue only QUEUED results with contact data for variable replacement
     Returns: number of messages queued
     """
-    # ✅ FIXED: Remove duplicate import (already imported at top)
+    logger.info("╔═══════════════════════════════════════════════════════════╗")
+    logger.info("║  QUEUEING CAMPAIGN SENDS                                  ║")
+    logger.info("╚═══════════════════════════════════════════════════════════╝")
+    logger.info(f"🆔 Campaign ID: {campaign.campaign_id}")
+    logger.info(f"📦 Batch size: {batch_size}")
+    logger.info("")
+    
+    logger.debug("🔍 Querying for QUEUED results...")
+    logger.debug(f"   - Campaign ID: {campaign.campaign_id}")
+    logger.debug(f"   - Status filter: {RecipientStatus.queued.value}")
+    logger.debug(f"   - Limit: {batch_size}")
+    
     results = session.query(CampaignResult).options(
         joinedload(CampaignResult.contact).joinedload(Contact.emails),
         joinedload(CampaignResult.contact).joinedload(Contact.phones),
@@ -147,58 +185,83 @@ def queue_campaign_sends(
         CampaignResult.status == RecipientStatus.queued
     ).limit(batch_size).all()
     
+    logger.info(f"📋 Found {len(results)} queued result(s)")
+    
     if not results:
-        logger.info(f"ℹ️  No queued results to process for campaign {campaign.campaign_id}")
+        logger.info("ℹ️  No results to process")
+        logger.info("")
         return 0
     
-    logger.info(f"📤 Queueing {len(results)} results to outbox...")
-    
     queued_count = 0
+    skipped_count = 0
+    error_count = 0
     
-    for result in results:
+    for idx, result in enumerate(results, 1):
+        logger.debug("─" * 60)
+        logger.debug(f"Processing result {idx}/{len(results)}")
+        logger.debug(f"   - Result ID: {result.result_id}")
+        logger.debug(f"   - Contact ID: {result.contact_id}")
+        logger.debug(f"   - Channel: {result.channel_used.value if hasattr(result.channel_used, 'value') else result.channel_used}")
+        logger.debug(f"   - Address: {result.recipient_address}")
+        
         try:
+            # Get contact
+            logger.debug("🔍 Getting contact...")
             contact = result.contact
             
             if not contact:
-                logger.error(
-                    f"❌ Contact {result.contact_id} not found for result {result.result_id}"
-                )
+                logger.error(f"❌ Contact {result.contact_id} not found!")
                 result.status = RecipientStatus.failed
                 result.error = "Contact not found"
+                error_count += 1
                 continue
             
+            logger.debug(f"✅ Contact found: {contact.name}")
+            
+            # Check for existing outbox entry
             if result.outbox_id:
+                logger.debug(f"🔍 Checking existing outbox ID: {result.outbox_id}")
+                
                 existing_outbox = session.query(Outbox).filter(
                     Outbox.id == result.outbox_id
                 ).first()
                 
                 if existing_outbox:
-                    logger.debug(
-                        f"⚠️  Result {result.result_id} already has outbox entry "
-                        f"#{existing_outbox.id}"
-                    )
+                    logger.debug(f"⚠️  SKIPPED - Outbox entry already exists")
+                    logger.debug(f"   - Outbox ID: {existing_outbox.id}")
+                    logger.debug(f"   - Status: {existing_outbox.status}")
                     result.status = RecipientStatus.pending
+                    skipped_count += 1
                     continue
             
-            kind = f"campaign.{result.channel_used.value}"
+            # Build payload
+            logger.debug("🔨 Building campaign payload...")
+            kind = f"campaign.{result.channel_used.value if hasattr(result.channel_used, 'value') else result.channel_used}"
+            logger.debug(f"   - Kind: {kind}")
             
             payload = build_campaign_payload(campaign, result, contact)
+            logger.debug(f"   - Payload keys: {list(payload.keys())}")
             
+            # Create dedupe key
             dedupe_key = f"campaign:{campaign.campaign_id}:{result.result_id}"
+            logger.debug(f"   - Dedupe key: {dedupe_key}")
             
+            # Check for duplicate
+            logger.debug("🔍 Checking for duplicate by dedupe_key...")
             existing_outbox = session.query(Outbox).filter(
                 Outbox.dedupe_key == dedupe_key
             ).first()
             
             if existing_outbox:
-                logger.warning(
-                    f"⚠️  Outbox entry already exists for result {result.result_id} "
-                    f"(dedupe_key: {dedupe_key})"
-                )
+                logger.warning(f"⚠️  SKIPPED - Duplicate dedupe_key")
+                logger.warning(f"   - Outbox ID: {existing_outbox.id}")
                 result.status = RecipientStatus.pending
                 result.outbox_id = existing_outbox.id
+                skipped_count += 1
                 continue
             
+            # Create outbox entry
+            logger.debug("📤 Creating Outbox entry...")
             outbox = Outbox(
                 kind=kind,
                 dedupe_key=dedupe_key,
@@ -208,26 +271,43 @@ def queue_campaign_sends(
             session.add(outbox)
             session.flush()
             
+            logger.debug(f"✅ Outbox created: #{outbox.id}")
+            
+            # Update result
             result.status = RecipientStatus.pending
             result.outbox_id = outbox.id
             
             queued_count += 1
             
-            logger.debug(
-                f"✅ Queued result {result.result_id} → outbox #{outbox.id} "
-                f"(contact: {contact.name})"
-            )
+            logger.debug(f"✅ Result queued successfully")
+            logger.debug(f"   - Outbox ID: {outbox.id}")
+            logger.debug(f"   - New status: {result.status.value if hasattr(result.status, 'value') else result.status}")
             
         except Exception as e:
-            logger.error(
-                f"❌ Error queuing result {result.result_id}: {e}", 
-                exc_info=True
-            )
+            logger.error(f"❌ ERROR processing result {result.result_id}")
+            logger.error(f"   - Error: {e}")
+            logger.error("Full traceback:", exc_info=True)
+            
             result.status = RecipientStatus.failed
             result.error = str(e)[:500]
+            error_count += 1
     
+    logger.debug("─" * 60)
+    logger.info("")
+    logger.info("📊 QUEUEING SUMMARY:")
+    logger.info(f"   ✅ Queued: {queued_count}")
+    logger.info(f"   ⚠️  Skipped: {skipped_count}")
+    logger.info(f"   ❌ Errors: {error_count}")
+    logger.info("")
+    
+    logger.debug("💾 Flushing session...")
     session.flush()
-    logger.info(f"📤 Queued {queued_count} NEW messages to outbox")
+    logger.debug("✅ Session flushed")
+    
+    logger.info("╔═══════════════════════════════════════════════════════════╗")
+    logger.info(f"║  ✅ QUEUED {queued_count:3d} NEW MESSAGES TO OUTBOX               ║")
+    logger.info("╚═══════════════════════════════════════════════════════════╝")
+    logger.info("")
     
     return queued_count
 
@@ -235,19 +315,31 @@ def queue_campaign_sends(
 def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: Contact) -> dict:
     """
     ✅ SMART: Build payload with full variable replacement
-    Supports: {{name}}, {{email}}, {{phone}}, {{survey_link}}, {{tracking_token}}, etc.
     """
+    logger.debug("┌─────────────────────────────────────────────┐")
+    logger.debug("│  BUILDING CAMPAIGN PAYLOAD                  │")
+    logger.debug("└─────────────────────────────────────────────┘")
+    logger.debug(f"   - Channel: {result.channel_used.value if hasattr(result.channel_used, 'value') else result.channel_used}")
+    logger.debug(f"   - Contact: {contact.name}")
+    logger.debug(f"   - Tracking token: {result.tracking_token}")
+    
     survey_base_url = get_survey_base_url()
+    logger.debug(f"   - Survey base URL: {survey_base_url}")
+    
     survey_link = build_tracking_url(
         f"{survey_base_url}",
         campaign,
         contact,
         result
     )
+    logger.debug(f"   - Survey link: {survey_link[:50]}...")
     
+    # Shorten URL for SMS/WhatsApp
     if result.channel_used in [CampaignChannel.sms, CampaignChannel.whatsapp]:
+        logger.debug("🔗 Shortening URL for SMS/WhatsApp...")
         short_link = shorten_url(survey_link)
         result.short_link = short_link
+        logger.debug(f"   - Short link: {short_link}")
     else:
         short_link = survey_link
     
@@ -261,7 +353,11 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
         "short_link": short_link,
     }
     
+    logger.debug(f"   - Base payload keys: {list(base_payload.keys())}")
+    
     if result.channel_used == CampaignChannel.email:
+        logger.debug("📧 Building EMAIL payload...")
+        
         email_subject = replace_variables(
             campaign.email_subject or 'Survey Invitation',
             contact,
@@ -270,6 +366,7 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             survey_link,
             short_link
         )
+        logger.debug(f"   - Subject: {email_subject[:50]}...")
         
         email_body = replace_variables(
             campaign.email_body_html or '',
@@ -279,8 +376,9 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             survey_link,
             short_link
         )
+        logger.debug(f"   - Body length: {len(email_body)} chars")
         
-        return {
+        payload = {
             **base_payload,
             "to": [result.recipient_address],
             "subject": email_subject,
@@ -288,8 +386,10 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             "from_name": campaign.email_from_name,
             "reply_to": campaign.email_reply_to,
         }
-    
+        
     elif result.channel_used == CampaignChannel.sms:
+        logger.debug("📱 Building SMS payload...")
+        
         sms_message = replace_variables(
             campaign.sms_message or '',
             contact,
@@ -298,14 +398,17 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             survey_link,
             short_link
         )
+        logger.debug(f"   - Message: {sms_message[:50]}...")
         
-        return {
+        payload = {
             **base_payload,
             "to": result.recipient_address,
             "message": sms_message,
         }
-    
+        
     elif result.channel_used == CampaignChannel.whatsapp:
+        logger.debug("💬 Building WhatsApp payload...")
+        
         whatsapp_message = replace_variables(
             campaign.whatsapp_message or '',
             contact,
@@ -314,15 +417,19 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             survey_link,
             short_link
         )
+        logger.debug(f"   - Message: {whatsapp_message[:50]}...")
+        logger.debug(f"   - Template ID: {campaign.whatsapp_template_id or 'None'}")
         
-        return {
+        payload = {
             **base_payload,
             "to": result.recipient_address,
             "message": whatsapp_message,
             "template_id": campaign.whatsapp_template_id,
         }
-    
+        
     elif result.channel_used == CampaignChannel.voice:
+        logger.debug("📞 Building VOICE payload...")
+        
         voice_script = replace_variables(
             campaign.voice_script or '',
             contact,
@@ -331,35 +438,44 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             survey_link,
             short_link
         )
+        logger.debug(f"   - Script: {voice_script[:50]}...")
         
-        return {
+        payload = {
             **base_payload,
             "to": result.recipient_address,
             "script": voice_script,
         }
     
-    return base_payload
+    else:
+        logger.warning(f"⚠️  Unknown channel: {result.channel_used.value if hasattr(result.channel_used, 'value') else result.channel_used}")
+        payload = base_payload
+    
+    logger.debug(f"✅ Payload built with {len(payload)} keys")
+    logger.debug("└─────────────────────────────────────────────┘")
+    
+    return payload
 
 
 def shorten_url(long_url: str) -> str:
-    """
-    Shorten URL for SMS/WhatsApp
-    TODO: Integrate with URL shortener service (Bitly, TinyURL, etc.)
-    """
-    logger.debug(f"URL shortening not implemented, using full URL")
+    """Shorten URL for SMS/WhatsApp"""
+    logger.debug(f"shorten_url() called (not implemented, using full URL)")
     return long_url
 
 
 def get_survey_base_url() -> str:
     """Get base URL for survey links"""
     import os
-    return os.getenv("SURVEY_BASE_URL", "https://surveyarc-docker.vercel.app/form")
+    url = os.getenv("SURVEY_BASE_URL", "https://surveyarc-docker.vercel.app/form")
+    logger.debug(f"Survey base URL: {url}")
+    return url
 
 
 def get_tracking_base_url() -> str:
     """Get base URL for tracking endpoints"""
     import os
-    return os.getenv("TRACKING_BASE_URL", "https://api.example.com")
+    url = os.getenv("TRACKING_BASE_URL", "https://api.example.com")
+    logger.debug(f"Tracking base URL: {url}")
+    return url
 
 
 def process_campaign_batch(campaign_id: str, batch_size: int = 100) -> dict:
@@ -368,7 +484,17 @@ def process_campaign_batch(campaign_id: str, batch_size: int = 100) -> dict:
     """
     from ..db import SessionLocal
     
+    logger.info("╔═══════════════════════════════════════════════════════════╗")
+    logger.info("║  PROCESSING CAMPAIGN BATCH                                ║")
+    logger.info("╚═══════════════════════════════════════════════════════════╝")
+    logger.info(f"🆔 Campaign ID: {campaign_id}")
+    logger.info(f"📦 Batch size: {batch_size}")
+    logger.info("")
+    
     with SessionLocal() as session:
+        logger.debug("📂 Session opened")
+        
+        logger.debug("🔍 Looking up campaign with lock...")
         campaign = session.query(Campaign).filter(
             Campaign.campaign_id == campaign_id
         ).with_for_update().first()
@@ -377,18 +503,24 @@ def process_campaign_batch(campaign_id: str, batch_size: int = 100) -> dict:
             logger.error(f"❌ Campaign {campaign_id} not found")
             return {"success": False, "error": "Campaign not found"}
         
+        logger.info(f"📋 Campaign: {campaign.campaign_name}")
+        logger.info(f"📊 Status: {campaign.status.value if hasattr(campaign.status, 'value') else campaign.status}")
+        logger.info("")
+        
         if campaign.status not in [CampaignStatus.sending, CampaignStatus.scheduled]:
-            logger.warning(
-                f"⚠️  Campaign {campaign_id} status is {campaign.status.value}, "
-                f"not sending or scheduled"
-            )
+            logger.warning(f"⚠️  Campaign status is {campaign.status.value if hasattr(campaign.status, 'value') else campaign.status}")
+            logger.warning("   Cannot process (must be 'sending' or 'scheduled')")
             return {
                 "success": False, 
-                "error": f"Campaign status is {campaign.status.value}"
+                "error": f"Campaign status is {campaign.status.value if hasattr(campaign.status, 'value') else campaign.status}"
             }
         
+        logger.info("📤 Queueing campaign sends...")
         queued = queue_campaign_sends(session, campaign, batch_size)
+        logger.info(f"✅ Queued: {queued}")
+        logger.info("")
         
+        logger.debug("🔍 Checking for pending results...")
         pending_count = session.query(CampaignResult).filter(
             CampaignResult.campaign_id == campaign_id,
             CampaignResult.status.in_([
@@ -397,12 +529,13 @@ def process_campaign_batch(campaign_id: str, batch_size: int = 100) -> dict:
             ])
         ).count()
         
-        logger.info(
-            f"📊 Campaign {campaign_id}: "
-            f"queued={queued}, pending={pending_count}"
-        )
+        logger.info(f"📊 Pending results: {pending_count}")
         
         if pending_count == 0:
+            logger.info("🎉 ALL RESULTS PROCESSED!")
+            logger.info("")
+            logger.info("📊 Calculating final stats...")
+            
             total_results = session.query(CampaignResult).filter(
                 CampaignResult.campaign_id == campaign_id
             ).count()
@@ -420,28 +553,35 @@ def process_campaign_batch(campaign_id: str, batch_size: int = 100) -> dict:
                 CampaignResult.status == RecipientStatus.failed
             ).count()
             
+            logger.info(f"   - Total: {total_results}")
+            logger.info(f"   - Sent/Delivered: {sent_count}")
+            logger.info(f"   - Failed: {failed_count}")
+            logger.info("")
+            
             if campaign.status == CampaignStatus.sending:
+                logger.info("🔄 Updating campaign to COMPLETED...")
                 campaign.status = CampaignStatus.completed
                 campaign.completed_at = datetime.now(UTC)
-                
-                logger.info(
-                    f"🎉 Campaign {campaign_id} COMPLETED! "
-                    f"Total: {total_results}, "
-                    f"Sent/Delivered: {sent_count}, "
-                    f"Failed: {failed_count}"
-                )
+                logger.info(f"✅ Campaign completed at: {campaign.completed_at}")
         
+        logger.debug("💾 Committing transaction...")
         session.commit()
+        logger.debug("✅ Transaction committed")
         
         result = {
             "success": True,
             "queued": queued,
             "pending": pending_count,
             "completed": pending_count == 0,
-            "campaign_status": campaign.status.value
+            "campaign_status": campaign.status.value if hasattr(campaign.status, 'value') else campaign.status
         }
         
-        logger.info(f"✅ Batch processing result: {result}")
+        logger.info("")
+        logger.info("╔═══════════════════════════════════════════════════════════╗")
+        logger.info("║  ✅ BATCH PROCESSING COMPLETE                             ║")
+        logger.info("╚═══════════════════════════════════════════════════════════╝")
+        logger.info(f"📊 Result: {result}")
+        logger.info("")
         
         return result
 
@@ -455,16 +595,24 @@ def update_result_from_outbox(
     """
     ✅ SMART: Update result to DELIVERED immediately
     """
+    logger.debug("─" * 60)
+    logger.debug("UPDATE RESULT FROM OUTBOX")
+    logger.debug(f"   - Result ID: {result_id}")
+    logger.debug(f"   - Sent at: {sent_at}")
+    logger.debug(f"   - Message ID: {message_id or 'None'}")
+    
     result = session.query(CampaignResult).filter(
         CampaignResult.result_id == result_id
     ).with_for_update().first()
     
     if not result:
-        logger.warning(f"⚠️  Result {result_id} not found for outbox update")
+        logger.warning(f"⚠️  Result {result_id} not found")
         return
     
+    logger.debug(f"   - Current status: {result.status.value if hasattr(result.status, 'value') else result.status}")
+    
     if result.status == RecipientStatus.delivered:
-        logger.debug(f"ℹ️  Result {result_id} already delivered")
+        logger.debug(f"ℹ️  Already delivered, skipping")
         return
     
     result.status = RecipientStatus.delivered
@@ -474,8 +622,10 @@ def update_result_from_outbox(
     if message_id:
         result.message_id = message_id
     
-    logger.debug(f"✅ Result {result_id} → delivered")
+    logger.debug(f"✅ Result updated to 'delivered'")
     
+    # Update campaign stats
+    logger.debug("📊 Updating campaign stats...")
     campaign = session.query(Campaign).filter(
         Campaign.campaign_id == result.campaign_id
     ).with_for_update().first()
@@ -487,7 +637,7 @@ def update_result_from_outbox(
         if not campaign.channel_stats:
             campaign.channel_stats = {}
         
-        channel_key = result.channel_used.value
+        channel_key = result.channel_used.value if hasattr(result.channel_used, 'value') else result.channel_used
         
         if channel_key not in campaign.channel_stats:
             campaign.channel_stats[channel_key] = {
@@ -499,18 +649,12 @@ def update_result_from_outbox(
         campaign.channel_stats[channel_key]["delivered"] += 1
         flag_modified(campaign, "channel_stats")
         
-        logger.debug(
-            f"📊 Campaign stats: "
-            f"sent={campaign.sent_count}, "
-            f"delivered={campaign.delivered_count}"
-        )
+        logger.debug(f"   - Sent: {campaign.sent_count}")
+        logger.debug(f"   - Delivered: {campaign.delivered_count}")
     
     session.flush()
+    logger.debug("─" * 60)
 
-
-# ============================================
-# ✅ CAMPAIGN COMPLETION CHECKER
-# ============================================
 
 def check_and_complete_campaigns():
     """
@@ -518,21 +662,35 @@ def check_and_complete_campaigns():
     """
     from ..db import SessionLocal
     
+    logger.info("╔═══════════════════════════════════════════════════════════╗")
+    logger.info("║  CHECKING FOR COMPLETED CAMPAIGNS                         ║")
+    logger.info("╚═══════════════════════════════════════════════════════════╝")
+    
     with SessionLocal() as session:
+        logger.debug("🔍 Querying for 'sending' campaigns...")
+        
         sending_campaigns = session.query(Campaign).filter(
             Campaign.status == CampaignStatus.sending
         ).all()
         
+        logger.info(f"📋 Found {len(sending_campaigns)} sending campaign(s)")
+        
         if not sending_campaigns:
-            logger.debug("No campaigns in 'sending' status")
+            logger.info("✅ No campaigns to check")
+            logger.info("")
             return {"completed": 0}
         
-        logger.info(f"🔍 Checking {len(sending_campaigns)} sending campaign(s)...")
+        logger.info("")
         
         completed_count = 0
         
-        for campaign in sending_campaigns:
+        for idx, campaign in enumerate(sending_campaigns, 1):
+            logger.info(f"━━━ Checking campaign {idx}/{len(sending_campaigns)} ━━━")
+            logger.info(f"📋 {campaign.campaign_name}")
+            logger.info(f"🆔 {campaign.campaign_id}")
+            
             try:
+                logger.debug("🔍 Counting pending results...")
                 pending_count = session.query(CampaignResult).filter(
                     CampaignResult.campaign_id == campaign.campaign_id,
                     CampaignResult.status.in_([
@@ -541,33 +699,38 @@ def check_and_complete_campaigns():
                     ])
                 ).count()
                 
+                logger.info(f"📊 Pending: {pending_count}")
+                
                 if pending_count == 0:
+                    logger.info("🎉 CAMPAIGN IS COMPLETE!")
+                    
                     campaign.status = CampaignStatus.completed
                     campaign.completed_at = datetime.now(UTC)
                     
                     completed_count += 1
                     
-                    logger.info(
-                        f"🎉 Campaign {campaign.campaign_id} ({campaign.campaign_name}) "
-                        f"marked as COMPLETED! "
-                        f"Sent: {campaign.sent_count}, "
-                        f"Delivered: {campaign.delivered_count}, "
-                        f"Failed: {campaign.failed_count}"
-                    )
+                    logger.info(f"✅ Marked as COMPLETED")
+                    logger.info(f"   - Completed at: {campaign.completed_at}")
+                    logger.info(f"   - Sent: {campaign.sent_count or 0}")
+                    logger.info(f"   - Delivered: {campaign.delivered_count or 0}")
+                    logger.info(f"   - Failed: {campaign.failed_count or 0}")
                 else:
-                    logger.debug(
-                        f"Campaign {campaign.campaign_id} still has "
-                        f"{pending_count} pending result(s)"
-                    )
+                    logger.debug(f"ℹ️  Still has {pending_count} pending result(s)")
             
             except Exception as e:
-                logger.error(
-                    f"❌ Error checking campaign {campaign.campaign_id}: {e}",
-                    exc_info=True
-                )
+                logger.error(f"❌ Error checking campaign {campaign.campaign_id}")
+                logger.error(f"   Error: {e}", exc_info=True)
+            
+            logger.info("")
         
         if completed_count > 0:
+            logger.debug("💾 Committing changes...")
             session.commit()
-            logger.info(f"✅ Completed {completed_count} campaign(s)")
+            logger.debug("✅ Changes committed")
+        
+        logger.info("╔═══════════════════════════════════════════════════════════╗")
+        logger.info(f"║  ✅ COMPLETED {completed_count:2d} CAMPAIGN(S)                          ║")
+        logger.info("╚═══════════════════════════════════════════════════════════╝")
+        logger.info("")
         
         return {"completed": completed_count}

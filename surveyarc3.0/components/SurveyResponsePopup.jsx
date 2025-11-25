@@ -13,6 +13,7 @@ import { findDuplicateSurveys } from "@/utils/analytics/duplicateDetection";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { Button } from "@mui/material";
+import ExportSurveyButton from "./ExportSurveyButton";
 const EXCLUDED_KEYS = ["id", "projectId", "__v", "orgId", "surveyId"];
 
 const ANALYTICS_SUPPORTED_TYPES = new Set([
@@ -142,7 +143,7 @@ const SurveyResponsesPage = () => {
           </div>
         </div>
       </div>
-
+<ExportSurveyButton responses ={responses} questions={questions}  />
       {/* Content Section */}
       <div className="min-h-[60vh]">
         {tab === 0 && (

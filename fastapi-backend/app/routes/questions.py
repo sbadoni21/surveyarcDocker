@@ -5,7 +5,7 @@ from datetime import datetime
 
 from ..db import get_db
 from ..models.questions import Question            # SQLAlchemy model
-from ..schemas.questions import QuestionCreate, QuestionUpdate, QuestionOut
+from ..schemas.questions import QuestionCreate, QuestionUpdate, QuestionOut, BulkQuestionsRequest
 from ..services.redis_question_service import RedisQuestionService
 
 router = APIRouter(prefix="/questions", tags=["Questions"])
@@ -108,3 +108,43 @@ def delete_question(survey_id: str, question_id: str, db: Session = Depends(get_
     RedisQuestionService.invalidate_question(survey_id, question_id)
     RedisQuestionService.remove_from_list(survey_id, question_id)
     return {"detail": "Question deleted"}
+
+
+# NEW: Bulk questions endpoint - no survey_id required
+@router.post("/bulk", response_model=List[QuestionOut])
+def get_bulk_questions(data: BulkQuestionsRequest, db: Session = Depends(get_db)):
+    """
+    Fetch multiple questions by their IDs, regardless of survey.
+    Useful for getting questions from submitted answers.
+    """
+    if not data.question_ids:
+        return []
+    
+    # Try to get from cache first (check each individually)
+    results = []
+    uncached_ids = []
+    
+    for qid in data.question_ids:
+        # We don't have survey_id, so skip cache or use a different cache strategy
+        uncached_ids.append(qid)
+    
+    # Fetch all uncached questions from DB in one query
+    if uncached_ids:
+        questions = (
+            db.query(Question)
+            .filter(Question.question_id.in_(uncached_ids))
+            .all()
+        )
+        
+        # Cache each question individually if we have survey_id
+        for q in questions:
+            if q.survey_id:
+                RedisQuestionService.cache_question(q.survey_id, q)
+        
+        results.extend(questions)
+    
+    # Return in the same order as requested
+    question_map = {q.question_id: q for q in results}
+    ordered_results = [question_map[qid] for qid in data.question_ids if qid in question_map]
+    
+    return ordered_results

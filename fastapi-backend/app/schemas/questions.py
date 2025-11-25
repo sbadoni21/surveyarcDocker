@@ -31,3 +31,5 @@ class QuestionOut(QuestionBase):
     class Config:
         orm_mode = True
         # ✅ include in responses
+class BulkQuestionsRequest(BaseModel):
+    question_ids: List[str]

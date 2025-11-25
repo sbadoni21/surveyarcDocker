@@ -1,687 +1,516 @@
-# app/routers/contacts.py
-
-import uuid
-from datetime import datetime
-from typing import List
-
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Body, UploadFile, File
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import select
+from sqlalchemy import select, or_, and_
+from uuid import uuid4
+from typing import List, Optional
+import csv
+import io
 
 from ..db import get_db
-from ..models.contact import Contact, ContactList, ContactEmail, ContactPhone, ContactSocial
-from ..schemas.contact import (
-    ContactCreate, ContactUpdate, ContactOut,
-    ListCreate, ListUpdate, ListOut
+from ..models.contact import Contact, ContactEmail, ContactPhone, ContactSocial, ContactList, list_members, ContactType
+from ..schemas.contact import ContactCreate, ContactOut, ContactUpdate
+
+router = APIRouter(
+    prefix="/contacts",
+    tags=["contacts"]
 )
-from ..services.redis_contacts_service import RedisContactsService
-from ..services.audit import audit
 
 
-router = APIRouter(prefix="/contacts", tags=["Contacts & Lists"])
-
-
-# -----------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------
-def record_audit(
-    db: Session,
-    event_type: str,
-    entity_id: str,
-    org_id: str,
-    meta: dict = None,
-    entity_type: str = "contact"
-):
-    audit(
-        db=db,
-        event_type=event_type,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        org_id=org_id,
-        meta=meta or {},
-    )
-
-
-def list_to_out(l: ContactList) -> ListOut:
-    return ListOut(
-        list_id=l.list_id,
-        org_id=l.org_id,
-        list_name=l.list_name,
-        status=l.status,
-        created_at=l.created_at,
-        updated_at=l.updated_at,
-        deleted_at=l.deleted_at,
-        contacts=[ContactOut.from_orm(c) for c in l.contacts],  # ✅ Include full contact objects
-        contact_ids=[c.contact_id for c in l.contacts],
-    )
-
-
-# ===========================================================
-# CONTACTS
-# ===========================================================
-
-
-# ===========================================================
-# FIXED LIST CONTACTS ENDPOINT
-# ===========================================================
-
-@router.get("/", response_model=List[ContactOut])
-def list_contacts(org_id: str = Query(...), db: Session = Depends(get_db)):
-    # Temporarily disable cache to debug
-    # cached = RedisContactsService.get_contacts_for_org(org_id)
-    # if cached is not None:
-    #     import json
-    #     parsed = []
-    #     for item in cached:
-    #         if isinstance(item, str):
-    #             item = json.loads(item)
-    #         parsed.append(item)
-    #     return parsed
+def find_existing_contact(db: Session, org_id: str, contact_data: ContactCreate):
+    """
+    Find existing contact by matching email, phone, or social media
+    Returns contact_id if found, None otherwise
+    """
+    conditions = []
     
-    # ✅ Eagerly load ALL related data
-    rows = (
-        db.query(Contact)
-        .options(
-            joinedload(Contact.emails),
-            joinedload(Contact.phones),
-            joinedload(Contact.socials),
-            joinedload(Contact.lists)  # ✅ ADD THIS LINE
-
-        )
-        .filter(Contact.org_id == org_id)
-        .order_by(Contact.created_at.desc())
-        .all()
+    # Check if any email exists in ContactEmail table
+    if contact_data.emails:
+        for email_data in contact_data.emails:
+            email_subquery = db.query(ContactEmail.contact_id).filter(
+                ContactEmail.email_lower == email_data.email.lower()
+            ).subquery()
+            conditions.append(Contact.contact_id.in_(email_subquery))
+    
+    # Check if any phone exists in ContactPhone table
+    if contact_data.phones:
+        for phone_data in contact_data.phones:
+            phone_subquery = db.query(ContactPhone.contact_id).filter(
+                ContactPhone.phone_number == phone_data.phone_number,
+                ContactPhone.country_code == (phone_data.country_code or "")
+            ).subquery()
+            conditions.append(Contact.contact_id.in_(phone_subquery))
+    
+    # Check if any social media handle exists in ContactSocial table
+    if contact_data.socials:
+        for social_data in contact_data.socials:
+            if social_data.platform and social_data.handle:
+                social_subquery = db.query(ContactSocial.contact_id).filter(
+                    ContactSocial.platform == social_data.platform,
+                    ContactSocial.handle == social_data.handle
+                ).subquery()
+                conditions.append(Contact.contact_id.in_(social_subquery))
+    
+    # If no conditions, can't find duplicate
+    if not conditions:
+        return None
+    
+    # Find contact that matches ANY of these conditions
+    query = db.query(Contact).filter(
+        Contact.org_id == org_id,
+        or_(*conditions)
     )
-
-    # Debug: Print what we got
-    for row in rows:
-        print(f"Contact {row.contact_id}: {len(row.emails)} emails, {len(row.phones)} phones, {len(row.socials)} socials")
-
-    # Convert to Pydantic models
-    out = [ContactOut.from_orm(r) for r in rows]
     
-    # Debug: Check Pydantic models
-    for o in out:
-        print(f"Pydantic {o.contact_id}: {len(o.emails)} emails, {len(o.phones)} phones, {len(o.socials)} socials")
+    existing = query.first()
     
-    # Cache the model_dump version
-    out_dicts = [o.model_dump() for o in out]
-    RedisContactsService.cache_contacts_for_org(org_id, out_dicts)
-
-    return out
+    return existing.contact_id if existing else None
 
 
-
-@router.post("/", response_model=ContactOut, status_code=201)
-def create_contact(data: ContactCreate, db: Session = Depends(get_db)):
-    cid = data.contact_id or ("ct_" + uuid.uuid4().hex[:12])
-
-    # Create contact
-    row = Contact(
-        contact_id=cid,
-        org_id=data.org_id,
-        user_id=data.user_id,
-        name=data.name or "",
-        primary_identifier=data.primary_identifier,
-        contact_type=data.contact_type,
-        status=data.status or "active",
-        meta=data.meta or {},
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+def create_or_get_contact(db: Session, contact_data: ContactCreate, list_id: Optional[str] = None):
+    """
+    Create a new contact or return existing contact_id if duplicate found
+    Optionally associate with a list
+    """
+    # Check for existing contact using comprehensive matching
+    existing_id = find_existing_contact(db, contact_data.org_id, contact_data)
+    
+    if existing_id:
+        print(f"✅ Found existing contact: {existing_id}")
+        
+        # Add to list if list_id provided
+        if list_id:
+            stmt = select(list_members).where(
+                (list_members.c.list_id == list_id) & 
+                (list_members.c.contact_id == existing_id)
+            )
+            existing_member = db.execute(stmt).first()
+            
+            if not existing_member:
+                db.execute(list_members.insert().values(
+                    list_id=list_id,
+                    contact_id=existing_id
+                ))
+                db.flush()
+                print(f"✅ Added existing contact {existing_id} to list {list_id}")
+            else:
+                print(f"ℹ️ Contact {existing_id} already in list {list_id}")
+        
+        return existing_id, False  # False = not newly created
+    
+    # Create new contact (rest of the function remains the same)
+    contact_id = contact_data.contact_id or str(uuid4())
+    
+    new_contact = Contact(
+        contact_id=contact_id,
+        org_id=contact_data.org_id,
+        user_id=contact_data.user_id,
+        name=contact_data.name or "",
+        contact_type=contact_data.contact_type,
+        primary_identifier=contact_data.primary_identifier,
+        status=contact_data.status or "active",
+        meta=contact_data.meta or {}
     )
-
-    db.add(row)
     
-    # ✅ IMPORTANT: Flush to get the contact_id registered BEFORE adding children
+    db.add(new_contact)
     db.flush()
+    
+    # Add emails (deduplicate first)
+    unique_emails = {}
+    for email_data in (contact_data.emails or []):
+        email_lower = email_data.email.lower()
+        if email_lower not in unique_emails:
+            unique_emails[email_lower] = email_data
+    
+    for email_data in unique_emails.values():
+        email_obj = ContactEmail(
+            id=str(uuid4()),
+            contact_id=contact_id,
+            email=email_data.email,
+            email_lower=email_data.email.lower(),
+            is_primary=email_data.is_primary,
+            is_verified=email_data.is_verified,
+            status=email_data.status or "active"
+        )
+        db.add(email_obj)
+    
+    # Add phones (deduplicate first)
+    unique_phones = {}
+    for phone_data in (contact_data.phones or []):
+        phone_key = f"{phone_data.country_code or ''}_{phone_data.phone_number}"
+        if phone_key not in unique_phones:
+            unique_phones[phone_key] = phone_data
+    
+    for phone_data in unique_phones.values():
+        phone_obj = ContactPhone(
+            id=str(uuid4()),
+            contact_id=contact_id,
+            country_code=phone_data.country_code or "",
+            phone_number=phone_data.phone_number,
+            is_primary=phone_data.is_primary,
+            is_whatsapp=phone_data.is_whatsapp,
+            is_verified=phone_data.is_verified
+        )
+        db.add(phone_obj)
+    
+    # Add socials (deduplicate first)
+    unique_socials = {}
+    for social_data in (contact_data.socials or []):
+        if social_data.platform and social_data.handle:
+            social_key = f"{social_data.platform}_{social_data.handle}"
+            if social_key not in unique_socials:
+                unique_socials[social_key] = social_data
+    
+    for social_data in unique_socials.values():
+        social_obj = ContactSocial(
+            id=str(uuid4()),
+            contact_id=contact_id,
+            platform=social_data.platform,
+            handle=social_data.handle,
+            link=social_data.link
+        )
+        db.add(social_obj)
+    
+    # Add to list if provided
+    if list_id:
+        db.execute(list_members.insert().values(
+            list_id=list_id,
+            contact_id=contact_id
+        ))
+        db.flush()
+        print(f"✅ Added new contact {contact_id} to list {list_id}")
+    
+    db.flush()
+    print(f"✅ Created new contact: {contact_id}")
+    
+    return contact_id, True  # True = newly created
 
-    # ✅ Create email records
-    if data.emails:
-        for em in data.emails:
-            email_record = ContactEmail(
-                id=em.id or ("em_" + uuid.uuid4().hex[:12]),
-                contact_id=cid,
-                email=em.email,
-                email_lower=em.email.lower(),
-                is_primary=em.is_primary,
-                is_verified=em.is_verified,
-                status=em.status
+@router.post("/", response_model=ContactOut)
+def create_contact(data: ContactCreate, db: Session = Depends(get_db)):
+    """Create a single contact"""
+    try:
+        contact_id, is_new = create_or_get_contact(db, data)
+        db.commit()
+        
+        # Load with relationships
+        contact = (
+            db.query(Contact)
+            .options(
+                joinedload(Contact.emails),
+                joinedload(Contact.phones),
+                joinedload(Contact.socials),
+                joinedload(Contact.lists)
             )
-            db.add(email_record)
-            print(f"Adding email: {email_record.email} to contact {cid}")
+            .filter(Contact.contact_id == contact_id)
+            .first()
+        )
+        
+        return contact
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Error creating contact: {str(e)}")
+        raise HTTPException(500, f"Error creating contact: {str(e)}")
 
-    # ✅ Create phone records
-    if data.phones:
-        for ph in data.phones:
-            phone_record = ContactPhone(
-                id=ph.id or ("ph_" + uuid.uuid4().hex[:12]),
-                contact_id=cid,
-                country_code=ph.country_code,
-                phone_number=ph.phone_number,
-                is_primary=ph.is_primary,
-                is_whatsapp=ph.is_whatsapp,
-                is_verified=ph.is_verified,
-            )
-            db.add(phone_record)
-            print(f"Adding phone: {phone_record.phone_number} to contact {cid}")
 
-    # ✅ Create social records
-    if data.socials:
-        for sc in data.socials:
-            social_record = ContactSocial(
-                id=sc.id or ("sc_" + uuid.uuid4().hex[:12]),
-                contact_id=cid,
-                platform=sc.platform,
-                handle=sc.handle,
-                link=sc.link,
-            )
-            db.add(social_record)
-            print(f"Adding social: {social_record.platform} to contact {cid}")
-
-    # Commit everything
+@router.post("/bulk", response_model=dict)
+def bulk_create_contacts(
+    contacts: List[ContactCreate],
+    list_id: Optional[str] = None,  # Can come from query param
+    db: Session = Depends(get_db)
+):
+    """
+    Bulk create contacts and optionally add them to a list
+    Returns summary of created vs existing contacts
+    
+    Usage:
+    - POST /contacts/bulk (creates contacts only)
+    - POST /contacts/bulk?list_id=xyz (creates contacts AND adds to list)
+    """
+    # Validate list exists if provided
+    if list_id:
+        contact_list = db.query(ContactList).filter(ContactList.list_id == list_id).first()
+        if not contact_list:
+            raise HTTPException(404, f"List {list_id} not found")
+    
+    created_ids = []
+    existing_ids = []
+    errors = []
+    
+    for idx, contact_data in enumerate(contacts, start=1):
+        try:
+            contact_id, is_new = create_or_get_contact(db, contact_data, list_id)
+            
+            if is_new:
+                created_ids.append(contact_id)
+            else:
+                existing_ids.append(contact_id)
+                
+        except Exception as e:
+            error_msg = f"Contact {idx} ({contact_data.name or 'unnamed'}): {str(e)}"
+            print(f"❌ {error_msg}")
+            errors.append(error_msg)
+            # Don't rollback - continue processing other contacts
+            continue
+    
     db.commit()
     
-    # ✅ Reload with relationships - CRITICAL
-    row = (
-        db.query(Contact)
-        .options(
-            joinedload(Contact.emails),
-            joinedload(Contact.phones),
-            joinedload(Contact.socials)
+    return {
+        "success": True,
+        "total": len(contacts),
+        "created": len(created_ids),
+        "existing": len(existing_ids),
+        "errors": errors,
+        "created_ids": created_ids,
+        "existing_ids": existing_ids,
+        "list_id": list_id
+    }
+
+@router.post("/upload-csv")
+async def upload_contacts_csv(
+    file: UploadFile = File(...),
+    org_id: str = Body(...),
+    list_id: Optional[str] = Body(None),
+    list_name: Optional[str] = Body(None),  # Add this parameter
+    db: Session = Depends(get_db)
+):
+    """
+    Upload contacts from CSV and optionally add to a list
+    If list_id is provided but doesn't exist, returns error
+    If list_name is provided without list_id, creates new list
+    CSV columns: name, email, phone, country_code, platform, handle
+    """
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(400, "File must be a CSV")
+    
+    # Handle list creation/validation
+    contact_list = None
+    if list_id:
+        # Validate existing list
+        contact_list = db.query(ContactList).filter(ContactList.list_id == list_id).first()
+        if not contact_list:
+            raise HTTPException(404, f"List {list_id} not found")
+        if contact_list.org_id != org_id:
+            raise HTTPException(403, "List doesn't belong to this organization")
+    elif list_name:
+        # Create new list with provided name
+        list_id = str(uuid4())
+        contact_list = ContactList(
+            list_id=list_id,
+            org_id=org_id,
+            list_name=list_name,
+            status="active"
         )
-        .filter(Contact.contact_id == cid)
-        .first()
-    )
+        db.add(contact_list)
+        db.flush()
+        print(f"✅ Created new list: {list_id} - {list_name}")
+    
+    contents = await file.read()
+    csv_data = io.StringIO(contents.decode('utf-8'))
+    reader = csv.DictReader(csv_data)
+    
+    created_ids = []
+    existing_ids = []
+    errors = []
+    
+    for idx, row in enumerate(reader, start=1):
+        try:
+            # Determine primary identifier and contact type
+            email = row.get('email', '').strip()
+            phone = row.get('phone', '').strip()
+            
+            if email:
+                primary_identifier = email
+                contact_type = ContactType.email
+            elif phone:
+                primary_identifier = phone
+                contact_type = ContactType.phone
+            else:
+                errors.append(f"Row {idx}: No email or phone provided")
+                continue
+            
+            # Build contact data
+            contact_data = ContactCreate(
+                org_id=org_id,
+                name=row.get('name', '').strip(),
+                primary_identifier=primary_identifier,
+                contact_type=contact_type,
+                emails=[ContactEmail(email=email, is_primary=True)] if email else [],
+                phones=[ContactPhone(
+                    country_code=row.get('country_code', '').strip(),
+                    phone_number=phone,
+                    is_primary=True
+                )] if phone else [],
+                socials=[ContactSocial(
+                    platform=row.get('platform', '').strip(),
+                    handle=row.get('handle', '').strip()
+                )] if row.get('platform') else []
+            )
+            
+            contact_id, is_new = create_or_get_contact(db, contact_data, list_id)
+            
+            if is_new:
+                created_ids.append(contact_id)
+            else:
+                existing_ids.append(contact_id)
+                
+        except Exception as e:
+            errors.append(f"Row {idx}: {str(e)}")
+            continue
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "total_rows": idx if 'idx' in locals() else 0,
+        "created": len(created_ids),
+        "existing": len(existing_ids),
+        "errors": errors,
+        "list_id": list_id,
+        "list_name": contact_list.list_name if contact_list else None,
+        "list_created": bool(list_name and not contact_list)  # Was list created?
+    }
 
-    print(f"After reload: {len(row.emails)} emails, {len(row.phones)} phones, {len(row.socials)} socials")
+@router.get("/", response_model=List[ContactOut])
+def get_contacts(
+    org_id: str,
+    list_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Get all contacts for an org, optionally filtered by list"""
+    query = db.query(Contact).options(
+        joinedload(Contact.emails),
+        joinedload(Contact.phones),
+        joinedload(Contact.socials),
+        joinedload(Contact.lists)
+    ).filter(Contact.org_id == org_id)
+    
+    if list_id:
+        # Filter by list membership
+        query = query.join(Contact.lists).filter(ContactList.list_id == list_id)
+    
+    return query.all()
 
-    RedisContactsService.invalidate_contacts(data.org_id)
-
-    return row
 
 @router.get("/{contact_id}", response_model=ContactOut)
 def get_contact(contact_id: str, db: Session = Depends(get_db)):
-    # ✅ FIX: Eagerly load related data
-    row = (
+    """Get a single contact with all details"""
+    contact = (
         db.query(Contact)
         .options(
             joinedload(Contact.emails),
             joinedload(Contact.phones),
             joinedload(Contact.socials),
-            joinedload(Contact.lists)  # ✅ ADD THIS LINE
-
+            joinedload(Contact.lists)
         )
         .filter(Contact.contact_id == contact_id)
         .first()
     )
-    if not row:
-        raise HTTPException(status_code=404, detail="Contact not found")
-    return row
+    
+    if not contact:
+        raise HTTPException(404, "Contact not found")
+    
+    return contact
 
 
 @router.patch("/{contact_id}", response_model=ContactOut)
-def update_contact(contact_id: str, data: ContactUpdate, db: Session = Depends(get_db)):
-    row = db.query(Contact).filter(Contact.contact_id == contact_id).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Contact not found")
-
-    updates = data.dict(exclude_unset=True)
-
-    # ✅ update base fields
-    for k, v in updates.items():
-        if k not in ["emails", "phones", "socials"]:
-            setattr(row, k, v)
-
-    # ✅ replace emails
+def update_contact(
+    contact_id: str,
+    data: ContactUpdate,
+    db: Session = Depends(get_db)
+):
+    """Update contact details"""
+    contact = db.query(Contact).filter(Contact.contact_id == contact_id).first()
+    
+    if not contact:
+        raise HTTPException(404, "Contact not found")
+    
+    # Update basic fields
+    if data.name is not None:
+        contact.name = data.name
+    if data.primary_identifier is not None:
+        contact.primary_identifier = data.primary_identifier
+    if data.contact_type is not None:
+        contact.contact_type = data.contact_type
+    if data.status is not None:
+        contact.status = data.status
+    if data.meta is not None:
+        contact.meta = data.meta
+    if data.user_id is not None:
+        contact.user_id = data.user_id
+    
+    # Update emails if provided
     if data.emails is not None:
+        # Delete existing emails
         db.query(ContactEmail).filter(ContactEmail.contact_id == contact_id).delete()
-        for em in data.emails:
-            db.add(
-                ContactEmail(
-                    id="em_" + uuid.uuid4().hex[:12],
-                    contact_id=contact_id,
-                    email=em.email,
-                    email_lower=em.email.lower(),
-                    is_primary=em.is_primary,
-                    is_verified=em.is_verified,
-                    status=em.status
-                )
+        
+        # Add new emails
+        for email_data in data.emails:
+            email_obj = ContactEmail(
+                id=str(uuid4()),
+                contact_id=contact_id,
+                email=email_data.email,
+                email_lower=email_data.email.lower(),
+                is_primary=email_data.is_primary,
+                is_verified=email_data.is_verified,
+                status=email_data.status or "active"
             )
-
-    # ✅ replace phones
+            db.add(email_obj)
+    
+    # Update phones if provided
     if data.phones is not None:
         db.query(ContactPhone).filter(ContactPhone.contact_id == contact_id).delete()
-        for ph in data.phones:
-            db.add(
-                ContactPhone(
-                    id="ph_" + uuid.uuid4().hex[:12],
-                    contact_id=contact_id,
-                    country_code=ph.country_code,
-                    phone_number=ph.phone_number,
-                    is_primary=ph.is_primary,
-                    is_whatsapp=ph.is_whatsapp,
-                    is_verified=ph.is_verified,
-                )
+        
+        for phone_data in data.phones:
+            phone_obj = ContactPhone(
+                id=str(uuid4()),
+                contact_id=contact_id,
+                country_code=phone_data.country_code or "",
+                phone_number=phone_data.phone_number,
+                is_primary=phone_data.is_primary,
+                is_whatsapp=phone_data.is_whatsapp,
+                is_verified=phone_data.is_verified
             )
-
-    # ✅ replace socials
+            db.add(phone_obj)
+    
+    # Update socials if provided
     if data.socials is not None:
         db.query(ContactSocial).filter(ContactSocial.contact_id == contact_id).delete()
-        for sc in data.socials:
-            db.add(
-                ContactSocial(
-                    id="sc_" + uuid.uuid4().hex[:12],
-                    contact_id=contact_id,
-                    platform=sc.platform,
-                    handle=sc.handle,
-                    link=sc.link,
-                )
+        
+        for social_data in data.socials:
+            social_obj = ContactSocial(
+                id=str(uuid4()),
+                contact_id=contact_id,
+                platform=social_data.platform,
+                handle=social_data.handle,
+                link=social_data.link
             )
-
-    row.updated_at = datetime.utcnow()
+            db.add(social_obj)
+    
     db.commit()
     
-    # ✅ Reload with relationships
-    row = (
+    # Reload with relationships
+    contact = (
         db.query(Contact)
         .options(
             joinedload(Contact.emails),
             joinedload(Contact.phones),
             joinedload(Contact.socials),
-            joinedload(Contact.lists)  # ✅ ADD THIS LINE
-
+            joinedload(Contact.lists)
         )
         .filter(Contact.contact_id == contact_id)
         .first()
     )
-
-    RedisContactsService.invalidate_contacts(row.org_id)
-
-    return row
+    
+    return contact
 
 
 @router.delete("/{contact_id}")
 def delete_contact(contact_id: str, db: Session = Depends(get_db)):
-    row = db.query(Contact).filter(Contact.contact_id == contact_id).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Contact not found")
-
-    org = row.org_id
-    meta = row.meta or {}
-
-    db.delete(row)
-    db.commit()
-
-    RedisContactsService.invalidate_contacts(org)
-
-    record_audit(
-        db=db,
-        event_type="contact.deleted",
-        entity_id=contact_id,
-        org_id=org,
-        meta=meta
-    )
-
-    return {"detail": "Contact deleted"}
-
-
-# ===========================================================
-# LISTS
-# ===========================================================
-
-@router.get("/lists", response_model=List[ListOut])
-def list_lists(org_id: str = Query(...), db: Session = Depends(get_db)):
-    cached = RedisContactsService.get_lists(org_id)
-    if cached is not None:
-        return cached
-
-    # ✅ FIX: Eagerly load contacts with their nested relationships
-    rows = (
-        db.query(ContactList)
-        .options(
-            joinedload(ContactList.contacts).joinedload(Contact.emails),
-            joinedload(ContactList.contacts).joinedload(Contact.phones),
-            joinedload(ContactList.contacts).joinedload(Contact.socials)
-        )
-        .filter(ContactList.org_id == org_id, ContactList.deleted_at == None)
-        .all()
-    )
-
-    out = [list_to_out(l) for l in rows]
-    RedisContactsService.cache_lists(org_id, out)
-    return out
-
-
-@router.post("/lists", response_model=ListOut, status_code=201)
-def create_list(data: ListCreate, db: Session = Depends(get_db)):
-    lid = data.list_id or ("lst_" + uuid.uuid4().hex[:10])
-
-    row = ContactList(
-        list_id=lid,
-        org_id=data.org_id,
-        list_name=data.list_name,
-        status=data.status or "live",
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-    )
-
-    db.add(row)
-
-    if data.contact_ids:
-        contacts = (
-            db.query(Contact)
-            .options(
-                joinedload(Contact.emails),
-                joinedload(Contact.phones),
-                joinedload(Contact.socials)
-            )
-            .filter(Contact.contact_id.in_(data.contact_ids))
-            .all()
-        )
-        row.contacts = contacts
-
+    """Delete a contact (cascades to emails, phones, socials)"""
+    contact = db.query(Contact).filter(Contact.contact_id == contact_id).first()
+    
+    if not contact:
+        raise HTTPException(404, "Contact not found")
+    
+    db.delete(contact)
     db.commit()
     
-    # ✅ Reload with relationships
-    row = (
-        db.query(ContactList)
-        .options(
-            joinedload(ContactList.contacts).joinedload(Contact.emails),
-            joinedload(ContactList.contacts).joinedload(Contact.phones),
-            joinedload(ContactList.contacts).joinedload(Contact.socials)
-        )
-        .filter(ContactList.list_id == lid)
-        .first()
-    )
-
-    RedisContactsService.invalidate_lists(data.org_id)
-
-    record_audit(
-        db=db,
-        event_type="list.created",
-        entity_id=row.list_id,
-        org_id=row.org_id,
-        entity_type="contact_list",
-        meta={"contact_ids": data.contact_ids},
-    )
-
-    return list_to_out(row)
-
-
-@router.get("/lists/{list_id}", response_model=ListOut)
-def get_list(list_id: str, db: Session = Depends(get_db)):
-    # ✅ FIX: Eagerly load contacts with nested data
-    l = (
-        db.query(ContactList)
-        .options(
-            joinedload(ContactList.contacts).joinedload(Contact.emails),
-            joinedload(ContactList.contacts).joinedload(Contact.phones),
-            joinedload(ContactList.contacts).joinedload(Contact.socials)
-        )
-        .filter(ContactList.list_id == list_id)
-        .first()
-    )
-    if not l:
-        raise HTTPException(status_code=404, detail="List not found")
-    return list_to_out(l)
-
-
-@router.patch("/lists/{list_id}", response_model=ListOut)
-def update_list(list_id: str, data: ListUpdate, db: Session = Depends(get_db)):
-    l = db.query(ContactList).filter(ContactList.list_id == list_id).first()
-    if not l:
-        raise HTTPException(status_code=404, detail="List not found")
-
-    meta = {}
-    if data.list_name is not None:
-        l.list_name = data.list_name
-        meta["list_name"] = data.list_name
-    if data.status is not None:
-        l.status = data.status
-        meta["status"] = data.status
-
-    if data.contact_ids is not None:
-        contacts = (
-            db.query(Contact)
-            .options(
-                joinedload(Contact.emails),
-                joinedload(Contact.phones),
-                joinedload(Contact.socials)
-            )
-            .filter(Contact.contact_id.in_(data.contact_ids))
-            .all()
-        )
-        l.contacts = contacts
-        meta["contact_ids"] = data.contact_ids
-
-    l.updated_at = datetime.utcnow()
-
-    db.commit()
-    
-    # ✅ Reload with relationships
-    l = (
-        db.query(ContactList)
-        .options(
-            joinedload(ContactList.contacts).joinedload(Contact.emails),
-            joinedload(ContactList.contacts).joinedload(Contact.phones),
-            joinedload(ContactList.contacts).joinedload(Contact.socials)
-        )
-        .filter(ContactList.list_id == list_id)
-        .first()
-    )
-
-    RedisContactsService.invalidate_lists(l.org_id)
-
-    record_audit(
-        db=db,
-        event_type="list.updated",
-        entity_id=l.list_id,
-        org_id=l.org_id,
-        entity_type="contact_list",
-        meta=meta,
-    )
-
-    return list_to_out(l)
-
-
-@router.post("/lists/{list_id}/add")
-def add_contacts_to_list(list_id: str, contact_ids: List[str], db: Session = Depends(get_db)):
-    l = db.query(ContactList).filter(ContactList.list_id == list_id).first()
-    if not l:
-        raise HTTPException(status_code=404, detail="List not found")
-
-    existing = {c.contact_id for c in l.contacts}
-
-    new_contacts = (
-        db.query(Contact)
-        .filter(Contact.contact_id.in_(contact_ids))
-        .all()
-    )
-
-    added = 0
-    for c in new_contacts:
-        if c.contact_id not in existing:
-            l.contacts.append(c)
-            added += 1
-
-    db.commit()
-
-    RedisContactsService.invalidate_lists(l.org_id)
-
-    record_audit(
-        db=db,
-        event_type="list.contacts_added",
-        entity_id=list_id,
-        org_id=l.org_id,
-        entity_type="contact_list",
-        meta={"contact_ids": contact_ids},
-    )
-
-    return {"detail": "added", "count": added}
-
-
-@router.post("/lists/{list_id}/remove")
-def remove_contacts_from_list(list_id: str, contact_ids: List[str], db: Session = Depends(get_db)):
-    l = db.query(ContactList).filter(ContactList.list_id == list_id).first()
-    if not l:
-        raise HTTPException(status_code=404, detail="List not found")
-
-    l.contacts = [c for c in l.contacts if c.contact_id not in set(contact_ids)]
-
-    db.commit()
-
-    RedisContactsService.invalidate_lists(l.org_id)
-
-    record_audit(
-        db=db,
-        event_type="list.contacts_removed",
-        entity_id=list_id,
-        org_id=l.org_id,
-        entity_type="contact_list",
-        meta={"contact_ids": contact_ids},
-    )
-
-    return {"detail": "removed"}
-
-
-@router.delete("/lists/{list_id}")
-def delete_list(list_id: str, db: Session = Depends(get_db)):
-    l = db.query(ContactList).filter(ContactList.list_id == list_id).first()
-    if not l:
-        raise HTTPException(status_code=404, detail="List not found")
-
-    l.deleted_at = datetime.utcnow()
-    db.commit()
-
-    RedisContactsService.invalidate_lists(l.org_id)
-
-    record_audit(
-        db=db,
-        event_type="list.deleted",
-        entity_id=list_id,
-        org_id=l.org_id,
-        entity_type="contact_list",
-        meta={},
-    )
-
-    return {"detail": "List deleted (soft)"}
-# Replace the existing /lists/{list_id}/add and /lists/{list_id}/remove endpoints with:
-
-@router.patch("/lists/{list_id}/contacts")
-def add_contacts_to_list_patch(
-    list_id: str, 
-    contact_ids: List[str],
-    db: Session = Depends(get_db)
-):
-    """PATCH endpoint to add contacts to a list"""
-    l = (
-        db.query(ContactList)
-        .options(
-            joinedload(ContactList.contacts).joinedload(Contact.emails),
-            joinedload(ContactList.contacts).joinedload(Contact.phones),
-            joinedload(ContactList.contacts).joinedload(Contact.socials)
-        )
-        .filter(ContactList.list_id == list_id)
-        .first()
-    )
-    
-    if not l:
-        raise HTTPException(status_code=404, detail="List not found")
-
-    existing = {c.contact_id for c in l.contacts}
-
-    new_contacts = (
-        db.query(Contact)
-        .options(
-            joinedload(Contact.emails),
-            joinedload(Contact.phones),
-            joinedload(Contact.socials)
-        )
-        .filter(Contact.contact_id.in_(contact_ids))
-        .all()
-    )
-
-    added = 0
-    for c in new_contacts:
-        if c.contact_id not in existing:
-            l.contacts.append(c)
-            added += 1
-
-    db.commit()
-    
-    # Reload with all relationships
-    l = (
-        db.query(ContactList)
-        .options(
-            joinedload(ContactList.contacts).joinedload(Contact.emails),
-            joinedload(ContactList.contacts).joinedload(Contact.phones),
-            joinedload(ContactList.contacts).joinedload(Contact.socials)
-        )
-        .filter(ContactList.list_id == list_id)
-        .first()
-    )
-
-    RedisContactsService.invalidate_lists(l.org_id)
-
-    record_audit(
-        db=db,
-        event_type="list.contacts_added",
-        entity_id=list_id,
-        org_id=l.org_id,
-        entity_type="contact_list",
-        meta={"contact_ids": contact_ids, "added_count": added},
-    )
-
-    return list_to_out(l)
-
-
-@router.delete("/lists/{list_id}/contacts")
-def remove_contacts_from_list_delete(
-    list_id: str,
-    contact_ids: List[str],
-    db: Session = Depends(get_db)
-):
-    """DELETE endpoint to remove contacts from a list"""
-    l = (
-        db.query(ContactList)
-        .options(
-            joinedload(ContactList.contacts).joinedload(Contact.emails),
-            joinedload(ContactList.contacts).joinedload(Contact.phones),
-            joinedload(ContactList.contacts).joinedload(Contact.socials)
-        )
-        .filter(ContactList.list_id == list_id)
-        .first()
-    )
-    
-    if not l:
-        raise HTTPException(status_code=404, detail="List not found")
-
-    contact_ids_set = set(contact_ids)
-    l.contacts = [c for c in l.contacts if c.contact_id not in contact_ids_set]
-
-    db.commit()
-    
-    # Reload with all relationships
-    l = (
-        db.query(ContactList)
-        .options(
-            joinedload(ContactList.contacts).joinedload(Contact.emails),
-            joinedload(ContactList.contacts).joinedload(Contact.phones),
-            joinedload(ContactList.contacts).joinedload(Contact.socials)
-        )
-        .filter(ContactList.list_id == list_id)
-        .first()
-    )
-
-    RedisContactsService.invalidate_lists(l.org_id)
-
-    record_audit(
-        db=db,
-        event_type="list.contacts_removed",
-        entity_id=list_id,
-        org_id=l.org_id,
-        entity_type="contact_list",
-        meta={"contact_ids": contact_ids, "removed_count": len(contact_ids)},
-    )
-
-    return list_to_out(l)
+    return {"success": True, "contact_id": contact_id}

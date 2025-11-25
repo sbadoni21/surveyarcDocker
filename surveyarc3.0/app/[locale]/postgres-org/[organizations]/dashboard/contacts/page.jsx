@@ -72,6 +72,8 @@ export default function ListsPage() {
     })();
   }, [orgId, listLists, listContacts]);
   console.log("Contacts:", contacts);
+  console.log("lists", lists)
+  console.log("")
   const getPaginatedContacts = (listId, contactsList) => {
     const page = listPagination[listId] || 1;
     const pageSize = 10;
@@ -110,19 +112,55 @@ const handleCreateManualContact = async (contactData, listId) => {
   try {
     const newContactId = crypto.randomUUID();
     
-    await createContact({
-      contactId: newContactId,
-      orgId,
+    // ✅ Strict filtering with better validation
+    const validEmails = (contactData.emails || []).filter(e => 
+      e.email && e.email.trim() !== ""
+    ).map(e => ({
+      email: e.email.trim(),
+      isPrimary: e.is_primary ?? false,  // ✅ Convert to camelCase
+      isVerified: e.is_verified ?? false,
+      status: e.status ?? "active"
+    }));
+    
+    const validPhones = (contactData.phones || []).filter(p => {
+      const hasPhoneNumber = p.phone_number && p.phone_number.trim() !== "";
+      return hasPhoneNumber;
+    }).map(p => ({
+      countryCode: p.country_code?.trim() || "",  // ✅ Convert to camelCase
+      phoneNumber: p.phone_number.trim(),
+      isPrimary: p.is_primary ?? false,
+      isWhatsapp: p.is_whatsapp ?? false,
+      isVerified: p.is_verified ?? false
+    }));
+    
+    const validSocials = (contactData.socials || []).filter(s => 
+      s.platform && s.platform.trim() !== "" && 
+      s.handle && s.handle.trim() !== ""
+    ).map(s => ({
+      platform: s.platform.trim(),
+      handle: s.handle.trim(),
+      link: s.link?.trim() || null
+    }));
+
+    console.log("✅ Valid data:", { validEmails, validPhones, validSocials });
+
+    const payload = {
+      contactId: newContactId,     // ✅ camelCase for the model
+      orgId: orgId,                 // ✅ CRITICAL: Include orgId
       userId: null,
-      name: contactData.name,
-      primaryIdentifier: contactData.primaryIdentifier,
+      name: contactData.name.trim(),
+      primaryIdentifier: contactData.primaryIdentifier.trim(),
       contactType: contactData.contactType,
       status: "active",
-      meta: {}, // Don't duplicate emails/phones/socials here since they're already in the main payload
-      emails: contactData.emails || [],
-      phones: contactData.phones || [],
-      socials: contactData.socials || [],
-    });
+      meta: {},
+      emails: validEmails,
+      phones: validPhones,
+      socials: validSocials,
+    };
+
+    console.log("📤 Final payload being sent:", JSON.stringify(payload, null, 2));
+
+    await createContact(payload);
 
     if (listId) {
       await addContactsToList(listId, [newContactId]);
@@ -133,7 +171,7 @@ const handleCreateManualContact = async (contactData, listId) => {
     setManualContactListId(null);
     alert("✅ Contact created successfully");
   } catch (error) {
-    console.error("Failed to create contact:", error);
+    console.error("❌ Failed to create contact:", error);
     alert("❌ Failed to create contact: " + (error.message || "Unknown error"));
   }
 };
@@ -221,31 +259,23 @@ const handleCreateManualContact = async (contactData, listId) => {
     setUploadModalOpen(true);
   };
 
-// Bulk upload handler
+// Fixed handleUpload function for ListsPage
 const handleUpload = async ({
-  listId,            // ✅ existing list ID (optional)
-  listName,          // ✅ name for new list
+  listId,
+  listName,
   contacts,
   contactEmails,
   contactPhones,
   contactSocials,
 }) => {
-
   if (!orgId) {
     alert("❌ Missing Org ID");
     return;
   }
-console.log( listId,            // ✅ existing list ID (optional)
-  )
-  console.log(listName)
-  console.log(contacts)
-  console.log(contactEmails)
-  console.log(contactPhones)  
-  console.log(contactSocials) 
 
   try {
     /* -------------------------------
-     ✅ 1) Prepare contacts
+     ✅ 1) Prepare contacts with nested data
     ---------------------------------*/
     const contactsToCreate = contacts.map(c => {
       const emails = contactEmails.filter(e => e.contactId === c.contactId);
@@ -253,57 +283,117 @@ console.log( listId,            // ✅ existing list ID (optional)
       const socials = contactSocials.filter(s => s.contactId === c.contactId);
 
       return {
-        contactId: c.contactId,
-        orgId,
-        userId: null,
+        contact_id: c.contactId,      // ✅ snake_case for backend
+        org_id: orgId,
+        user_id: null,
         name: c.name,
-        primaryIdentifier: c.primaryIdentifier,
-        contactType: c.contactType ?? "other",
+        primary_identifier: c.primaryIdentifier,
+        contact_type: c.contactType ?? "other",
         status: c.status ?? "active",
         meta: c.meta ?? {},
-        emails,
-        phones,
-        socials,
+        emails: emails.map(e => ({
+          email: e.email,
+          is_primary: e.isPrimary ?? false,
+          is_verified: e.isVerified ?? false,
+          status: e.status ?? "active"
+        })),
+        phones: phones.map(p => ({
+          country_code: p.countryCode ?? "",
+          phone_number: p.phoneNumber,
+          is_primary: p.isPrimary ?? false,
+          is_whatsapp: p.isWhatsapp ?? false,
+          is_verified: p.isVerified ?? false
+        })),
+        socials: socials.map(s => ({
+          platform: s.platform,
+          handle: s.handle,
+          link: s.link ?? null
+        }))
       };
     });
 
     /* -------------------------------
-     ✅ 2) Create Contacts
-    ---------------------------------*/
-    for (const contactData of contactsToCreate) {
-      await createContact(contactData);
-    }
-
-    const contactIds = contacts.map(c => c.contactId);
-
-    /* -------------------------------
-     ✅ 3) Update Existing List
+     ✅ 2) Check if updating existing list
     ---------------------------------*/
     const validListId = listId && listId.toString().trim() !== "";
 
     if (validListId) {
-      await addContactsToList(listId, contactIds);
+      // Adding to existing list - use bulk API with list_id
+      const response = await fetch("/api/post-gres-apis/contacts/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contacts: contactsToCreate,
+          list_id: listId,  // ✅ Pass list_id in body
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || error.detail || "Failed to upload contacts");
+      }
+
+      const result = await response.json();
+      
       await refresh();
       setUploadModalOpen(false);
-      alert(`✅ Uploaded ${contacts.length} contacts to existing list`);
+      
+      alert(
+        `✅ Upload complete!\n` +
+        `New contacts created: ${result.created}\n` +
+        `Existing contacts added: ${result.existing}\n` +
+        `Total in list: ${result.created + result.existing}` +
+        (result.errors?.length ? `\n\n⚠️ Errors: ${result.errors.length}` : '')
+      );
       return;
     }
 
     /* -------------------------------
-     ✅ 4) Create New List
+     ✅ 3) Creating new list with contacts
     ---------------------------------*/
     if (listName) {
+      // Use bulk endpoint without list_id to create contacts first
+      const response = await fetch("/api/post-gres-apis/contacts/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contacts: contactsToCreate,
+          // No list_id - just create contacts
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || error.detail || "Failed to create contacts");
+      }
+
+      const result = await response.json();
+      
+      // Collect all contact IDs (both new and existing)
+      const allContactIds = [
+        ...result.created_ids,
+        ...result.existing_ids
+      ];
+
+      // Create list with all contacts
       await createList({
         listId: crypto.randomUUID(),
         orgId,
         listName,
         status: "live",
-        contactIds,
+        contactIds: allContactIds,
       });
 
       await refresh();
       setUploadModalOpen(false);
-      alert(`✅ Uploaded ${contacts.length} contacts to new list "${listName}"`);
+      
+      alert(
+        `✅ Upload complete!\n` +
+        `New contacts: ${result.created}\n` +
+        `Existing contacts: ${result.existing}\n` +
+        `Total in list "${listName}": ${allContactIds.length}` +
+        (result.errors?.length ? `\n\n⚠️ Errors: ${result.errors.length}` : '')
+      );
       return;
     }
 
@@ -972,23 +1062,35 @@ const ManualContactModal = ({ isOpen, listId, onClose, onSave }) => {
     setForm({ ...form, socials: form.socials.filter((_, i) => i !== index) });
   };
 
-  const handleSubmit = () => {
-    if (!form.name.trim() || !form.primaryIdentifier.trim()) {
-      return alert("Name and Primary Identifier are required");
-    }
+const handleSubmit = () => {
+  if (!form.name.trim() || !form.primaryIdentifier.trim()) {
+    return alert("Name and Primary Identifier are required");
+  }
 
-    const cleanEmails = form.emails.filter(e => e.email.trim());
-    const cleanPhones = form.phones.filter(p => p.phone_number.trim());
-    const cleanSocials = form.socials.filter(s => s.platform.trim() && s.handle.trim());
+  // ✅ Filter out incomplete entries
+  const cleanEmails = form.emails.filter(e => e.email && e.email.trim() !== "");
+  
+  const cleanPhones = form.phones.filter(p => {
+    // Only include if phone_number is actually filled in
+    return p.phone_number && p.phone_number.trim() !== "";
+  });
+  
+  const cleanSocials = form.socials.filter(s => 
+    s.platform && s.platform.trim() !== "" && 
+    s.handle && s.handle.trim() !== ""
+  );
 
-    onSave({
-      ...form,
-      emails: cleanEmails,
-      phones: cleanPhones,
-      socials: cleanSocials,
-    }, listId);
-  };
+  console.log("🧹 Cleaned data:", { cleanEmails, cleanPhones, cleanSocials });
 
+  onSave({
+    name: form.name,
+    primaryIdentifier: form.primaryIdentifier,
+    contactType: form.contactType,
+    emails: cleanEmails,
+    phones: cleanPhones,
+    socials: cleanSocials,
+  }, listId);
+};
   if (!isOpen) return null;
 
   return (

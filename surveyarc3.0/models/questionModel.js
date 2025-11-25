@@ -58,7 +58,16 @@ const QuestionModel = {
     const q = await json(res);
     return toCamel(q);
   },
-
+async getBulkQuestions(questionIds) {
+  const res = await fetch(`${BASE}/bulk-questions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question_ids: questionIds }), // Wrap in object
+    cache: "no-store",
+  });
+  const q = await res.json(); // Fix: use res.json() instead of json(res)
+  return q;
+},
   async update(orgId, surveyId, questionId, updateData) {
     const res = await fetch(`${BASE}/${encodeURIComponent(surveyId)}/${encodeURIComponent(questionId)}`, {
       method: "PATCH",
