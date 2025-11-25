@@ -212,12 +212,12 @@ export default function SurveyDemoPage() {
 
           <div
             style={{
-              width: isMobile ? "100%" : 300,
-              maxWidth: 360,
-              height: isMobile ? "calc(100vh - 120px)" : 580,
+              width: isMobile ? "100%" : 360,
+              maxWidth: 420,
+              height: isMobile ? "calc(100vh - 120px)" : 620,
               borderRadius: 36,
               padding: "18px 10px",
-              background: "#000", // black background
+              background: "#000",
               boxShadow: "0 8px 30px rgba(0,0,0,0.6)",
               display: "flex",
               justifyContent: "center",
@@ -235,14 +235,23 @@ export default function SurveyDemoPage() {
                 flexDirection: "column",
               }}
             >
-              {/* inside phone screen the SurveyForm is embedded */}
-              <div style={{ flex: 1, background: "#000" }}>
+              {/* Scrollable phone screen */}
+              <div
+                style={{
+                  flex: 1,
+                  background: "#000",
+                  overflowY: "auto", // ENABLE SCROLLING
+                  overflowX: "hidden",
+                  paddingBottom: 20,
+                }}
+              >
                 <SurveyForm
                   questions={questions}
                   blocks={preparedBlocks}
                   handleSubmit={handleSubmit}
                   rules={rules}
                   embedded={true}
+                  embeddedDevice="mobile" // FORCE MOBILE UI
                   theme={theme}
                 />
               </div>
@@ -268,6 +277,7 @@ export default function SurveyDemoPage() {
                 position: "relative",
                 display: "flex",
                 flexDirection: "column",
+                overflow: "hidden", // prevents outer scroll leakage
               }}
             >
               <div
@@ -275,7 +285,9 @@ export default function SurveyDemoPage() {
                   background: "#000",
                   height: "100%",
                   borderRadius: 8,
-                  overflow: "hidden",
+                  overflowY: "auto", // enable vertical scroll
+                  overflowX: "hidden",
+                  scrollbarWidth: "thin", // firefox
                 }}
               >
                 <SurveyForm
