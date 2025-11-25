@@ -40,6 +40,10 @@ export const QuestionProvider = ({ children }) => {
     setSelectedQuestion(q);
     return q;
   };
+const getBulkQuestions = async ( questionIds) => {
+  const q = await QuestionModel.getBulkQuestions( questionIds);
+  return q;
+};
 
   const saveQuestion = async (_orgId, _surveyId, data) => {
     const created = await QuestionModel.create(_orgId, _surveyId, data);
@@ -66,6 +70,7 @@ export const QuestionProvider = ({ children }) => {
         getAllQuestions,
         getQuestion,
         saveQuestion,
+        getBulkQuestions,
         updateQuestion,
         deleteQuestion,
         setSelectedQuestion,

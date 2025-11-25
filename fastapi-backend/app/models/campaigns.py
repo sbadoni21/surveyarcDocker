@@ -61,7 +61,7 @@ class Campaign(Base):
     voice_script = Column(Text, nullable=True)
     
     # Scheduling
-    status = Column(String, default="draft", index=True)
+    status = Column(String, default="scheduled", index=True)
     scheduled_at = Column(DateTime(timezone=True), nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)

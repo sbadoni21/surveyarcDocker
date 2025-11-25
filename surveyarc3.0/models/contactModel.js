@@ -77,112 +77,113 @@ const ContactModel = {
     return toCamel(await json(res));
   },
 
-  /* CREATE */
-  async create(contact) {
-    // Auto-detect primaryIdentifier + type if not provided
-    let primaryIdentifier = contact.primaryIdentifier ?? null;
-    let contactType = contact.contactType ?? null;
+// models/contactModel.js
+async create(contact) {
+  // Auto-detect primaryIdentifier + type if not provided
+  let primaryIdentifier = contact.primaryIdentifier ?? null;
+  let contactType = contact.contactType ?? null;
 
-    if (!primaryIdentifier) {
-      const info = detectIdentifier(contact);
-      primaryIdentifier = info.primaryIdentifier;
-      contactType = info.contactType;
-    }
+  if (!primaryIdentifier) {
+    const info = detectIdentifier(contact);
+    primaryIdentifier = info.primaryIdentifier;
+    contactType = info.contactType;
+  }
 
-    // ✅ FIX: Build emails array
-    const emails = [];
-    if (contact.email) {
-      emails.push({
-        email: contact.email,
-        is_primary: true,
-        is_verified: contact.emailVerified || false,
-        status: "active",
-      });
-    }
-    // Include any additional emails from contact.emails array
-    if (contact.emails && Array.isArray(contact.emails)) {
-      emails.push(...contact.emails.map(e => ({
-        email: e.email,
-        is_primary: e.isPrimary || false,
-        is_verified: e.isVerified || false,
-        status: e.status || "active",
-      })));
-    }
+  // ✅ Build emails array
+  const emails = [];
+  if (contact.email) {
+    emails.push({
+      email: contact.email,
+      is_primary: true,
+      is_verified: contact.emailVerified || false,
+      status: "active",
+    });
+  }
+  // Include any additional emails from contact.emails array
+  if (contact.emails && Array.isArray(contact.emails)) {
+    emails.push(...contact.emails.map(e => ({
+      email: e.email,
+      is_primary: e.isPrimary || e.is_primary || false,
+      is_verified: e.isVerified || e.is_verified || false,
+      status: e.status || "active",
+    })));
+  }
 
-    // ✅ FIX: Build phones array
-    const phones = [];
-if (contact.phone) {
-  phones.push({
-    country_code: contact.countryCode || "",
-    phone_number: contact.phone,
-    is_primary: true,
-    is_whatsapp: contact.isWhatsapp || false,
-    is_verified: contact.phoneVerified || false,
-  });
-}if (contact.phones && Array.isArray(contact.phones)) {
-  phones.push(...contact.phones.map(p => ({
-    country_code: p.countryCode || "",
-    phone_number: p.phoneNumber,  // ⚠️ This could be undefined/empty!
-    is_primary: p.isPrimary || false,
-    is_whatsapp: p.isWhatsapp || false,
-    is_verified: p.isVerified || false,
-  })));
-}
-    // Include any additional phones from contact.phones array
-    if (contact.phones && Array.isArray(contact.phones)) {
-      phones.push(...contact.phones.map(p => ({
-        country_code: p.countryCode || "",
-        phone_number: p.phoneNumber,
-        is_primary: p.isPrimary || false,
-        is_whatsapp: p.isWhatsapp || false,
-        is_verified: p.isVerified || false,
-      })));
-    }
+  // ✅ Build phones array - FIXED: removed duplicate & added filtering
+  const phones = [];
+  if (contact.phone) {
+    phones.push({
+      country_code: contact.countryCode || "",
+      phone_number: contact.phone,
+      is_primary: true,
+      is_whatsapp: contact.isWhatsapp || false,
+      is_verified: contact.phoneVerified || false,
+    });
+  }
+  // Include additional phones ONLY if phone_number exists
+  if (contact.phones && Array.isArray(contact.phones)) {
+    const validPhones = contact.phones
+      .filter(p => p.phoneNumber || p.phone_number) // ✅ Filter empty ones
+      .map(p => ({
+        country_code: p.countryCode || p.country_code || "",
+        phone_number: p.phoneNumber || p.phone_number,
+        is_primary: p.isPrimary || p.is_primary || false,
+        is_whatsapp: p.isWhatsapp || p.is_whatsapp || false,
+        is_verified: p.isVerified || p.is_verified || false,
+      }));
+    phones.push(...validPhones);
+  }
 
-    // ✅ FIX: Build socials array
-    const socials = [];
-    if (contact.platform && contact.handle) {
-      socials.push({
-        platform: contact.platform,
-        handle: contact.handle,
-        link: contact.link || null,
-      });
-    }
-    // Include any additional socials from contact.socials array
-    if (contact.socials && Array.isArray(contact.socials)) {
-      socials.push(...contact.socials.map(s => ({
+  // ✅ Build socials array
+  const socials = [];
+  if (contact.platform && contact.handle) {
+    socials.push({
+      platform: contact.platform,
+      handle: contact.handle,
+      link: contact.link || null,
+    });
+  }
+  if (contact.socials && Array.isArray(contact.socials)) {
+    const validSocials = contact.socials
+      .filter(s => s.platform && s.handle) // ✅ Filter incomplete ones
+      .map(s => ({
         platform: s.platform,
         handle: s.handle,
         link: s.link || null,
-      })));
-    }
+      }));
+    socials.push(...validSocials);
+  }
 
-    const body = {
-      contact_id: contact.contactId,
-      org_id: contact.orgId,
-      user_id: contact.userId,
-      name: contact.name ?? "",
-      contact_type: contactType ?? "other",
-      primary_identifier: primaryIdentifier ?? null,
-      status: contact.status ?? "active",
-      meta: contact.meta ?? {},
-      // ✅ ADD THESE!
-      emails: emails.length > 0 ? emails : [],
-      phones: phones.length > 0 ? phones : [],
-      socials: socials.length > 0 ? socials : [],
-    };
+  const body = {
+    contact_id: contact.contactId || contact.contact_id,
+    org_id: contact.orgId || contact.org_id, // ✅ Handle both camelCase and snake_case
+    user_id: contact.userId || contact.user_id || null,
+    name: contact.name ?? "",
+    contact_type: contactType ?? "other",
+    primary_identifier: primaryIdentifier ?? null,
+    status: contact.status ?? "active",
+    meta: contact.meta ?? {},
+    emails: emails,
+    phones: phones,
+    socials: socials,
+  };
 
-    console.log("Creating contact with body:", body);
+  console.log("Creating contact with body:", JSON.stringify(body, null, 2));
 
-    const res = await fetch(`${BASE}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      cache: "no-store",
-    });
+  const res = await fetch(`${BASE}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
 
-    return toCamel(await json(res));
-  },
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Failed to create contact: ${errorText}`);
+  }
+
+  return toCamel(await json(res));
+},
 
   /* UPDATE */
   async update(contactId, update = {}) {
