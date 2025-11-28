@@ -210,7 +210,7 @@ export default function QuestionEditorPanel({
   };
 
   return (
-    <main className="flex-1 p-8 dark:bg-[#121214] bg-[#F5F5F5]">
+    <main className="flex-1 dark:bg-[#121214] bg-[#F5F5F5] ">
       {isEditMode ? (
         <div className="animate-in slide-in-from-right duration-500 ease-out">
           <EditorCard
@@ -318,11 +318,10 @@ export default function QuestionEditorPanel({
   );
 }
 
-/* --- helper components --- */
 
 function EditorCard({ title, icon, children }) {
   return (
-    <div className="mx-auto rounded-xl p-6 shadow-xl space-y-6 overflow-y-auto h-[77vh] dark:bg-[#1A1A1E] bg-white dark:border-none border border-white/60 animate-in zoom-in-95 duration-300">
+    <div className="mx-auto  rounded p-6 shadow-xl space-y-6 overflow-y-auto h-[80vh] dark:bg-[#1A1A1E] bg-white dark:border-none border  animate-in zoom-in-95 duration-300">
       <div className="text-center mb-6 animate-in slide-in-from-top duration-300">
         <div className="flex items-center gap-5">
           <div className="relative inline-block">

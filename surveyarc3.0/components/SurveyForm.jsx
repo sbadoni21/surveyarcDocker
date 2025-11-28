@@ -164,21 +164,250 @@ export default function SurveyForm({
     }
   }, [blockPages, currentPageIndex, currentBlock, blocksWithQuestions]);
 
-  const handleChange = (questionId, value) => {
-    const questionType = questions.find(
-      (q) => q.questionId === questionId
-    )?.type;
-    const finalValue = ["number", "rating", "opinion_scale", "nps"].includes(
-      questionType
-    )
-      ? Number(value)
-      : value;
-    setAnswers((prev) => ({ ...prev, [questionId]: finalValue }));
+  // -------------------------
+  // Helpers for options & answers
+  // -------------------------
+
+  // normalize options to objects: { id, label, isOther?, isNone? }
+  const normalizeOptions = (opts = []) =>
+    (opts || []).map((o, idx) =>
+      typeof o === "string"
+        ? { id: `opt_${idx}`, label: o }
+        : { id: o.id ?? `opt_${idx}`, label: o.label ?? "", isOther: !!o.isOther, isNone: !!o.isNone }
+    );
+
+  // check if a question is answered (respecting Other text requirement)
+  const isAnswered = (question, answer) => {
+    const qType = question?.type;
+    const config = question?.config || {};
+    const required = Boolean(config.required);
+
+    if (!required) return true; // not required -> always okay
+
+    // treat empty as not answered
+    if (answer === undefined || answer === null) return false;
+
+    const opts = normalizeOptions(config.options || []);
+
+    switch (qType) {
+      case "checkbox": {
+        // answer could be array or { values: [...], otherText }
+        const vals = Array.isArray(answer)
+          ? answer
+          : answer?.values || [];
+        if (!vals || vals.length === 0) return false;
+        // if values contains an 'other' option, ensure otherText present if value is exactly other id
+        const otherOpt = opts.find((o) => o.isOther);
+        if (otherOpt) {
+          if (vals.includes(otherOpt.id)) {
+            // if stored as object with otherText
+            if (typeof answer === "object") {
+              return Boolean(answer.otherText && String(answer.otherText).trim());
+            }
+            // otherwise assume not answered
+            return false;
+          }
+        }
+        return true;
+      }
+
+      case "multiple_choice":
+      case "dropdown":
+      case "picture_choice":
+      case "yes_no": {
+        // answer might be string or { value, otherText }
+        if (typeof answer === "string") {
+          return answer !== "";
+        }
+        if (typeof answer === "object") {
+          const val = answer.value;
+          if (!val) return false;
+          const otherOpt = opts.find((o) => o.isOther);
+          if (otherOpt && val === otherOpt.id) {
+            return Boolean(answer.otherText && String(answer.otherText).trim());
+          }
+          return true;
+        }
+        return false;
+      }
+
+      case "short_text":
+      case "long_text":
+      case "video":
+      case "file_upload":
+      case "google_drive":
+      case "calendly":
+      case "number":
+      case "date": {
+        if (typeof answer === "string") return String(answer).trim() !== "";
+        if (typeof answer === "number") return true;
+        // object wrappers or arrays are considered answered only if not empty
+        if (Array.isArray(answer)) return answer.length > 0;
+        if (typeof answer === "object") {
+          // try to find a value property
+          return Boolean(answer.value ?? answer.text ?? false);
+        }
+        return false;
+      }
+
+      default:
+        // fallback: truthy check
+        if (Array.isArray(answer)) return answer.length > 0;
+        if (typeof answer === "object") {
+          // check value or values presence
+          if (Array.isArray(answer.values)) return answer.values.length > 0;
+          return Boolean(answer.value ?? answer.otherText ?? false);
+        }
+        return Boolean(answer);
+    }
+  };
+
+  // central answer setter that also enforces "none exclusive" and normalizes "other"
+  const handleAnswerChange = (question, rawValue) => {
+    const qid = question.questionId;
+    const config = question.config || {};
+    const opts = normalizeOptions(config.options || []);
+    const noneOpt = opts.find((o) => o.isNone);
+    const otherOpt = opts.find((o) => o.isOther);
+
+    // helper to set answer safely
+    const setAnswer = (value) =>
+      setAnswers((prev) => {
+        return { ...prev, [qid]: value };
+      });
+
+    // CASE: checkbox (multi-select) - accept array or toggle id
+    if (question.type === "checkbox") {
+      // rawValue might be:
+      // - an array of ids
+      // - a string id to toggle
+      // - an object { values: [...], otherText }
+      let values = [];
+      let otherText;
+
+      if (Array.isArray(rawValue)) {
+        values = rawValue.slice();
+      } else if (typeof rawValue === "string") {
+        // toggle behavior: check previous value
+        const prev = answers[qid];
+        const prevVals = Array.isArray(prev) ? prev.slice() : prev?.values?.slice() || [];
+        if (prevVals.includes(rawValue)) {
+          values = prevVals.filter((v) => v !== rawValue);
+        } else {
+          values = [...prevVals, rawValue];
+        }
+      } else if (rawValue && typeof rawValue === "object") {
+        values = Array.isArray(rawValue.values) ? rawValue.values.slice() : [];
+        otherText = rawValue.otherText;
+      }
+
+      // enforce none exclusivity
+      if (noneOpt) {
+        if (values.includes(noneOpt.id)) {
+          values = [noneOpt.id]; // choose only none
+          otherText = undefined;
+        } else {
+          // remove none if present
+          values = values.filter((v) => v !== noneOpt.id);
+        }
+      }
+
+      // if other chosen, carry otherText in object form
+      if (otherOpt && values.includes(otherOpt.id)) {
+        setAnswer({ values, otherText: otherText ?? (answers[qid]?.otherText ?? "") });
+      } else {
+        setAnswer(values);
+      }
+
+      return;
+    }
+
+    // CASE: single-select (radio/dropdown/yes_no/picture_choice)
+    if (
+      ["multiple_choice", "dropdown", "picture_choice", "yes_no"].includes(
+        question.type
+      )
+    ) {
+      // rawValue might be:
+      // - a string id
+      // - an object { value, otherText }
+      if (rawValue && typeof rawValue === "object" && "value" in rawValue) {
+        const val = rawValue.value;
+        if (noneOpt && val === noneOpt.id) {
+          setAnswer(val);
+          return;
+        }
+        if (otherOpt && val === otherOpt.id) {
+          // need otherText to be present in the object
+          setAnswer({ value: val, otherText: rawValue.otherText ?? "" });
+          return;
+        }
+        // normal option
+        setAnswer(val);
+        return;
+      }
+
+      // if rawValue is string id
+      if (typeof rawValue === "string") {
+        const val = rawValue;
+        if (noneOpt && val === noneOpt.id) {
+          setAnswer(val);
+          return;
+        }
+        if (otherOpt && val === otherOpt.id) {
+          // set as object with empty otherText (UI should later update otherText)
+          setAnswer({ value: val, otherText: "" });
+          return;
+        }
+        setAnswer(val);
+        return;
+      }
+
+      // otherwise store as-is
+      setAnswer(rawValue);
+      return;
+    }
+
+    // Default: pass through (text, number etc.)
+    setAnswers((prev) => ({ ...prev, [qid]: rawValue }));
+  };
+
+  // used by Next/Submit: validate all required questions on current page
+  const validateCurrentPageRequired = () => {
+    const currentPageQuestions = blockPages[currentPageIndex] || [];
+    const pageQuestionsFiltered = currentPageQuestions.filter((q) => {
+      if (jumpToQuestion?.blockId === currentBlock?.blockId) {
+        const targetIndex = currentBlock.questions.findIndex(
+          (qq) => qq.questionId === jumpToQuestion.questionId
+        );
+        const currentIndex = currentBlock.questions.findIndex(
+          (qq) => qq.questionId === q.questionId
+        );
+        return currentIndex >= targetIndex;
+      }
+      return true;
+    });
+
+    for (let q of pageQuestionsFiltered) {
+      const cfg = q.config || defaultConfigMap[q.type] || {};
+      if (cfg.required) {
+        const ans = answers[q.questionId];
+        if (!isAnswered(q, ans)) {
+          // Focus behavior could be improved; for now show alert and return false
+          window.alert("Please answer the required question: " + (q.label || "This question"));
+          return false;
+        }
+      }
+    }
+    return true;
   };
 
   const isLastBlock = currentBlockIndex === blocksWithQuestions.length - 1;
 
   const handleNextBlock = () => {
+    // validate required first — prevents navigation if any required unanswered
+    if (!validateCurrentPageRequired()) return;
+
     const isLastPage = currentPageIndex === blockPages.length - 1;
 
     const actionsArray = Array.isArray(pendingActions)
@@ -202,11 +431,8 @@ export default function SurveyForm({
       try {
         const data = await TicketModel.create(ticketData);
         console.log("Ticket raised successfully:", data);
-        // alert("Ticket raised successfully!");
-        // return data;
       } catch (err) {
         console.error(" Failed to raise ticket:", err);
-        // alert("Failed to raise ticket. Please try again later.");
       }
     };
 
@@ -547,9 +773,7 @@ export default function SurveyForm({
                   <RenderQuestion
                     question={question}
                     value={answers[question.questionId] ?? ""}
-                    onChange={(value) =>
-                      handleChange(question.questionId, value)
-                    }
+                    onChange={(value) => handleAnswerChange(question, value)}
                     config={
                       question.config || defaultConfigMap[question.type] || {}
                     }
@@ -577,6 +801,9 @@ export default function SurveyForm({
             {isLastBlock ? (
               <button
                 onClick={async () => {
+                  // validate required before final submit
+                  if (!validateCurrentPageRequired()) return;
+
                   if (
                     !window.confirm(
                       "Are you sure you want to submit your responses?"

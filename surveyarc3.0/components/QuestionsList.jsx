@@ -94,8 +94,9 @@ const SortableItem = ({ q, index, onDelete, onSelect }) => {
               </div>
             )}
             <p className="text-sm font-medium text-slate-800 dark:text-[#96949C] break-words max-w-full">
-              {q.label?.split(" ").slice(0, 7).join(" ")}
-              {q.label?.split(" ").length > 7 && " ..."}
+              {q.label}
+              {/* {q.label?.split(" ").slice(0, 7).join(" ")}
+              {q.label?.split(" ").length > 7 && " ..."} */}
             </p>
           </button>
 
@@ -889,7 +890,7 @@ const DraggableQuestionsList = ({
   };
 
   return (
-    <div ref={scrollRef} className="rounded-lg dark:bg-[#1A1A1E] p-0.5">
+    <div ref={scrollRef} className="rounded-lg dark:bg-[#1A1A1E]  p-0.5">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}

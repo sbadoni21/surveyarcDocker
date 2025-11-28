@@ -67,5 +67,34 @@ export default function QuestionConfigForm({ type, config, updateConfig }) {
     [QUESTION_TYPES.MULTI_QUESTION_PAGE]: <p className="dark:bg-[#1A1A1E] dark:text-[#96949C]">Configure question grouping on survey designer.</p>,
   };
 
-  return componentsMap[type] || <DefaultConfig />;
+// --- place this inside QuestionConfigForm.jsx, replacing the single-line return ---
+const Specific = componentsMap[type] || <DefaultConfig />;
+
+return (
+  <div className="space-y-4 p-3">
+    {/* Global required toggle for ALL question types */}
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <input
+          id="q_required"
+          type="checkbox"
+          checked={Boolean(config?.required)}
+          onChange={(e) => updateConfig("required", e.target.checked)}
+          className="h-4 w-4"
+        />
+        <label htmlFor="q_required" className="text-sm dark:text-[#96949C]">
+          Required question
+        </label>
+      </div>
+
+      {/* (Optional) quick hint */}
+      <div className="text-xs text-gray-400">
+        Prevents next/submit until answered
+      </div>
+    </div>
+
+    {/* Specific config UI */}
+    <div>{Specific}</div>
+  </div>
+);
 }

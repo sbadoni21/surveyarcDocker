@@ -10,13 +10,8 @@ import {
   Star,
   Upload,
   GripVertical,
-  Smile,
-  Frown,
-  Meh,
-  SmilePlus,
-  Laugh,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   DndContext,
   closestCenter,
@@ -54,14 +49,67 @@ function SortableItem({ id }) {
     </li>
   );
 }
+
+/* --------------------------
+   Helpers: normalize options
+   -------------------------- */
+const normalizeOptions = (opts = []) =>
+  (opts || []).map((o, idx) =>
+    typeof o === "string"
+      ? { id: `opt_${idx}`, label: o }
+      : {
+          id: o.id ?? `opt_${idx}`,
+          label: o.label ?? "",
+          isOther: !!o.isOther,
+          isNone: !!o.isNone,
+        }
+  );
+
+const getSingleValue = (val) => {
+  if (!val) return "";
+  if (typeof val === "string") return val;
+  if (typeof val === "object" && "value" in val) return val.value;
+  return "";
+};
+
+const getCheckboxValues = (val) => {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  if (typeof val === "object" && Array.isArray(val.values)) return val.values;
+  return [];
+};
+
 export default function RenderQuestion({
   question,
   value,
   onChange,
-  config,
+  config = {},
   inputClasses,
 }) {
   const questionType = question.type;
+  const options = useMemo(
+    () => normalizeOptions(config.options || []),
+    [config.options]
+  );
+
+  // derived special options
+  const otherOpt = options.find((o) => o.isOther);
+  const noneOpt = options.find((o) => o.isNone);
+
+  // local other text state to keep input snappy
+  const [localOtherText, setLocalOtherText] = useState(() => {
+    if (value && typeof value === "object") return value.otherText ?? "";
+    return "";
+  });
+
+  useEffect(() => {
+    if (value && typeof value === "object") {
+      const ot = value.otherText ?? "";
+      if (ot !== localOtherText) setLocalOtherText(ot);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
   switch (questionType) {
     case QUESTION_TYPES.CONTACT_EMAIL:
     case QUESTION_TYPES.CONTACT_WEBSITE:
@@ -70,7 +118,7 @@ export default function RenderQuestion({
           type="email"
           placeholder={config.placeholder}
           className={inputClasses}
-          value={value}
+          value={value ?? ""}
           onChange={(e) => onChange(e.target.value)}
         />
       );
@@ -81,7 +129,7 @@ export default function RenderQuestion({
           type="tel"
           placeholder={config.placeholder}
           className={inputClasses}
-          value={value}
+          value={value ?? ""}
           onChange={(e) => onChange(e.target.value)}
         />
       );
@@ -93,7 +141,7 @@ export default function RenderQuestion({
           placeholder={config.placeholder}
           className={`${inputClasses} min-h-[120px] bg-[color:var(--bg-light)] dark:bg-[color:var(--bg-dark)]"
   resize-none`}
-          value={value}
+          value={value ?? ""}
           maxLength={config.maxLength}
           onChange={(e) => onChange(e.target.value)}
         />
@@ -106,13 +154,21 @@ export default function RenderQuestion({
           type={questionType === QUESTION_TYPES.NUMBER ? "number" : "text"}
           placeholder={config.placeholder}
           className={inputClasses}
-          value={value}
+          value={value ?? ""}
           maxLength={config.maxLength}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) =>
+            onChange(
+              questionType === QUESTION_TYPES.NUMBER
+                ? e.target.value === ""
+                  ? ""
+                  : Number(e.target.value)
+                : e.target.value
+            )
+          }
         />
       );
 
-    case QUESTION_TYPES.RATING:
+    case QUESTION_TYPES.RATING: {
       const max = config.maxStars || 5;
       return (
         <div className="flex gap-2">
@@ -125,46 +181,308 @@ export default function RenderQuestion({
             >
               <Star
                 className={`w-8 h-8 transition-transform transform hover:scale-110 ${
-                  value >= star
+                  (value ?? 0) >= star
                     ? "text-[color:var(--primary-light)] "
                     : "text-[color:var(--text-light)]  dark:text-[color:var(--text-dark)]"
                 }`}
-                fill={value >= star ? "#f97316" : "none"}
+                fill={(value ?? 0) >= star ? "#f97316" : "none"}
               />
             </button>
           ))}
         </div>
       );
+    }
 
-    case QUESTION_TYPES.MULTIPLE_CHOICE:
+    case QUESTION_TYPES.MULTIPLE_CHOICE: {
+      const selected = getSingleValue(value);
+
+      // Order: regular options first, then Other, then None
+      const nonSpecial = options.filter((o) => !o.isOther && !o.isNone);
+      const optionsOrdered = [
+        ...nonSpecial,
+        ...(otherOpt ? [otherOpt] : []),
+        ...(noneOpt ? [noneOpt] : []),
+      ];
+
       return (
         <div className="space-y-3">
-          {config.options?.map((option, i) => (
+          {optionsOrdered.map((opt) => {
+            const checked = selected === opt.id;
+            return (
+              <label
+                key={opt.id}
+                className={`flex items-center p-4 rounded-3xl lg:rounded-xl lg:border-2  cursor-pointer transition-all duration-200 hover:scale-105 ${
+                  checked
+                    ? "bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] lg:border-[color:var(--primary-light)] text-white"
+                    : "bg-[color:var(--bg-light)] dark:bg-[color:var(--bg-dark)] shadow-md  border-[color:var(--secondary-light)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] hover:bg-[color:var(--primary-light)] dark:hover:bg-[color:var(--primary-dark)]"
+                }`}
+              >
+                <div className="flex items-center">
+                  {checked ? (
+                    <CheckCircle size={20} className="mr-3" />
+                  ) : (
+                    <Circle size={20} className="mr-3" />
+                  )}
+                </div>
+                <input
+                  type="radio"
+                  name={question.questionId}
+                  value={opt.id}
+                  checked={checked}
+                  onChange={() => {
+                    if (noneOpt && opt.id === noneOpt.id) {
+                      onChange(opt.id);
+                      return;
+                    }
+                    if (otherOpt && opt.id === otherOpt.id) {
+                      onChange({
+                        value: opt.id,
+                        otherText: localOtherText || "",
+                      });
+                      return;
+                    }
+                    onChange(opt.id);
+                  }}
+                  className="sr-only"
+                />
+                <span className="font-medium text-xs lg:text-base">
+                  {opt.label}
+                </span>
+              </label>
+            );
+          })}
+
+          {otherOpt && getSingleValue(value) === otherOpt.id && (
+            <input
+              className={`mt-2 ${inputClasses}`}
+              placeholder="Please specify..."
+              value={(value && value.otherText) ?? localOtherText ?? ""}
+              onChange={(e) => {
+                setLocalOtherText(e.target.value);
+                const cur = getSingleValue(value);
+                if (cur === otherOpt.id) {
+                  onChange({ value: cur, otherText: e.target.value });
+                }
+              }}
+            />
+          )}
+        </div>
+      );
+    }
+
+    case QUESTION_TYPES.DROPDOWN: {
+      const selected = getSingleValue(value);
+
+      const nonSpecial = options.filter((o) => !o.isOther && !o.isNone);
+      const optionsOrdered = [
+        ...nonSpecial,
+        ...(otherOpt ? [otherOpt] : []),
+        ...(noneOpt ? [noneOpt] : []),
+      ];
+
+      return (
+        <div>
+          <select
+            value={selected || ""}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (noneOpt && val === noneOpt.id) {
+                onChange(val);
+                return;
+              }
+              if (otherOpt && val === otherOpt.id) {
+                onChange({ value: val, otherText: localOtherText || "" });
+                return;
+              }
+              onChange(val);
+            }}
+            className={inputClasses}
+          >
+            <option value="">Select an option...</option>
+            {optionsOrdered.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
+          {otherOpt && getSingleValue(value) === otherOpt.id && (
+            <input
+              className={`mt-2 ${inputClasses}`}
+              placeholder="Please specify..."
+              value={(value && value.otherText) ?? localOtherText ?? ""}
+              onChange={(e) => {
+                setLocalOtherText(e.target.value);
+                const cur = getSingleValue(value);
+                if (cur === otherOpt.id) {
+                  onChange({ value: cur, otherText: e.target.value });
+                }
+              }}
+            />
+          )}
+        </div>
+      );
+    }
+
+    case QUESTION_TYPES.LEGAL:
+      return (
+        <div className="space-y-5">
+          <div className="bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] p-4 rounded-xl border-l-4 border-[color:var(--secondary-light)] dark:border-[color:var(--secondary-dark)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] text-sm">
+            {config.legalText ||
+              "Please review and accept the terms and conditions before continuing."}
+          </div>
+          <label className="flex items-center gap-2 text-sm text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
+            <input
+              type="checkbox"
+              checked={value === true}
+              onChange={(e) => onChange(e.target.checked)}
+              className="accent-[color:var(--primary-light)]"
+            />
+            <span>
+              {config.checkboxLabel || "I agree to the terms and conditions."}
+            </span>
+          </label>
+        </div>
+      );
+
+    case QUESTION_TYPES.YES_NO:
+      return (
+        <div className="flex gap-4">
+          {["yes", "no"].map((opt) => (
             <label
-              key={i}
-              className={`flex items-center p-4 rounded-3xl lg:rounded-xl lg:border-2  cursor-pointer transition-all duration-200 hover:scale-105 ${
-                value === option
-                  ? "bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] lg:border-[color:var(--primary-light)] text-white"
-                  : "bg-[color:var(--bg-light)] dark:bg-[color:var(--bg-dark)] shadow-md  border-[color:var(--secondary-light)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] hover:bg-[color:var(--primary-light)] dark:hover:bg-[color:var(--primary-dark)]"
+              key={opt}
+              className={`flex-1 flex items-center justify-center p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 hover:scale-105 ${
+                value === opt
+                  ? "bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] text-white"
+                  : "bg-[color:var(--bg-light)] dark:bg-[color:var(--bg-dark)] border-[color:var(--secondary-light)] dark:border-[color:var(--secondary-dark)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] hover:bg-[color:var(--primary-light)] dark:hover:bg-[color:var(--primary-dark)]"
               }`}
             >
-              <div className="flex items-center">
-                {value === option ? (
-                  <CheckCircle size={20} className="mr-3" />
-                ) : (
-                  <Circle size={20} className="mr-3" />
-                )}
-              </div>
               <input
                 type="radio"
-                name={question.questionId}
-                value={option}
-                checked={value === option}
-                onChange={() => onChange(option)}
+                value={opt}
+                checked={value === opt}
+                onChange={() => onChange(opt)}
                 className="sr-only"
               />
-              <span className="font-medium text-xs lg:text-base">{option}</span>
+              <span className="font-medium">
+                {opt === "yes"
+                  ? config.yesLabel || "Yes"
+                  : config.noLabel || "No"}
+              </span>
             </label>
+          ))}
+        </div>
+      );
+
+    case QUESTION_TYPES.CHECKBOX: {
+      const selected = getCheckboxValues(value);
+
+      const nonSpecial = options.filter((o) => !o.isOther && !o.isNone);
+      const optionsOrdered = [
+        ...nonSpecial,
+        ...(otherOpt ? [otherOpt] : []),
+        ...(noneOpt ? [noneOpt] : []),
+      ];
+
+      return (
+        <div className="space-y-3">
+          {optionsOrdered.map((opt) => {
+            const checked = selected.includes(opt.id);
+            return (
+              <label
+                key={opt.id}
+                className={`flex items-center p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 hover:scale-105 ${
+                  checked
+                    ? "bg-[color:var(--secondary-light)] border-[color:var(--secondary-dark)] text-white"
+                    : "bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] border-[color:var(--secondary-light)] dark:border-[color:var(--secondary-dark)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] hover:bg-[color:var(--primary-light)] dark:hover:bg-[color:var(--primary-dark)]"
+                }`}
+              >
+                <div className="flex items-center">
+                  {checked ? (
+                    <CheckSquare size={20} className="mr-3" />
+                  ) : (
+                    <Square size={20} className="mr-3" />
+                  )}
+                </div>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) => {
+                    const prev = selected.slice();
+                    let next;
+                    if (e.target.checked) {
+                      next = [...prev, opt.id];
+                    } else {
+                      next = prev.filter((id) => id !== opt.id);
+                    }
+
+                    if (noneOpt) {
+                      if (next.includes(noneOpt.id)) {
+                        next = [noneOpt.id];
+                      } else {
+                        next = next.filter((id) => id !== noneOpt.id);
+                      }
+                    }
+
+                    if (otherOpt && next.includes(otherOpt.id)) {
+                      onChange({
+                        values: next,
+                        otherText: localOtherText || "",
+                      });
+                    } else {
+                      onChange(next);
+                    }
+                  }}
+                  className="sr-only"
+                />
+                <span className="font-medium">{opt.label}</span>
+              </label>
+            );
+          })}
+
+          {otherOpt && getCheckboxValues(value).includes(otherOpt.id) && (
+            <input
+              className={`mt-2 ${inputClasses}`}
+              placeholder="Please specify..."
+              value={(value && value.otherText) ?? localOtherText ?? ""}
+              onChange={(e) => {
+                setLocalOtherText(e.target.value);
+                const prev = getCheckboxValues(value);
+                if (prev.includes(otherOpt.id)) {
+                  onChange({ values: prev, otherText: e.target.value });
+                }
+              }}
+            />
+          )}
+        </div>
+      );
+    }
+
+    case QUESTION_TYPES.PICTURE_CHOICE:
+      return (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {config.images?.map((img, index) => (
+            <button
+              key={index}
+              type="button"
+              onClick={() => onChange(img.url)}
+              className={`border-2 rounded-xl p-2 flex flex-col items-center justify-center shadow-sm transition-all ${
+                value === img.url
+                  ? "border-[color:var(--secondary-light)]]"
+                  : "border-[color:var(--secondary-light)]] dark:border-[color:var(--secondary-dark)]]"
+              }`}
+            >
+              <img
+                src={img.url}
+                alt={img.label || `Option ${index + 1}`}
+                className="w-full h-32 object-cover rounded-md"
+              />
+              {img.label && (
+                <span className="mt-2 text-sm font-medium text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
+                  {img.label}
+                </span>
+              )}
+            </button>
           ))}
         </div>
       );
@@ -226,137 +544,7 @@ export default function RenderQuestion({
       );
     }
 
-    case QUESTION_TYPES.DROPDOWN:
-      return (
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className={inputClasses}
-        >
-          <option value="">Select an option...</option>
-          {config.options?.map((option, i) => (
-            <option key={i} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      );
-
-    case QUESTION_TYPES.LEGAL:
-      return (
-        <div className="space-y-5">
-          <div className="bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] p-4 rounded-xl border-l-4 border-[color:var(--secondary-light)] dark:border-[color:var(--secondary-dark)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] text-sm">
-            {config.legalText ||
-              "Please review and accept the terms and conditions before continuing."}
-          </div>
-          <label className="flex items-center gap-2 text-sm text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
-            <input
-              type="checkbox"
-              checked={value === true}
-              onChange={(e) => onChange(e.target.checked)}
-              className="accent-[color:var(--primary-light)]"
-            />
-            <span>
-              {config.checkboxLabel || "I agree to the terms and conditions."}
-            </span>
-          </label>
-        </div>
-      );
-
-    case QUESTION_TYPES.YES_NO:
-      return (
-        <div className="flex gap-4">
-          {["yes", "no"].map((option) => (
-            <label
-              key={option}
-              className={`flex-1 flex items-center justify-center p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 hover:scale-105 ${
-                value === option
-                  ? "bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] text-white"
-                  : "bg-[color:var(--bg-light)] dark:bg-[color:var(--bg-dark)] border-[color:var(--secondary-light)] dark:border-[color:var(--secondary-dark)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] hover:bg-[color:var(--primary-light)] dark:hover:bg-[color:var(--primary-dark)]"
-              }`}
-            >
-              <input
-                type="radio"
-                value={option}
-                checked={value === option}
-                onChange={() => onChange(option)}
-                className="sr-only"
-              />
-              <span className="font-medium">
-                {option === "yes"
-                  ? config.yesLabel || "Yes"
-                  : config.noLabel || "No"}
-              </span>
-            </label>
-          ))}
-        </div>
-      );
-
-    case QUESTION_TYPES.CHECKBOX:
-      const selected = Array.isArray(value) ? value : [];
-      return (
-        <div className="space-y-3">
-          {config.options?.map((option, i) => (
-            <label
-              key={i}
-              className={`flex items-center p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 hover:scale-105 ${
-                selected.includes(option)
-                  ? "bg-[color:var(--secondary-light)] border-[color:var(--secondary-dark)] text-white"
-                  : "bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] border-[color:var(--secondary-light)] dark:border-[color:var(--secondary-dark)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] hover:bg-[color:var(--primary-light)] dark:hover:bg-[color:var(--primary-dark)]"
-              }`}
-            >
-              <div className="flex items-center">
-                {selected.includes(option) ? (
-                  <CheckSquare size={20} className="mr-3" />
-                ) : (
-                  <Square size={20} className="mr-3" />
-                )}
-              </div>
-              <input
-                type="checkbox"
-                checked={selected.includes(option)}
-                onChange={(e) => {
-                  if (e.target.checked) onChange([...selected, option]);
-                  else onChange(selected.filter((item) => item !== option));
-                }}
-                className="sr-only"
-              />
-              <span className="font-medium">{option}</span>
-            </label>
-          ))}
-        </div>
-      );
-
-    case QUESTION_TYPES.PICTURE_CHOICE:
-      return (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          {config.images?.map((img, index) => (
-            <button
-              key={index}
-              type="button"
-              onClick={() => onChange(img.url)}
-              className={`border-2 rounded-xl p-2 flex flex-col items-center justify-center shadow-sm transition-all ${
-                value === img.url
-                  ? "border-[color:var(--secondary-light)]]"
-                  : "border-[color:var(--secondary-light)]] dark:border-[color:var(--secondary-dark)]]"
-              }`}
-            >
-              <img
-                src={img.url}
-                alt={img.label || `Option ${index + 1}`}
-                className="w-full h-32 object-cover rounded-md"
-              />
-              {img.label && (
-                <span className="mt-2 text-sm font-medium text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
-                  {img.label}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      );
-
-    case QUESTION_TYPES.VIDEO:
+    case QUESTION_TYPES.VIDEO: {
       const isDirectVideoFile = (url) => /\.(mp4|webm|ogg)$/i.test(url);
 
       const getTransformedEmbedUrl = (inputUrl) => {
@@ -405,8 +593,9 @@ export default function RenderQuestion({
           )}
         </div>
       );
+    }
 
-    case QUESTION_TYPES.FILE_UPLOAD:
+    case QUESTION_TYPES.FILE_UPLOAD: {
       const isImage = value && value.type?.startsWith("image/");
       return (
         <div className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer hover:bg-[color:var(--primary-light)] dark:hover:bg-[color:var(--primary-dark)] transition-colors">
@@ -439,6 +628,8 @@ export default function RenderQuestion({
           )}
         </div>
       );
+    }
+
     case QUESTION_TYPES.DATE:
       return (
         <input
@@ -447,7 +638,7 @@ export default function RenderQuestion({
           min={config.minDate}
           max={config.maxDate}
           className={inputClasses}
-          value={value}
+          value={value ?? ""}
           onChange={(e) => onChange(e.target.value)}
         />
       );
@@ -469,7 +660,6 @@ export default function RenderQuestion({
           case "grid":
             return `https://drive.google.com/embeddedfolderview?id=${folderId}#grid`;
           case "picker":
-            // Picker requires OAuth2 and JS API – not embeddable via iframe
             return null;
           case "list":
           default:
@@ -514,9 +704,9 @@ export default function RenderQuestion({
 
     case QUESTION_TYPES.END_SCREEN:
       return <div>{config.text}</div>;
-    case QUESTION_TYPES.RANKING:
-      const [items, setItems] = useState(config.items || []);
 
+    case QUESTION_TYPES.RANKING: {
+      const [items, setItems] = useState(config.items || []);
       const sensors = useSensors(useSensor(PointerSensor));
 
       return (
@@ -536,13 +726,14 @@ export default function RenderQuestion({
         >
           <SortableContext items={items} strategy={verticalListSortingStrategy}>
             <ul className="space-y-2">
-              {items.map((item, index) => (
+              {items.map((item) => (
                 <SortableItem key={item} id={item} />
               ))}
             </ul>
           </SortableContext>
         </DndContext>
       );
+    }
 
     case QUESTION_TYPES.OPINION_SCALE: {
       const min = config.min ?? 1;
@@ -552,13 +743,11 @@ export default function RenderQuestion({
 
       return (
         <div className="space-y-4 text-center">
-          {/* Labels */}
           <div className="flex justify-between text-sm text-[color:var(--text-light)] dark:text-[color:var(--text-dark)] px-1">
             <span>{minLabel}</span>
             <span>{maxLabel}</span>
           </div>
 
-          {/* Scale */}
           <div className="flex justify-center gap-2 sm:gap-3 flex-wrap">
             {Array.from({ length: max - min + 1 }, (_, i) => min + i).map(
               (val) => (
@@ -583,7 +772,6 @@ export default function RenderQuestion({
     case QUESTION_TYPES.NPS: {
       const min = config?.min ?? 0;
       const max = config?.max ?? 10;
-
       const minLabel = config?.minLabel ?? "Not at all likely";
       const neutralLabel = config?.neutralLabel ?? "Neutral";
       const maxLabel = config?.maxLabel ?? "Extremely likely";
@@ -591,7 +779,6 @@ export default function RenderQuestion({
       const cols = Array.from({ length: max - min + 1 }, (_, i) => i + min);
       const neutralIdx = Math.round((min + max) / 2);
 
-      // color logic (same as builder UI)
       const isDetractor = (n) => n >= 0 && n <= 5;
       const isPassive = (n) => n >= 6 && n <= 8;
       const isPromoter = (n) => n >= 9 && n <= 10;
@@ -653,7 +840,6 @@ export default function RenderQuestion({
                 })}
               </div>
 
-              {/* labels */}
               <div
                 className="grid mt-2 text-[11px] sm:text-xs text-gray-600 dark:text-gray-300"
                 style={{
@@ -801,69 +987,6 @@ export default function RenderQuestion({
                               </svg>
                             </div>
                           </label>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      );
-
-      return (
-        <div className="space-y-4">
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm text-left border border-gray-300 dark:border-gray-600">
-              <thead className="bg-gray-100 dark:bg-gray-700">
-                <tr>
-                  <th className="p-3 font-medium text-gray-700 dark:text-[#96949C]">
-                    &nbsp;
-                  </th>
-                  {config.columns?.map((col, idx) => (
-                    <th
-                      key={idx}
-                      className="p-3 font-medium text-gray-700 dark:text-[#96949C]"
-                    >
-                      {col || `Col ${idx + 1}`}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {config.rows?.map((row, rowIndex) => (
-                  <tr
-                    key={rowIndex}
-                    className="border-t border-gray-200 dark:border-gray-600"
-                  >
-                    <td className="p-3 font-semibold text-gray-800 dark:text-[#96949C]">
-                      {row || `Row ${rowIndex + 1}`}
-                    </td>
-                    {config.columns?.map((col, colIndex) => {
-                      const isChecked =
-                        config.type === "checkbox"
-                          ? matrixAnswers[row]?.includes(col)
-                          : matrixAnswers[row] === col;
-
-                      return (
-                        <td key={colIndex} className="p-3 text-center">
-                          <input
-                            type={
-                              config.type === "checkbox" ? "checkbox" : "radio"
-                            }
-                            name={
-                              config.type === "checkbox"
-                                ? `${question.questionId}-${rowIndex}-${colIndex}`
-                                : `${question.questionId}-${rowIndex}`
-                            }
-                            value={col}
-                            checked={!!isChecked}
-                            onChange={(e) =>
-                              handleMatrixChange(row, col, e.target.checked)
-                            }
-                            className="accent-orange-500"
-                          />
                         </td>
                       );
                     })}

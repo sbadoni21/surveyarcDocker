@@ -1,52 +1,442 @@
-import React from 'react';
-import QUESTION_TYPES from '@/enums/questionTypes';
+"use client";
+
+import React, { useEffect, useMemo, useState, useRef } from "react";
+import QUESTION_TYPES from "@/enums/questionTypes";
 import { RiDeleteBin6Line } from "react-icons/ri";
 
-export default function OptionsConfig({ config, updateConfig, type }) {
-  const options = Array.isArray(config.options) ? config.options : [];
+const isEqual = (a, b) => {
+  try {
+    return JSON.stringify(a || []) === JSON.stringify(b || []);
+  } catch {
+    return false;
+  }
+};
 
-  const handleOptionChange = (index, value) => {
-    const newOptions = [...options];
-    newOptions[index] = value;
-    updateConfig('options', newOptions);
+const makeDeterministicId = (label, index) => {
+  const safe = String(label ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `opt_${index}${safe ? `_${safe}` : ""}`;
+};
+
+const normalizeIncoming = (incoming = []) => {
+  return (incoming || [])
+    .map((o, idx) => {
+      if (o == null) return null;
+      if (typeof o === "string") {
+        return { id: makeDeterministicId(o, idx), label: o };
+      }
+      const id = o.id || makeDeterministicId(o.label ?? "", idx);
+      return {
+        id,
+        label: o.label ?? "",
+        isOther: !!o.isOther,
+        isNone: !!o.isNone,
+      };
+    })
+    .filter(Boolean);
+};
+
+export default function OptionsConfig({ config = {}, updateConfig = () => {}, type }) {
+  const incomingOptions = config.options || [];
+  const normalizedIncoming = useMemo(() => normalizeIncoming(incomingOptions), [incomingOptions]);
+
+  const [options, setOptions] = useState(normalizedIncoming);
+
+  const mountedRef = useRef(false);
+  const debounceRef = useRef(null);
+  const writeLockRef = useRef(false);
+  const writeLockTimerRef = useRef(null);
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+  const [search, setSearch] = useState("");
+  const [editAllModalOpen, setEditAllModalOpen] = useState(false);
+  const [editAllText, setEditAllText] = useState("");
+
+  const WRITE_LOCK_MS = 700;
+  const DEBOUNCE_MS = 300;
+
+  const engageWriteLock = () => {
+    writeLockRef.current = true;
+    if (writeLockTimerRef.current) clearTimeout(writeLockTimerRef.current);
+    writeLockTimerRef.current = setTimeout(() => {
+      writeLockRef.current = false;
+      writeLockTimerRef.current = null;
+    }, WRITE_LOCK_MS);
+  };
+
+  useEffect(() => {
+    if (writeLockRef.current) return;
+    if (!isEqual(normalizedIncoming, options)) {
+      setOptions(normalizedIncoming);
+    }
+  }, [normalizedIncoming]);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    debounceRef.current = setTimeout(() => {
+      const parentNormalized = normalizeIncoming(config.options || []);
+      if (!isEqual(options, parentNormalized)) {
+        mountedRef.current = true;
+        updateConfig("options", options);
+      }
+    }, DEBOUNCE_MS);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+   
+  }, [options]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (writeLockTimerRef.current) clearTimeout(writeLockTimerRef.current);
+    };
+  }, []);
+
+  const setOptionLabel = (index, label) => {
+    engageWriteLock();
+    setOptions((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], label };
+      return copy;
+    });
   };
 
   const addOption = () => {
-    updateConfig('options', [...options, '']);
+    engageWriteLock();
+    setOptions((prev) => {
+      const i = prev.length;
+      return [...prev, { id: makeDeterministicId("", i), label: "" }];
+    });
   };
 
-  const removeOption = (index) => {
-    const newOptions = options.filter((_, i) => i !== index);
-    updateConfig('options', newOptions);
+  const removeOption = (id) => {
+    engageWriteLock();
+    setOptions((prev) => prev.filter((o) => o.id !== id));
   };
+
+  const addSpecialIfMissing = (flag) => {
+    engageWriteLock();
+    setOptions((prev) => {
+      if (prev.some((o) => o[flag])) return prev;
+      const entry = {
+        id: flag === "isOther" ? "other" : "none",
+        label: flag === "isOther" ? "Other" : "None",
+        [flag]: true,
+      };
+      return [...prev, entry];
+    });
+  };
+
+  const removeSpecial = (flag) => {
+    engageWriteLock();
+    setOptions((prev) => prev.filter((o) => !o[flag]));
+  };
+
+  const toggleSpecial = (flag, enabled) => {
+    if (enabled) addSpecialIfMissing(flag);
+    else removeSpecial(flag);
+  };
+
+  const parseBulkText = (text) => {
+    if (!text) return [];
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const results = [];
+    for (let l of lines) {
+      if (l.includes(",") && l.split(",").length > 1) {
+        l.split(",").map((c) => c.trim()).filter(Boolean).forEach((c) => results.push(c));
+      } else {
+        results.push(l);
+      }
+    }
+    return results;
+  };
+
+  const bulkAddFromText = (text) => {
+    const parsed = parseBulkText(text);
+    if (!parsed.length) return;
+    engageWriteLock();
+    setOptions((prev) => {
+      const specials = prev.filter((p) => p.isOther || p.isNone);
+      const normalPrev = prev.filter((p) => !p.isOther && !p.isNone);
+      const existingLabels = new Set(normalPrev.map((p) => String(p.label).trim().toLowerCase()));
+      const newItems = [];
+      parsed.forEach((label, idx) => {
+        const trimmed = String(label).trim();
+        if (!trimmed) return;
+        if (existingLabels.has(trimmed.toLowerCase())) return;
+        existingLabels.add(trimmed.toLowerCase());
+        const id = makeDeterministicId(trimmed, normalPrev.length + newItems.length);
+        newItems.push({ id, label: trimmed });
+      });
+      return [...normalPrev, ...newItems, ...specials];
+    });
+  };
+
+  const handleFileImport = async (file) => {
+    if (!file) return;
+    try {
+      const txt = await file.text();
+      const lines = txt.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const parsed = [];
+      for (let l of lines) {
+        if (l.includes(",")) {
+          const cols = l.split(",").map((c) => c.trim()).filter(Boolean);
+          if (cols.length) parsed.push(cols[0]);
+        } else {
+          parsed.push(l);
+        }
+      }
+      bulkAddFromText(parsed.join("\n"));
+    } catch (err) {
+      console.error("Failed to import file", err);
+    }
+  };
+
+  const openEditAllModal = () => {
+    const nonSpecial = options.filter((o) => !o.isOther && !o.isNone);
+    setEditAllText(nonSpecial.map((o) => o.label).join("\n"));
+    setEditAllModalOpen(true);
+  };
+
+  const saveEditAll = () => {
+    const parsed = parseBulkText(editAllText);
+    engageWriteLock();
+    setOptions((prev) => {
+      const specials = prev.filter((p) => p.isOther || p.isNone);
+      const newNorm = parsed.map((label, idx) => ({
+        id: makeDeterministicId(label, idx),
+        label,
+      }));
+      return [...newNorm, ...specials];
+    });
+    setEditAllModalOpen(false);
+  };
+
+  const visibleOptions = options.filter((o) => {
+    if (!search) return true;
+    return String(o.label).toLowerCase().includes(search.toLowerCase());
+  });
+
+  const labelText =
+    type === QUESTION_TYPES.CHECKBOX
+      ? "Checkbox options"
+      : type === QUESTION_TYPES.DROPDOWN
+      ? "Dropdown options"
+      : "Choices";
 
   return (
-    <div className="space-y-2 dark:bg-[#1A1A1E] dark:text-[#96949C]">
-      <label className="block dark:text-[#96949C] text-sm">{type === QUESTION_TYPES.CHECKBOX ? 'Checkbox options' : type === QUESTION_TYPES.DROPDOWN ? 'Dropdown options' : 'Choices'}</label>
-      {options.map((opt, i) => (
-        <div key={i} className="flex items-center gap-10">
+    <>
+      <div className="space-y-3 dark:bg-[#1A1A1E] dark:text-[#96949C] p-2">
+        <label className="block dark:text-[#96949C] text-sm">{labelText}</label>
+
+        <div className="flex gap-2 items-center">
           <input
-            className="border border-[#8C8A97] dark:bg-[#1A1A1E] py-1 px-4 rounded flex-grow"
-            value={opt}
-            onChange={e => handleOptionChange(i, e.target.value)}
-            placeholder={`Option ${i + 1}`}
+            placeholder="Search options..."
+            className="flex-1 border border-[#8C8A97] dark:bg-[#1A1A1E] py-1 px-3 rounded"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
           />
+
           <button
             type="button"
-            onClick={() => removeOption(i)}
-            className="text-red-500"
+            onClick={() => setBulkModalOpen(true)}
+            className="bg-[#D5D5D5] text-black px-3 text-sm py-1 rounded"
+            title="Bulk add options (paste newline or CSV)"
           >
-          <RiDeleteBin6Line size={22} />
+            Bulk Add
+          </button>
+
+          <label className="bg-[#D5D5D5] text-black px-3 text-sm py-1 rounded cursor-pointer">
+            Import
+            <input
+              type="file"
+              accept=".txt,.csv"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleFileImport(f);
+                e.currentTarget.value = "";
+              }}
+              className="hidden"
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={openEditAllModal}
+            className="bg-[#f3f4f6] dark:bg-[#222] px-3 text-sm py-1 rounded"
+            title="Edit all options in one view"
+          >
+            Edit All
           </button>
         </div>
-      ))}
-      <button
-        type="button"
-        onClick={addOption}
-        className="bg-[#D5D5D5] text-black px-3 text-sm py-1 rounded"
-      >
-        + Add Option
-      </button>
-    </div>
+
+        <div className="space-y-2 max-h-64 overflow-auto mt-2">
+          {visibleOptions.map((opt, i) => (
+            <div key={opt.id} className="flex items-center gap-3">
+              <input
+                className="border border-[#8C8A97] dark:bg-[#1A1A1E] py-1 px-3 rounded flex-grow"
+                value={opt.label}
+                onChange={(e) => setOptionLabel(options.indexOf(opt), e.target.value)}
+                placeholder={
+                  opt.isOther
+                    ? "Other (user supplied)"
+                    : opt.isNone
+                    ? "None (exclusive)"
+                    : `Option ${i + 1}`
+                }
+              />
+              <div className="flex items-center gap-2">
+                {opt.isOther && (
+                  <span className="text-xs px-2 py-1 bg-yellow-100 rounded text-yellow-800">
+                    Other
+                  </span>
+                )}
+                {opt.isNone && (
+                  <span className="text-xs px-2 py-1 bg-red-100 rounded text-red-800">
+                    None
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeOption(opt.id)}
+                  className="text-red-500 p-1"
+                  title="Remove option"
+                >
+                  <RiDeleteBin6Line size={18} />
+                </button>
+              </div>
+            </div>
+          ))}
+
+          {visibleOptions.length === 0 && (
+            <div className="text-sm text-gray-500 dark:text-gray-400 p-2">
+              No options found.
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2 mt-2">
+          <button
+            type="button"
+            onClick={addOption}
+            className="bg-[#D5D5D5] text-black px-3 text-sm py-1 rounded"
+          >
+            + Add Option
+          </button>
+          <div className="flex-1" />
+        </div>
+
+        <div className="space-y-3 mt-4">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={Boolean(options.some((o) => o.isOther))}
+              onChange={(e) => toggleSpecial("isOther", e.target.checked)}
+            />
+            <span className="text-sm">Add “Other” Option</span>
+          </label>
+
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={Boolean(options.some((o) => o.isNone))}
+              onChange={(e) => toggleSpecial("isNone", e.target.checked)}
+            />
+            <span className="text-sm">Add “None (exclusive)” Option</span>
+          </label>
+        </div>
+      </div>
+
+    
+      {bulkModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => {
+              setBulkModalOpen(false);
+              setBulkText("");
+            }}
+          />
+          <div className="relative bg-white dark:bg-[#0b0b0d] rounded-lg p-4 w-full max-w-2xl">
+            <h3 className="font-semibold mb-2 text-black dark:text-white">Bulk Add Options</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+              Paste options one-per-line or comma-separated. CSV files imported earlier will also work.
+            </p>
+            <textarea
+              rows={10}
+              value={bulkText}
+              onChange={(e) => setBulkText(e.target.value)}
+              className="w-full p-2 border rounded bg-white dark:bg-[#111] dark:text-white"
+              placeholder={`Option 1\nOption 2\nOption 3\n...`}
+            />
+            <div className="mt-3 flex gap-2 justify-end">
+              <button
+                className="px-3 py-1 rounded bg-gray-200 dark:bg-[#222]"
+                onClick={() => {
+                  setBulkModalOpen(false);
+                  setBulkText("");
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-3 py-1 rounded bg-green-500 text-white"
+                onClick={() => {
+                  bulkAddFromText(bulkText);
+                  setBulkModalOpen(false);
+                  setBulkText("");
+                }}
+              >
+                Add Options
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {editAllModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => {
+              setEditAllModalOpen(false);
+            }}
+          />
+          <div className="relative bg-white dark:bg-[#0b0b0d] rounded-lg p-4 w-full max-w-2xl">
+            <h3 className="font-semibold mb-2 text-black dark:text-white">Edit All Options</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+              Each line is an option. Special options (Other/None) are preserved at the end.
+            </p>
+            <textarea
+              rows={12}
+              value={editAllText}
+              onChange={(e) => setEditAllText(e.target.value)}
+              className="w-full p-2 border rounded bg-white dark:bg-[#111] dark:text-white"
+            />
+            <div className="mt-3 flex gap-2 justify-end">
+              <button
+                className="px-3 py-1 rounded bg-gray-200 dark:bg-[#222]"
+                onClick={() => setEditAllModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-3 py-1 rounded bg-blue-600 text-white"
+                onClick={saveEditAll}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
