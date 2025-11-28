@@ -71,38 +71,63 @@ const ListModel = {
 
     return toCamel(await json(res));
   },
- async addContacts(listId, contactIds) {
-    const response = await fetch(`${BASE}/${listId}/contacts`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contact_ids: contactIds }),
-    });
+async addContacts(listId, contactIds) {
+  const res = await fetch(`${BASE}/${listId}/contacts`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contact_ids: contactIds }),
+  });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || "Failed to add contacts to list");
-    }
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || error.message || "Failed to add contacts to list");
+  }
 
-    return response.json();
-  },
+  const data = await res.json();
+
+  // Case 1: API returns the updated list object directly
+  if (data.list_id) {
+    return toCamel(data);         // ✅ now camelCase
+  }
+
+  // Case 2: API wraps it as { list: {...}, ... }
+  if (data.list && data.list.list_id) {
+    return {
+      ...data,
+      list: toCamel(data.list),   // ✅ keep meta, convert inner list
+    };
+  }
+
+  // Case 3: API just returns { success: true } or summary
+  return data; // but then don't use this to replace your list in state
+}
+,
 
   /**
    * Remove contacts from a list
    */
- async removeContacts(listId, contactIds) {
-    const response = await fetch(`${BASE}/${listId}/contacts`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contact_ids: contactIds }),
-    });
+async removeContacts(listId, contactIds) {
+  const res = await fetch(`${BASE}/${listId}/contacts`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contact_ids: contactIds }),
+  });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || "Failed to remove contacts from list");
-    }
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || error.message || "Failed to remove contacts from list");
+  }
 
-    return response.json();
-  },
+  const data = await res.json();
+
+  if (data.list_id) return toCamel(data);
+  if (data.list && data.list.list_id) {
+    return { ...data, list: toCamel(data.list) };
+  }
+
+  return data;
+},
+
 
   /**
    * Get contacts available to add to a list (not already in it)

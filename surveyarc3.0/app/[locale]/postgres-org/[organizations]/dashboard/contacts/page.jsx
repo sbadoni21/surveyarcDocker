@@ -18,7 +18,7 @@ import {
   UserPlus,
   X
 } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { UploadModal } from "@/components/email-page-components/UploadContacts";
 import ContactsList from "@/components/contacts/ContactsList";
 import { useContacts } from "@/providers/postGresPorviders/contactProvider";
@@ -63,6 +63,7 @@ export default function ListsPage() {
   const [selectedContacts, setSelectedContacts] = useState(new Set());
   const [manualContactOpen, setManualContactOpen] = useState(false);
   const [manualContactListId, setManualContactListId] = useState(null);
+const router = useRouter();  
   useEffect(() => {
     (async () => {
       if (!orgId) return;
@@ -181,7 +182,7 @@ const handleCreateManualContact = async (contactData, listId) => {
       const payload = {
         listId: newListId,
         orgId,
-        listName: `${list.listName} (copy)`,
+        listName: `${list.list_name} (copy)`,
         status: "live",
         contactIds: (list.contacts || []).map(c => c.contactId),
       };
@@ -221,7 +222,7 @@ const handleCreateManualContact = async (contactData, listId) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${list.listName.replace(/\s+/g, "_") || "list"}_${new Date().toISOString()}.csv`;
+    a.download = `${list.list_name.replace(/\s+/g, "_") || "list"}_${new Date().toISOString()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -231,17 +232,20 @@ const handleCreateManualContact = async (contactData, listId) => {
     const contactsText = (list.contacts || [])
       .map(c => `${c.name || ''} <${c.primaryIdentifier || ''}>`)
       .join("\n");
-    const text = `Contacts from ${list.listName}:\n\n${contactsText}`;
+    const text = `Contacts from ${list.list_name}:\n\n${contactsText}`;
     const encoded = encodeURIComponent(text);
     window.open(`https://wa.me/?text=${encoded}`, "_blank");
   };
+const handleRoute = (goToPath)=> {
+  router.push(`/postgres-org/${orgId}/dashboard/contacts/${goToPath}`)
 
+}
   // Email share
   const shareListByEmail = (list) => {
     const contactsText = (list.contacts || [])
       .map(c => `${c.name || ''} <${c.primaryIdentifier || ''}>`)
       .join("\n");
-    const subject = encodeURIComponent(`Contacts: ${list.listName}`);
+    const subject = encodeURIComponent(`Contacts: ${list.list_name}`);
     const body = encodeURIComponent(contactsText);
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
   };
@@ -254,7 +258,7 @@ const handleCreateManualContact = async (contactData, listId) => {
   };
 
   const openUploadForExistingList = (list) => {
-    setTargetListName(list.listName);
+    setTargetListName(list.list_name);
     setUploadModalOpen(true);
   };
 
@@ -468,23 +472,37 @@ const handleUpload = async ({
   };
 
   // Rename list
-  const handleRenameList = async (listId) => {
-    if (!editingName.trim()) return;
-    
-    try {
-      await updateList(listId, { listName: editingName.trim() });
-      await refresh();
-      setEditingListId(null);
-      setEditingName("");
-    } catch (error) {
-      console.error("Failed to rename list:", error);
-      alert("Failed to rename list");
-    }
-  };
+// put this above return JSX in ListsPage
+const handleRenameList = async (listId) => {
+  if (!editingName.trim()) {
+    // if user clears and blurs, just exit edit mode
+    setEditingListId(null);
+    setEditingName("");
+    return;
+  }
+
+  try {
+    await updateList(listId, { listName: editingName.trim() });
+
+    // ✅ ensure UI uses fresh lists (optional but recommended)
+    await refresh();
+
+    // ✅ exit edit mode
+    setEditingListId(null);
+    setEditingName("");
+
+    // ✅ important: clear search so renamed list appears again
+    setSearchTerm("");
+  } catch (error) {
+    console.error("Failed to rename list:", error);
+    alert("Failed to rename list");
+  }
+};
+
 
   const startEditing = (list) => {
     setEditingListId(list.listId);
-    setEditingName(list.listName);
+    setEditingName(list.list_name);
   };
 
   // Get contacts for a list
@@ -496,20 +514,35 @@ const handleUpload = async ({
   };
 
   // Add existing contact to list
-  const handleAddExistingContact = async (listId) => {
-    const sel = document.getElementById(`add-existing-${listId}`);
-    const cid = sel?.value;
-    if (!cid) return alert("Please select a contact");
-    
-    try {
-      await addContactsToList(listId, [cid]);
-      await refresh();
-      sel.value = "";
-    } catch (err) {
-      console.error(err);
-      alert("Failed to add contact");
-    }
-  };
+// Add / replace in ListsPage:
+
+const handleAddExistingContact = async (listId, contactIds) => {
+  // Normalize to array
+  const ids = Array.isArray(contactIds) ? contactIds : [contactIds];
+
+  if (!ids.length) {
+    return alert("Please select at least one contact");
+  }
+
+  try {
+    await addContactsToList(listId, ids);
+
+    // ⚠️ IMPORTANT:
+    // If your useContacts provider already updates `lists` internally
+    // after addContactsToList, you DON'T need a refresh here.
+    //
+    // If it does NOT update automatically, use a lighter refresh:
+    // await listLists(orgId);  // only lists, not all contacts
+    //
+    // ❌ Avoid: await refresh() which re-fetches EVERYTHING and feels like reload.
+
+    alert(`✅ Added ${ids.length} contact(s) to this list`);
+  } catch (err) {
+    console.error(err);
+    alert("Failed to add contact(s)");
+  }
+};
+
 
   // Add tag to contact
   const handleAddTag = async (contact) => {
@@ -621,7 +654,7 @@ const filteredLists = (lists ?? []).filter(list =>
               <div className="text-2xl font-bold text-gray-900">{lists.length}</div>
               <div className="text-sm text-gray-500">Total Lists</div>
             </div>
-            <div className="bg-white rounded-lg p-4 border border-gray-200">
+            <div onClick={()=> handleRoute("all-contacts")} className="bg-white rounded-lg p-4 border border-gray-200">
               <div className="text-2xl font-bold text-blue-600">{contacts.length}</div>
               <div className="text-sm text-gray-500">Total Contacts</div>
             </div>

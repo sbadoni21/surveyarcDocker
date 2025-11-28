@@ -7,6 +7,9 @@ from typing import List
 from ..db import get_db
 from ..models.contact import ContactList, list_members, Contact
 from ..schemas.contact import ListCreate, ListOut, ListUpdate
+from ..services.redis_contact_service import RedisContactService as RCon
+from ..schemas.contact import ListOut, ContactOut
+
 
 router = APIRouter(
     prefix="/contact-lists",
@@ -71,36 +74,74 @@ def create_list(data: ListCreate, db: Session = Depends(get_db)):
     else:
         db.refresh(new_list)
 
+    # Reload with contacts if needed already done above
+    out = ListOut.model_validate(new_list, from_attributes=True).model_dump()
+    org_id = out["org_id"]
+
+    # ---- Redis: invalidate & cache ----
+    RCon.invalidate_list(out["list_id"], org_id)
+    RCon.invalidate_org_lists(org_id)  # org list collection
+    RCon.cache_list_full(out["list_id"], out)
+
     return new_list
 
 
 @router.get("/", response_model=List[ListOut])
 def get_lists(org_id: str, db: Session = Depends(get_db)):
-    """Get all lists for an organization"""
-    lists = db.query(ContactList)\
+    """Get all lists for an organization (with Redis caching)."""
+
+    cached = RCon.get_lists_by_org(org_id)
+    if cached is not None:
+        return [ListOut(**row) for row in cached]
+
+    lists = (
+        db.query(ContactList)
         .options(
-            joinedload(ContactList.contacts)
-                .joinedload(Contact.emails),
-            joinedload(ContactList.contacts)
-                .joinedload(Contact.phones),
-            joinedload(ContactList.contacts)
-                .joinedload(Contact.socials)
-        )\
-        .filter(ContactList.org_id == org_id)\
+            joinedload(ContactList.contacts).joinedload(Contact.emails),
+            joinedload(ContactList.contacts).joinedload(Contact.phones),
+            joinedload(ContactList.contacts).joinedload(Contact.socials),
+        )
+        .filter(ContactList.org_id == org_id)
         .all()
-    
-    return lists
+    )
+
+    out = [
+        ListOut.model_validate(lst, from_attributes=True).model_dump()
+        for lst in lists
+    ]
+
+    RCon.cache_lists_by_org(org_id, out)
+    for r in out:
+        RCon.cache_list_full(r["list_id"], r)
+
+    return [ListOut(**r) for r in out]
+
 
 
 @router.get("/{list_id}", response_model=ListOut)
 def get_list(list_id: str, db: Session = Depends(get_db)):
-    """Get a single list with all contacts"""
+    """Get a single list with all contacts (cached)."""
+
+    cached = RCon.get_list_full(list_id)
+    if cached is not None:
+        return ListOut(**cached)
+
     contact_list = load_list_with_contacts(db, list_id)
     
     if not contact_list:
         raise HTTPException(404, "List not found")
-    
-    return contact_list
+
+    out = ListOut.model_validate(contact_list, from_attributes=True).model_dump()
+    RCon.cache_list_full(list_id, out)
+
+    # Also prime contacts-by-list cache
+    contacts_out = [
+        ContactOut.model_validate(c, from_attributes=True).model_dump()
+        for c in contact_list.contacts
+    ]
+    RCon.cache_contacts_by_list(list_id, contacts_out)
+
+    return ListOut(**out)
 
 
 @router.patch("/{list_id}/contacts", response_model=ListOut)
@@ -157,8 +198,23 @@ def add_contacts_to_list(
     
     # Load fresh data with all relationships
     record = load_list_with_contacts(db, list_id)
-    
+
+    # ---- Redis: invalidate & cache ----
+    out = ListOut.model_validate(record, from_attributes=True).model_dump()
+    org_id = record.org_id
+
+    RCon.invalidate_list(list_id, org_id)
+    RCon.cache_list_full(list_id, out)
+
+    # Also refresh contacts-by-list snapshot
+    contacts_out = [
+        ContactOut.model_validate(c, from_attributes=True).model_dump()
+        for c in record.contacts
+    ]
+    RCon.cache_contacts_by_list(list_id, contacts_out)
+
     return record
+
 
 
 @router.delete("/{list_id}/contacts")
@@ -183,7 +239,12 @@ def remove_contacts_from_list(
 
     db.commit()
     
+    # ---- Redis: invalidate caches for this list ----
+    # We don't need org_id here strictly; list membership changed, so list + contacts:list are stale
+    RCon.invalidate_list(list_id)
+
     return {"success": True, "removed": contact_ids, "count": result.rowcount}
+
 
 
 @router.patch("/{list_id}", response_model=ListOut)
@@ -222,6 +283,21 @@ def update_list(list_id: str, data: ListUpdate, db: Session = Depends(get_db)):
 
     # Reload with contacts
     record = load_list_with_contacts(db, list_id)
+
+    out = ListOut.model_validate(record, from_attributes=True).model_dump()
+    org_id = record.org_id
+
+    # ---- Redis: invalidate & cache ----
+    RCon.invalidate_list(list_id, org_id)
+    RCon.cache_list_full(list_id, out)
+
+    # Refresh contacts-by-list cache if contacts changed
+    contacts_out = [
+        ContactOut.model_validate(c, from_attributes=True).model_dump()
+        for c in record.contacts
+    ]
+    RCon.cache_contacts_by_list(list_id, contacts_out)
+
     return record
 
 
@@ -233,6 +309,12 @@ def delete_list(list_id: str, db: Session = Depends(get_db)):
     if not record:
         raise HTTPException(404, "List not found")
 
+    org_id = record.org_id
+
     db.delete(record)
     db.commit()
+
+    # ---- Redis: invalidate ----
+    RCon.invalidate_list(list_id, org_id)
+
     return {"success": True}

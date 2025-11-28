@@ -392,8 +392,8 @@ export default function ContactsList({
   const [sortOrder, setSortOrder] = useState("asc");
   const [page, setPage] = useState(1);
   const [editingContact, setEditingContact] = useState(null);
-  const pageSize = 10;
-console.log(contacts)
+  const pageSize = 15;
+
   const filtered = useMemo(() => {
     return contacts.filter((c) => {
       const matchString =
@@ -448,6 +448,8 @@ console.log(contacts)
 
   return (
     <div className="w-full p-4">
+
+      
       {/* Edit Modal */}
       {editingContact && (
         <EditContactModal

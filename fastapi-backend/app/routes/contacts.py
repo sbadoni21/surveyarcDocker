@@ -9,6 +9,8 @@ import io
 from ..db import get_db
 from ..models.contact import Contact, ContactEmail, ContactPhone, ContactSocial, ContactList, list_members, ContactType
 from ..schemas.contact import ContactCreate, ContactOut, ContactUpdate
+from ..services.redis_contact_service import RedisContactService as RCon
+from ..schemas.contact import ContactOut  # already there in your file
 
 router = APIRouter(
     prefix="/contacts",
@@ -246,6 +248,7 @@ def create_contact(data: ContactCreate, db: Session = Depends(get_db)):
     db.commit()
     
     # Reload with all relationships
+    # Reload with all relationships
     contact = (
         db.query(Contact)
         .options(
@@ -257,8 +260,24 @@ def create_contact(data: ContactCreate, db: Session = Depends(get_db)):
         .filter(Contact.contact_id == new_contact.contact_id)
         .first()
     )
-    
+
+    # ---- Redis: cache + invalidate org collection ----
+    out = ContactOut.model_validate(contact, from_attributes=True).model_dump()
+    org_id = out["org_id"]
+
+    # Invalidate org-level contacts & list memberships caches
+    RCon.invalidate_org(org_id)
+    # Contact-level caches
+    RCon.invalidate_contact(out["contact_id"], org_id)
+    RCon.cache_contact_full(out["contact_id"], out)
+    slim = {
+        k: v for k, v in out.items()
+        if k not in ("emails", "phones", "socials", "lists")
+    }
+    RCon.cache_contact(out["contact_id"], slim)
+
     return contact
+
 
 
 @router.get("/{contact_id}", response_model=ContactOut)
@@ -363,8 +382,24 @@ def update_contact(contact_id: str, data: ContactUpdate, db: Session = Depends(g
         .filter(Contact.contact_id == contact_id)
         .first()
     )
-    
+
+    # ---- Redis: cache + invalidate org collections ----
+    out = ContactOut.model_validate(contact, from_attributes=True).model_dump()
+    org_id = out["org_id"]
+
+    # Invalidate org-level caches
+    RCon.invalidate_org(org_id)
+    # Invalidate & refresh this contact
+    RCon.invalidate_contact(contact_id, org_id)
+    RCon.cache_contact_full(contact_id, out)
+    slim = {
+        k: v for k, v in out.items()
+        if k not in ("emails", "phones", "socials", "lists")
+    }
+    RCon.cache_contact(contact_id, slim)
+
     return contact
+
 
 @router.post("/bulk", response_model=dict)
 def bulk_create_contacts(
@@ -407,7 +442,21 @@ def bulk_create_contacts(
             continue
     
     db.commit()
-    
+
+    # ---- Redis: invalidate affected org/list caches ----
+    if contacts:
+        try:
+            org_id = contacts[0].org_id  # assuming all belong to same org
+            if org_id:
+                RCon.invalidate_org(org_id)
+        except Exception:
+            pass
+
+    if list_id:
+        # list membership changed
+        # org_id fetched above will also invalidate org lists/contacts
+        RCon.invalidate_list(list_id)
+
     return {
         "success": True,
         "total": len(contacts),
@@ -418,6 +467,7 @@ def bulk_create_contacts(
         "existing_ids": existing_ids,
         "list_id": list_id
     }
+
 
 @router.post("/upload-csv")
 async def upload_contacts_csv(
@@ -530,19 +580,54 @@ def get_contacts(
     list_id: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """Get all contacts for an org, optionally filtered by list"""
+    """Get all contacts for an org, optionally filtered by list, with Redis caching."""
+    # 1) Try cache
+    if list_id:
+        cached = RCon.get_contacts_by_list(list_id)
+    else:
+        cached = RCon.get_contacts_by_org(org_id)
+
+    if cached is not None:
+        return [ContactOut(**row) for row in cached]
+
+    # 2) Fallback to DB
     query = db.query(Contact).options(
         joinedload(Contact.emails),
         joinedload(Contact.phones),
         joinedload(Contact.socials),
         joinedload(Contact.lists)
     ).filter(Contact.org_id == org_id)
-    
+
     if list_id:
-        # Filter by list membership
         query = query.join(Contact.lists).filter(ContactList.list_id == list_id)
-    
-    return query.all()
+
+    rows = query.all()
+
+    # 3) Serialize via Pydantic so cache always gets clean dicts
+    out = [
+        ContactOut.model_validate(row, from_attributes=True).model_dump()
+        for row in rows
+    ]
+
+    # 4) Cache collection
+    if list_id:
+        RCon.cache_contacts_by_list(list_id, out)
+    else:
+        RCon.cache_contacts_by_org(org_id, out)
+
+    # 5) Prime individual contact caches as well
+    for r in out:
+        cid = r["contact_id"]
+        # full contact
+        RCon.cache_contact_full(cid, r)
+        # slim (no heavy relations)
+        slim = {
+            k: v for k, v in r.items()
+            if k not in ("emails", "phones", "socials", "lists")
+        }
+        RCon.cache_contact(cid, slim)
+
+    return [ContactOut(**r) for r in out]
 
 
 @router.get("/{contact_id}", response_model=ContactOut)
@@ -657,7 +742,6 @@ def update_contact(
     
     return contact
 
-
 @router.delete("/{contact_id}")
 def delete_contact(contact_id: str, db: Session = Depends(get_db)):
     """Delete a contact (cascades to emails, phones, socials)"""
@@ -665,8 +749,14 @@ def delete_contact(contact_id: str, db: Session = Depends(get_db)):
     
     if not contact:
         raise HTTPException(404, "Contact not found")
-    
+
+    org_id = contact.org_id
+
     db.delete(contact)
     db.commit()
-    
+
+    # ---- Redis: invalidate ----
+    RCon.invalidate_contact(contact_id, org_id)
+    RCon.invalidate_org(org_id)
+
     return {"success": True, "contact_id": contact_id}
