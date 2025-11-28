@@ -183,32 +183,188 @@ def create_or_get_contact(db: Session, contact_data: ContactCreate, list_id: Opt
     
     return contact_id, True  # True = newly created
 
+
 @router.post("/", response_model=ContactOut)
 def create_contact(data: ContactCreate, db: Session = Depends(get_db)):
-    """Create a single contact"""
-    try:
-        contact_id, is_new = create_or_get_contact(db, data)
-        db.commit()
-        
-        # Load with relationships
-        contact = (
-            db.query(Contact)
-            .options(
-                joinedload(Contact.emails),
-                joinedload(Contact.phones),
-                joinedload(Contact.socials),
-                joinedload(Contact.lists)
+    """Create a new contact with emails, phones, and socials"""
+    
+    # Create the main contact
+    new_contact = Contact(
+        contact_id=data.contact_id or str(uuid4()),
+        org_id=data.org_id,
+        user_id=data.user_id,
+        name=data.name,
+        contact_type=data.contact_type,
+        primary_identifier=data.primary_identifier,
+        status=data.status,
+        meta=data.meta or {}
+    )
+    
+    db.add(new_contact)
+    db.flush()  # Get the contact_id assigned
+    
+    # Create related emails
+    if data.emails:
+        for email_data in data.emails:
+            email = ContactEmail(
+                id=email_data.id or str(uuid4()),
+                contact_id=new_contact.contact_id,
+                email=email_data.email,
+                email_lower=email_data.email.lower(),
+                is_primary=email_data.is_primary,
+                is_verified=email_data.is_verified,
+                status=email_data.status
             )
-            .filter(Contact.contact_id == contact_id)
-            .first()
+            db.add(email)
+    
+    # Create related phones
+    if data.phones:
+        for phone_data in data.phones:
+            phone = ContactPhone(
+                id=phone_data.id or str(uuid4()),
+                contact_id=new_contact.contact_id,
+                country_code=phone_data.country_code,
+                phone_number=phone_data.phone_number,
+                is_primary=phone_data.is_primary,
+                is_whatsapp=phone_data.is_whatsapp,
+                is_verified=phone_data.is_verified
+            )
+            db.add(phone)
+    
+    # Create related socials
+    if data.socials:
+        for social_data in data.socials:
+            social = ContactSocial(
+                id=social_data.id or str(uuid4()),
+                contact_id=new_contact.contact_id,
+                platform=social_data.platform,
+                handle=social_data.handle,
+                link=social_data.link
+            )
+            db.add(social)
+    
+    db.commit()
+    
+    # Reload with all relationships
+    contact = (
+        db.query(Contact)
+        .options(
+            joinedload(Contact.emails),
+            joinedload(Contact.phones),
+            joinedload(Contact.socials),
+            joinedload(Contact.lists)
         )
-        
-        return contact
-    except Exception as e:
-        db.rollback()
-        print(f"❌ Error creating contact: {str(e)}")
-        raise HTTPException(500, f"Error creating contact: {str(e)}")
+        .filter(Contact.contact_id == new_contact.contact_id)
+        .first()
+    )
+    
+    return contact
 
+
+@router.get("/{contact_id}", response_model=ContactOut)
+def get_contact(contact_id: str, db: Session = Depends(get_db)):
+    """Get a single contact with all related data"""
+    contact = (
+        db.query(Contact)
+        .options(
+            joinedload(Contact.emails),
+            joinedload(Contact.phones),
+            joinedload(Contact.socials),
+            joinedload(Contact.lists)
+        )
+        .filter(Contact.contact_id == contact_id)
+        .first()
+    )
+    
+    if not contact:
+        raise HTTPException(404, "Contact not found")
+    
+    return contact
+
+
+@router.patch("/{contact_id}", response_model=ContactOut)
+def update_contact(contact_id: str, data: ContactUpdate, db: Session = Depends(get_db)):
+    """Update a contact and optionally replace child records"""
+    
+    contact = db.query(Contact).filter(Contact.contact_id == contact_id).first()
+    if not contact:
+        raise HTTPException(404, "Contact not found")
+    
+    # Update basic fields
+    if data.name is not None:
+        contact.name = data.name
+    if data.primary_identifier is not None:
+        contact.primary_identifier = data.primary_identifier
+    if data.contact_type is not None:
+        contact.contact_type = data.contact_type
+    if data.status is not None:
+        contact.status = data.status
+    if data.meta is not None:
+        contact.meta = data.meta
+    if data.user_id is not None:
+        contact.user_id = data.user_id
+    
+    # Replace emails if provided
+    if data.emails is not None:
+        # Delete existing
+        db.query(ContactEmail).filter(ContactEmail.contact_id == contact_id).delete()
+        # Add new
+        for email_data in data.emails:
+            email = ContactEmail(
+                id=email_data.id or str(uuid4()),
+                contact_id=contact_id,
+                email=email_data.email,
+                email_lower=email_data.email.lower(),
+                is_primary=email_data.is_primary,
+                is_verified=email_data.is_verified,
+                status=email_data.status
+            )
+            db.add(email)
+    
+    # Replace phones if provided
+    if data.phones is not None:
+        db.query(ContactPhone).filter(ContactPhone.contact_id == contact_id).delete()
+        for phone_data in data.phones:
+            phone = ContactPhone(
+                id=phone_data.id or str(uuid4()),
+                contact_id=contact_id,
+                country_code=phone_data.country_code,
+                phone_number=phone_data.phone_number,
+                is_primary=phone_data.is_primary,
+                is_whatsapp=phone_data.is_whatsapp,
+                is_verified=phone_data.is_verified
+            )
+            db.add(phone)
+    
+    # Replace socials if provided
+    if data.socials is not None:
+        db.query(ContactSocial).filter(ContactSocial.contact_id == contact_id).delete()
+        for social_data in data.socials:
+            social = ContactSocial(
+                id=social_data.id or str(uuid4()),
+                contact_id=contact_id,
+                platform=social_data.platform,
+                handle=social_data.handle,
+                link=social_data.link
+            )
+            db.add(social)
+    
+    db.commit()
+    
+    # Reload with relationships
+    contact = (
+        db.query(Contact)
+        .options(
+            joinedload(Contact.emails),
+            joinedload(Contact.phones),
+            joinedload(Contact.socials),
+            joinedload(Contact.lists)
+        )
+        .filter(Contact.contact_id == contact_id)
+        .first()
+    )
+    
+    return contact
 
 @router.post("/bulk", response_model=dict)
 def bulk_create_contacts(

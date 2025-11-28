@@ -14,6 +14,7 @@ import {
   CheckCircle,
   XCircle,
   Upload,
+  Trash2,
   UserPlus,
   X
 } from "lucide-react";
@@ -45,8 +46,6 @@ export default function ListsPage() {
 
   const path = usePathname();
   const orgId = path?.split("/")[3];
-
-  // State management
   const [expandedLists, setExpandedLists] = useState(new Set());
   const [searchTerm, setSearchTerm] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -826,74 +825,466 @@ const filteredLists = (lists ?? []).filter(list =>
   );
 }
 
-// Contact Edit Modal Component
-const ContactEditModal = ({ contact, isOpen, onClose, onSaved }) => {
-  const { updateContact } = useContacts();
-  const [form, setForm] = useState(contact || {});
 
-  useEffect(() => {
-    setForm(contact || {});
+// Fixed ContactEditModal Component
+function ContactEditModal({ contact, isOpen, onClose, onSaved }) {
+  const [formData, setFormData] = useState({
+    name: contact?.name || "",
+    primaryIdentifier: contact?.primaryIdentifier || "",
+    contactType: contact?.contactType || "other",
+    status: contact?.status || "active",
+    emails: contact?.emails || [],
+    phones: contact?.phones || [],
+    socials: contact?.socials || [],
+    meta: contact?.meta || {}
+  });
+
+  // Update form when contact changes
+  useState(() => {
+    if (contact) {
+      setFormData({
+        name: contact.name || "",
+        primaryIdentifier: contact.primaryIdentifier || "",
+        contactType: contact.contactType || "other",
+        status: contact.status || "active",
+        emails: contact.emails || [],
+        phones: contact.phones || [],
+        socials: contact.socials || [],
+        meta: contact.meta || {}
+      });
+    }
   }, [contact]);
 
-  if (!isOpen || !contact) return null;
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!contact?.contactId) {
+      alert("❌ Contact ID is missing");
+      return;
+    }
 
-  const save = async () => {
     try {
-      await updateContact(contact.contactId, {
-        name: form.name,
-        status: form.status,
-        meta: form.meta,
+      // Clean and validate data
+      const cleanEmails = formData.emails.filter(e => e.email?.trim());
+      const cleanPhones = formData.phones.filter(p => p.phoneNumber?.trim());
+      const cleanSocials = formData.socials.filter(s => s.platform?.trim() && s.handle?.trim());
+
+      // Prepare payload with snake_case for backend
+      const payload = {
+        name: formData.name.trim(),
+        primary_identifier: formData.primaryIdentifier.trim(),
+        contact_type: formData.contactType,
+        status: formData.status,
+        meta: formData.meta,
+        emails: cleanEmails.map(e => ({
+          email: e.email,
+          is_primary: e.isPrimary ?? false,
+          is_verified: e.isVerified ?? false,
+          status: e.status ?? "active"
+        })),
+        phones: cleanPhones.map(p => ({
+          country_code: p.countryCode ?? "",
+          phone_number: p.phoneNumber,
+          is_primary: p.isPrimary ?? false,
+          is_whatsapp: p.isWhatsapp ?? false,
+          is_verified: p.isVerified ?? false
+        })),
+        socials: cleanSocials.map(s => ({
+          platform: s.platform,
+          handle: s.handle,
+          link: s.link ?? null
+        }))
+      };
+
+      // Make API call
+      const response = await fetch(`/api/post-gres-apis/contacts/${contact.contactId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
       });
-      onSaved?.();
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to update contact");
+      }
+
+      alert("✅ Contact updated successfully");
+      onSaved?.(); // Refresh data
       onClose();
-    } catch (err) {
-      console.error(err);
-      alert("Failed to save contact");
+    } catch (error) {
+      console.error("Update error:", error);
+      alert("❌ " + error.message);
     }
   };
 
+  // Email handlers
+  const addEmail = () => {
+    setFormData(prev => ({
+      ...prev,
+      emails: [...prev.emails, { 
+        email: "", 
+        isPrimary: false, 
+        isVerified: false, 
+        status: "active" 
+      }]
+    }));
+  };
+
+  const updateEmail = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      emails: prev.emails.map((email, i) => 
+        i === index ? { ...email, [field]: value } : email
+      )
+    }));
+  };
+
+  const removeEmail = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      emails: prev.emails.filter((_, i) => i !== index)
+    }));
+  };
+
+  // Phone handlers
+  const addPhone = () => {
+    setFormData(prev => ({
+      ...prev,
+      phones: [...prev.phones, { 
+        countryCode: "+91", 
+        phoneNumber: "", 
+        isPrimary: false, 
+        isWhatsapp: false, 
+        isVerified: false 
+      }]
+    }));
+  };
+
+  const updatePhone = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      phones: prev.phones.map((phone, i) => 
+        i === index ? { ...phone, [field]: value } : phone
+      )
+    }));
+  };
+
+  const removePhone = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      phones: prev.phones.filter((_, i) => i !== index)
+    }));
+  };
+
+  // Social handlers
+  const addSocial = () => {
+    setFormData(prev => ({
+      ...prev,
+      socials: [...prev.socials, { platform: "", handle: "", link: "" }]
+    }));
+  };
+
+  const updateSocial = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      socials: prev.socials.map((social, i) => 
+        i === index ? { ...social, [field]: value } : social
+      )
+    }));
+  };
+
+  const removeSocial = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      socials: prev.socials.filter((_, i) => i !== index)
+    }));
+  };
+
+  if (!isOpen || !contact) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white p-6 rounded-lg w-full max-w-md shadow-xl">
-        <h3 className="text-lg font-semibold mb-4">Edit Contact</h3>
-        
-        <label className="block mb-2 text-sm font-medium text-gray-700">Name</label>
-        <input 
-          value={form.name || ""} 
-          onChange={(e) => setForm({ ...form, name: e.target.value })} 
-          className="w-full mb-3 p-2 border rounded focus:ring-2 focus:ring-blue-500" 
-        />
-
-        <label className="block mb-2 text-sm font-medium text-gray-700">Status</label>
-        <select 
-          value={form.status || "active"} 
-          onChange={(e) => setForm({ ...form, status: e.target.value })} 
-          className="w-full mb-3 p-2 border rounded focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-          <option value="bounced">Bounced</option>
-          <option value="unsubscribed">Unsubscribed</option>
-        </select>
-
-        <div className="flex gap-2 justify-end mt-4">
-          <button 
-            onClick={onClose} 
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-          >
-            Cancel
-          </button>
-          <button 
-            onClick={save} 
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Save Changes
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
+          <h2 className="text-xl font-semibold">Edit Contact</h2>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
+            <X size={20} />
           </button>
         </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Basic Info */}
+          <div className="space-y-4">
+            <h3 className="font-medium text-lg">Basic Information</h3>
+            
+            <div>
+              <label className="block text-sm font-medium mb-1">Name</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Primary Identifier</label>
+              <input
+                type="text"
+                value={formData.primaryIdentifier}
+                onChange={(e) => setFormData(prev => ({ ...prev, primaryIdentifier: e.target.value }))}
+                className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Contact Type</label>
+                <select
+                  value={formData.contactType}
+                  onChange={(e) => setFormData(prev => ({ ...prev, contactType: e.target.value }))}
+                  className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="email">Email</option>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="phone">Phone</option>
+                  <option value="social">Social</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Status</label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
+                  className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="active">Active</option>
+                  <option value="bounced">Bounced</option>
+                  <option value="unsubscribed">Unsubscribed</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="blocked">Blocked</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Emails */}
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="font-medium text-lg">Emails</h3>
+              <button
+                type="button"
+                onClick={addEmail}
+                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
+              >
+                <Plus size={16} /> Add Email
+              </button>
+            </div>
+
+            {formData.emails.length === 0 && (
+              <div className="text-sm text-gray-500 italic p-3 border border-dashed rounded-md">
+                No emails added yet. Click "Add Email" to add one.
+              </div>
+            )}
+
+            {formData.emails.map((email, index) => (
+              <div key={index} className="flex gap-2 items-start p-3 border rounded-md bg-gray-50">
+                <div className="flex-1 space-y-2">
+                  <input
+                    type="email"
+                    placeholder="Email address"
+                    value={email.email}
+                    onChange={(e) => updateEmail(index, "email", e.target.value)}
+                    className="w-full border rounded px-2 py-1 text-sm"
+                  />
+                  <div className="flex gap-4 text-sm">
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={email.isPrimary}
+                        onChange={(e) => updateEmail(index, "isPrimary", e.target.checked)}
+                      />
+                      Primary
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={email.isVerified}
+                        onChange={(e) => updateEmail(index, "isVerified", e.target.checked)}
+                      />
+                      Verified
+                    </label>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeEmail(index)}
+                  className="p-1 text-red-600 hover:bg-red-50 rounded"
+                >
+                  <Trash size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Phones */}
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="font-medium text-lg">Phones</h3>
+              <button
+                type="button"
+                onClick={addPhone}
+                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
+              >
+                <Plus size={16} /> Add Phone
+              </button>
+            </div>
+
+            {formData.phones.length === 0 && (
+              <div className="text-sm text-gray-500 italic p-3 border border-dashed rounded-md">
+                No phones added yet. Click "Add Phone" to add one.
+              </div>
+            )}
+
+            {formData.phones.map((phone, index) => (
+              <div key={index} className="flex gap-2 items-start p-3 border rounded-md bg-gray-50">
+                <div className="flex-1 space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Code"
+                      value={phone.countryCode}
+                      onChange={(e) => updatePhone(index, "countryCode", e.target.value)}
+                      className="w-20 border rounded px-2 py-1 text-sm"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Phone number"
+                      value={phone.phoneNumber}
+                      onChange={(e) => updatePhone(index, "phoneNumber", e.target.value)}
+                      className="flex-1 border rounded px-2 py-1 text-sm"
+                    />
+                  </div>
+                  <div className="flex gap-4 text-sm">
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={phone.isPrimary}
+                        onChange={(e) => updatePhone(index, "isPrimary", e.target.checked)}
+                      />
+                      Primary
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={phone.isWhatsapp}
+                        onChange={(e) => updatePhone(index, "isWhatsapp", e.target.checked)}
+                      />
+                      WhatsApp
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={phone.isVerified}
+                        onChange={(e) => updatePhone(index, "isVerified", e.target.checked)}
+                      />
+                      Verified
+                    </label>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removePhone(index)}
+                  className="p-1 text-red-600 hover:bg-red-50 rounded"
+                >
+                  <Trash size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Socials */}
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="font-medium text-lg">Social Media</h3>
+              <button
+                type="button"
+                onClick={addSocial}
+                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
+              >
+                <Plus size={16} /> Add Social
+              </button>
+            </div>
+
+            {formData.socials.length === 0 && (
+              <div className="text-sm text-gray-500 italic p-3 border border-dashed rounded-md">
+                No social media accounts added yet. Click "Add Social" to add one.
+              </div>
+            )}
+
+            {formData.socials.map((social, index) => (
+              <div key={index} className="flex gap-2 items-start p-3 border rounded-md bg-gray-50">
+                <div className="flex-1 space-y-2">
+                  <input
+                    type="text"
+                    placeholder="Platform (e.g., Instagram, LinkedIn)"
+                    value={social.platform}
+                    onChange={(e) => updateSocial(index, "platform", e.target.value)}
+                    className="w-full border rounded px-2 py-1 text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Handle/Username"
+                    value={social.handle}
+                    onChange={(e) => updateSocial(index, "handle", e.target.value)}
+                    className="w-full border rounded px-2 py-1 text-sm"
+                  />
+                  <input
+                    type="url"
+                    placeholder="Profile URL"
+                    value={social.link}
+                    onChange={(e) => updateSocial(index, "link", e.target.value)}
+                    className="w-full border rounded px-2 py-1 text-sm"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeSocial(index)}
+                  className="p-1 text-red-600 hover:bg-red-50 rounded"
+                >
+                  <Trash size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Actions */}
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 border rounded-md hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            >
+              Save Changes
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
-};
+}
+
+
+
 
 // Contact Profile Modal Component
 function ContactProfileModal({ contact, isOpen, onClose }) {

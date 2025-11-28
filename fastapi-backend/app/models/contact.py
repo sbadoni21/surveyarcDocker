@@ -11,8 +11,8 @@ import enum
 list_members = Table(
     "list_members",
     Base.metadata,
-    Column("list_id", String, ForeignKey("contact_lists.list_id"), primary_key=True),
-    Column("contact_id", String, ForeignKey("contacts.contact_id"), primary_key=True)
+    Column("list_id", String, ForeignKey("contact_lists.list_id", ondelete="CASCADE"), primary_key=True),
+    Column("contact_id", String, ForeignKey("contacts.contact_id", ondelete="CASCADE"), primary_key=True)
 )
 class ContactType(str, enum.Enum):
     email = "email"
