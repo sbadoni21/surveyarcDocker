@@ -761,8 +761,8 @@ export default function SurveyForm({
                   {!["end_screen", "welcome_screen"].includes(
                     question.type
                   ) && (
-                    <p className="text-lg lg:text-2xl font-semibold mb-4 text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
-                      {idx + 1}. {question.label}
+                    <p className="text-lg lg:text-2xl capitalize text-left font-semibold mb-4 text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
+                      {question.label}
                     </p>
                   )}
                   {question.description && (
