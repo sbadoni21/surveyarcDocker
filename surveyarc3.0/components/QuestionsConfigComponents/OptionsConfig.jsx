@@ -39,9 +39,16 @@ const normalizeIncoming = (incoming = []) => {
     .filter(Boolean);
 };
 
-export default function OptionsConfig({ config = {}, updateConfig = () => {}, type }) {
+export default function OptionsConfig({
+  config = {},
+  updateConfig = () => {},
+  type,
+}) {
   const incomingOptions = config.options || [];
-  const normalizedIncoming = useMemo(() => normalizeIncoming(incomingOptions), [incomingOptions]);
+  const normalizedIncoming = useMemo(
+    () => normalizeIncoming(incomingOptions),
+    [incomingOptions]
+  );
 
   const [options, setOptions] = useState(normalizedIncoming);
 
@@ -74,6 +81,7 @@ export default function OptionsConfig({ config = {}, updateConfig = () => {}, ty
     }
   }, [normalizedIncoming]);
 
+  // debounce pushing options -> parent config
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
@@ -88,7 +96,6 @@ export default function OptionsConfig({ config = {}, updateConfig = () => {}, ty
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-   
   }, [options]);
 
   useEffect(() => {
@@ -145,11 +152,17 @@ export default function OptionsConfig({ config = {}, updateConfig = () => {}, ty
 
   const parseBulkText = (text) => {
     if (!text) return [];
-    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const lines = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
     const results = [];
     for (let l of lines) {
       if (l.includes(",") && l.split(",").length > 1) {
-        l.split(",").map((c) => c.trim()).filter(Boolean).forEach((c) => results.push(c));
+        l.split(",")
+          .map((c) => c.trim())
+          .filter(Boolean)
+          .forEach((c) => results.push(c));
       } else {
         results.push(l);
       }
@@ -164,14 +177,19 @@ export default function OptionsConfig({ config = {}, updateConfig = () => {}, ty
     setOptions((prev) => {
       const specials = prev.filter((p) => p.isOther || p.isNone);
       const normalPrev = prev.filter((p) => !p.isOther && !p.isNone);
-      const existingLabels = new Set(normalPrev.map((p) => String(p.label).trim().toLowerCase()));
+      const existingLabels = new Set(
+        normalPrev.map((p) => String(p.label).trim().toLowerCase())
+      );
       const newItems = [];
       parsed.forEach((label, idx) => {
         const trimmed = String(label).trim();
         if (!trimmed) return;
         if (existingLabels.has(trimmed.toLowerCase())) return;
         existingLabels.add(trimmed.toLowerCase());
-        const id = makeDeterministicId(trimmed, normalPrev.length + newItems.length);
+        const id = makeDeterministicId(
+          trimmed,
+          normalPrev.length + newItems.length
+        );
         newItems.push({ id, label: trimmed });
       });
       return [...normalPrev, ...newItems, ...specials];
@@ -182,11 +200,17 @@ export default function OptionsConfig({ config = {}, updateConfig = () => {}, ty
     if (!file) return;
     try {
       const txt = await file.text();
-      const lines = txt.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const lines = txt
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
       const parsed = [];
       for (let l of lines) {
         if (l.includes(",")) {
-          const cols = l.split(",").map((c) => c.trim()).filter(Boolean);
+          const cols = l
+            .split(",")
+            .map((c) => c.trim())
+            .filter(Boolean);
           if (cols.length) parsed.push(cols[0]);
         } else {
           parsed.push(l);
@@ -229,6 +253,93 @@ export default function OptionsConfig({ config = {}, updateConfig = () => {}, ty
       : type === QUESTION_TYPES.DROPDOWN
       ? "Dropdown options"
       : "Choices";
+
+  // show min/max only for DROPDOWN and CHECKBOX
+  const showMinMax =
+    type === QUESTION_TYPES.DROPDOWN || type === QUESTION_TYPES.CHECKBOX;
+
+  // Local controlled values for min/max (strings to allow empty)
+  const [minLocal, setMinLocal] = useState(
+    typeof config.minSelections !== "undefined"
+      ? String(config.minSelections)
+      : ""
+  );
+  const [maxLocal, setMaxLocal] = useState(
+    typeof config.maxSelections !== "undefined"
+      ? String(config.maxSelections)
+      : ""
+  );
+  const [minError, setMinError] = useState("");
+  const [maxError, setMaxError] = useState("");
+
+  // sync when parent config or options change
+  useEffect(() => {
+    setMinLocal(
+      typeof config.minSelections !== "undefined"
+        ? String(config.minSelections)
+        : ""
+    );
+    setMaxLocal(
+      typeof config.maxSelections !== "undefined"
+        ? String(config.maxSelections)
+        : ""
+    );
+  }, [config.minSelections, config.maxSelections]);
+
+  // validate whenever local values or options change
+  useEffect(() => {
+    setMinError("");
+    setMaxError("");
+
+    const optCount = options.filter((o) => !o.isOther && !o.isNone).length;
+    const parseNum = (v) => {
+      if (v === "" || v == null) return null;
+      const n = Number(v);
+      if (Number.isNaN(n)) return null;
+      return Math.floor(n);
+    };
+
+    const minN = parseNum(minLocal);
+    const maxN = parseNum(maxLocal);
+
+    if (minN != null && minN < 0) setMinError("Min cannot be negative");
+    if (maxN != null && maxN < 0) setMaxError("Max cannot be negative");
+
+    if (minN != null && maxN != null && minN > maxN) {
+      setMinError("Min cannot be greater than Max");
+      setMaxError("Max cannot be less than Min");
+    }
+
+    if (maxN != null && optCount > 0 && maxN > optCount) {
+      setMaxError(`Max cannot exceed option count (${optCount})`);
+    }
+
+    if (minN != null && optCount > 0 && minN > optCount) {
+      setMinError(`Min cannot exceed option count (${optCount})`);
+    }
+  }, [minLocal, maxLocal, options]);
+
+  // commit functions: only update parent config when valid (called onBlur or via auto-fix)
+  const commitMin = () => {
+    // if invalid, do not push
+    if (minError) return;
+    const v = minLocal === "" ? undefined : Math.max(0, parseInt(minLocal, 10));
+    updateConfig("minSelections", typeof v === "undefined" ? undefined : v);
+  };
+  const commitMax = () => {
+    if (maxError) return;
+    const v = maxLocal === "" ? undefined : Math.max(0, parseInt(maxLocal, 10));
+    updateConfig("maxSelections", typeof v === "undefined" ? undefined : v);
+  };
+
+  // auto-fix clamp max -> option count
+  const clampMaxToOptionCount = () => {
+    const optCount = options.filter((o) => !o.isOther && !o.isNone).length;
+    setMaxLocal(String(optCount));
+    // push immediately
+    updateConfig("maxSelections", optCount);
+    setMaxError("");
+  };
 
   return (
     <>
@@ -282,7 +393,9 @@ export default function OptionsConfig({ config = {}, updateConfig = () => {}, ty
               <input
                 className="border border-[#8C8A97] dark:bg-[#1A1A1E] py-1 px-3 rounded flex-grow"
                 value={opt.label}
-                onChange={(e) => setOptionLabel(options.indexOf(opt), e.target.value)}
+                onChange={(e) =>
+                  setOptionLabel(options.indexOf(opt), e.target.value)
+                }
                 placeholder={
                   opt.isOther
                     ? "Other (user supplied)"
@@ -351,89 +464,164 @@ export default function OptionsConfig({ config = {}, updateConfig = () => {}, ty
             <span className="text-sm">Add “None (exclusive)” Option</span>
           </label>
         </div>
+
+        {showMinMax && (
+          <div className="mt-3 border-t pt-3">
+            <label className="block text-sm mb-2 dark:text-[#96949C]">
+              Selection limits
+            </label>
+            <div className="flex items-start gap-3 max-w-full flex-wrap">
+              <div className="flex flex-col">
+                <label className="text-xs text-gray-500">Min selections</label>
+                <input
+                  type="number"
+                  min={0}
+                  className={`px-3 py-2 rounded border dark:border-[#222] bg-white dark:bg-[#1A1A1E] w-36`}
+                  value={minLocal}
+                  onWheel={(e) => e.target.blur()}
+                  onChange={(e) => setMinLocal(e.target.value)}
+                  onBlur={commitMin}
+                  placeholder="0"
+                />
+                {minError && (
+                  <div className="text-xs text-red-500 mt-1">{minError}</div>
+                )}
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-xs text-gray-500">Max selections</label>
+                <input
+                  type="number"
+                  min={0}
+                  onWheel={(e) => e.target.blur()}
+                  className={`px-3 py-2 rounded border dark:border-[#222] bg-white dark:bg-[#1A1A1E] w-36`}
+                  value={maxLocal}
+                  onChange={(e) => setMaxLocal(e.target.value)}
+                  onBlur={commitMax}
+                  placeholder=""
+                />
+                {maxError && (
+                  <div className="text-xs text-red-500 mt-1">{maxError}</div>
+                )}
+              </div>
+
+              <div className="text-sm text-gray-500 mt-2">
+                Leave blank to allow any number (up to option count).
+                <div className="mt-2">
+                  {maxError && maxError.includes("option count") && (
+                    <button
+                      className="text-xs text-blue-600 underline"
+                      onClick={clampMaxToOptionCount}
+                      type="button"
+                    >
+                      Auto-fix: clamp max to option count
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-    
+      {/* Bulk Add modal (fullscreen) */}
       {bulkModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-0 bg-black/40">
           <div
-            className="absolute inset-0 bg-black/40"
+            className="absolute inset-0"
             onClick={() => {
               setBulkModalOpen(false);
               setBulkText("");
             }}
           />
-          <div className="relative bg-white dark:bg-[#0b0b0d] rounded-lg p-4 w-full max-w-2xl">
-            <h3 className="font-semibold mb-2 text-black dark:text-white">Bulk Add Options</h3>
+          <div className="relative bg-white dark:bg-[#0b0b0d] rounded-none p-6 w-full h-full overflow-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold mb-0 text-black dark:text-white">
+                Bulk Add Options (full screen)
+              </h3>
+              <div>
+                <button
+                  className="px-3 py-1 rounded bg-gray-100 mr-2"
+                  onClick={() => {
+                    setBulkModalOpen(false);
+                    setBulkText("");
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-3 py-1 rounded bg-green-600 text-white"
+                  onClick={() => {
+                    bulkAddFromText(bulkText);
+                    setBulkModalOpen(false);
+                    setBulkText("");
+                  }}
+                >
+                  Add Options
+                </button>
+              </div>
+            </div>
+
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-              Paste options one-per-line or comma-separated. CSV files imported earlier will also work.
+              Paste options one-per-line or comma-separated. CSV files imported
+              earlier will also work.
             </p>
+
             <textarea
-              rows={10}
+              rows={20}
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
-              className="w-full p-2 border rounded bg-white dark:bg-[#111] dark:text-white"
+              className="w-full h-[calc(100%-180px)] p-3 border rounded bg-white dark:bg-[#111] dark:text-white"
               placeholder={`Option 1\nOption 2\nOption 3\n...`}
             />
-            <div className="mt-3 flex gap-2 justify-end">
-              <button
-                className="px-3 py-1 rounded bg-gray-200 dark:bg-[#222]"
-                onClick={() => {
-                  setBulkModalOpen(false);
-                  setBulkText("");
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                className="px-3 py-1 rounded bg-green-500 text-white"
-                onClick={() => {
-                  bulkAddFromText(bulkText);
-                  setBulkModalOpen(false);
-                  setBulkText("");
-                }}
-              >
-                Add Options
-              </button>
+
+            <div className="mt-4 text-xs text-gray-500">
+              Tip: You can paste long lists (100+ options) — duplicates will be
+              ignored.
             </div>
           </div>
         </div>
       )}
 
-
+      {/* Edit All modal (fullscreen) */}
       {editAllModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-0 bg-black/40">
           <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => {
-              setEditAllModalOpen(false);
-            }}
+            className="absolute inset-0"
+            onClick={() => setEditAllModalOpen(false)}
           />
-          <div className="relative bg-white dark:bg-[#0b0b0d] rounded-lg p-4 w-full max-w-2xl">
-            <h3 className="font-semibold mb-2 text-black dark:text-white">Edit All Options</h3>
+          <div className="relative bg-white dark:bg-[#0b0b0d] rounded-none p-6 w-full h-full overflow-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold mb-0 text-black dark:text-white">
+                Edit All Options (full screen)
+              </h3>
+              <div>
+                <button
+                  className="px-3 py-1 rounded bg-gray-100 mr-2"
+                  onClick={() => setEditAllModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-3 py-1 rounded bg-blue-600 text-white"
+                  onClick={saveEditAll}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-              Each line is an option. Special options (Other/None) are preserved at the end.
+              Each line is an option. Special options (Other/None) are preserved
+              at the end.
             </p>
+
             <textarea
-              rows={12}
+              rows={30}
               value={editAllText}
               onChange={(e) => setEditAllText(e.target.value)}
-              className="w-full p-2 border rounded bg-white dark:bg-[#111] dark:text-white"
+              className="w-full h-[calc(100%-180px)] p-3 border rounded bg-white dark:bg-[#111] dark:text-white"
             />
-            <div className="mt-3 flex gap-2 justify-end">
-              <button
-                className="px-3 py-1 rounded bg-gray-200 dark:bg-[#222]"
-                onClick={() => setEditAllModalOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="px-3 py-1 rounded bg-blue-600 text-white"
-                onClick={saveEditAll}
-              >
-                Save
-              </button>
-            </div>
           </div>
         </div>
       )}

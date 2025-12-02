@@ -168,7 +168,6 @@ export default function SurveyForm({
   // Helpers for options & answers
   // -------------------------
 
-  // normalize options to objects: { id, label, isOther?, isNone? }
   const normalizeOptions = (opts = []) =>
     (opts || []).map((o, idx) =>
       typeof o === "string"
@@ -176,46 +175,47 @@ export default function SurveyForm({
         : { id: o.id ?? `opt_${idx}`, label: o.label ?? "", isOther: !!o.isOther, isNone: !!o.isNone }
     );
 
-  // check if a question is answered (respecting Other text requirement)
+  console.log(questions);
+
   const isAnswered = (question, answer) => {
     const qType = question?.type;
     const config = question?.config || {};
     const required = Boolean(config.required);
 
-    if (!required) return true; // not required -> always okay
+    if (!required) return true;
 
-    // treat empty as not answered
     if (answer === undefined || answer === null) return false;
 
     const opts = normalizeOptions(config.options || []);
 
     switch (qType) {
       case "checkbox": {
-        // answer could be array or { values: [...], otherText }
         const vals = Array.isArray(answer)
           ? answer
           : answer?.values || [];
         if (!vals || vals.length === 0) return false;
-        // if values contains an 'other' option, ensure otherText present if value is exactly other id
+
         const otherOpt = opts.find((o) => o.isOther);
         if (otherOpt) {
           if (vals.includes(otherOpt.id)) {
-            // if stored as object with otherText
             if (typeof answer === "object") {
               return Boolean(answer.otherText && String(answer.otherText).trim());
             }
-            // otherwise assume not answered
             return false;
           }
         }
+
+        // enforce minSelect on required check
+        if (config.minSelections && Number(config.minSelections) > 0) {
+          return vals.length >= Number(config.minSelections);
+        }
+
         return true;
       }
 
       case "multiple_choice":
-      case "dropdown":
       case "picture_choice":
       case "yes_no": {
-        // answer might be string or { value, otherText }
         if (typeof answer === "string") {
           return answer !== "";
         }
@@ -231,6 +231,33 @@ export default function SurveyForm({
         return false;
       }
 
+      case "dropdown": {
+        // if dropdown configured as multiple selection (config.multiple === true)
+        if (config.multiple) {
+          const vals = Array.isArray(answer)
+            ? answer
+            : answer?.values || [];
+          if (!vals || vals.length === 0) return false;
+          if (config.minSelections && Number(config.minSelections) > 0) {
+            return vals.length >= Number(config.minSelections);
+          }
+          return true;
+        } else {
+          // single select dropdown operates like other single selects
+          if (typeof answer === "string") return answer !== "";
+          if (typeof answer === "object") {
+            const val = answer.value;
+            if (!val) return false;
+            const otherOpt = opts.find((o) => o.isOther);
+            if (otherOpt && val === otherOpt.id) {
+              return Boolean(answer.otherText && String(answer.otherText).trim());
+            }
+            return true;
+          }
+          return false;
+        }
+      }
+
       case "short_text":
       case "long_text":
       case "video":
@@ -241,20 +268,16 @@ export default function SurveyForm({
       case "date": {
         if (typeof answer === "string") return String(answer).trim() !== "";
         if (typeof answer === "number") return true;
-        // object wrappers or arrays are considered answered only if not empty
         if (Array.isArray(answer)) return answer.length > 0;
         if (typeof answer === "object") {
-          // try to find a value property
           return Boolean(answer.value ?? answer.text ?? false);
         }
         return false;
       }
 
       default:
-        // fallback: truthy check
         if (Array.isArray(answer)) return answer.length > 0;
         if (typeof answer === "object") {
-          // check value or values presence
           if (Array.isArray(answer.values)) return answer.values.length > 0;
           return Boolean(answer.value ?? answer.otherText ?? false);
         }
@@ -262,7 +285,7 @@ export default function SurveyForm({
     }
   };
 
-  // central answer setter that also enforces "none exclusive" and normalizes "other"
+  // central answer setter with min/max enforcement for checkbox & multi-dropdown
   const handleAnswerChange = (question, rawValue) => {
     const qid = question.questionId;
     const config = question.config || {};
@@ -270,25 +293,22 @@ export default function SurveyForm({
     const noneOpt = opts.find((o) => o.isNone);
     const otherOpt = opts.find((o) => o.isOther);
 
-    // helper to set answer safely
     const setAnswer = (value) =>
       setAnswers((prev) => {
         return { ...prev, [qid]: value };
       });
 
-    // CASE: checkbox (multi-select) - accept array or toggle id
+    // Helper: sanitize unique values
+    const unique = (arr) => Array.from(new Set(arr.filter(Boolean)));
+
+    // CASE: checkbox (multi-select)
     if (question.type === "checkbox") {
-      // rawValue might be:
-      // - an array of ids
-      // - a string id to toggle
-      // - an object { values: [...], otherText }
       let values = [];
       let otherText;
 
       if (Array.isArray(rawValue)) {
         values = rawValue.slice();
       } else if (typeof rawValue === "string") {
-        // toggle behavior: check previous value
         const prev = answers[qid];
         const prevVals = Array.isArray(prev) ? prev.slice() : prev?.values?.slice() || [];
         if (prevVals.includes(rawValue)) {
@@ -301,18 +321,41 @@ export default function SurveyForm({
         otherText = rawValue.otherText;
       }
 
+      values = unique(values);
+
       // enforce none exclusivity
       if (noneOpt) {
         if (values.includes(noneOpt.id)) {
-          values = [noneOpt.id]; // choose only none
+          values = [noneOpt.id];
           otherText = undefined;
         } else {
-          // remove none if present
           values = values.filter((v) => v !== noneOpt.id);
         }
       }
 
-      // if other chosen, carry otherText in object form
+      // enforce maxSelect: if adding (toggle) would exceed, prevent and alert
+      if (config.maxSelections && Number(config.maxSelections) > 0) {
+        const max = Number(config.maxSelections);
+        // If caller passed a toggle string and the attempt is to add (prev length < new length)
+        if (typeof rawValue === "string") {
+          const prev = answers[qid];
+          const prevLen = Array.isArray(prev) ? prev.length : prev?.values?.length || 0;
+          const isAdding = ! (Array.isArray(prev) ? prev.includes(rawValue) : (prev?.values || []).includes(rawValue));
+          if (isAdding && prevLen >= max) {
+            window.alert(`You can select maximum ${max} option${max === 1 ? "" : "s"}.`);
+            return; // block the change
+          }
+        } else {
+          // rawValue was array/object — if incoming exceeds max, trim and proceed
+          if (values.length > max) {
+            // prefer not to silently drop — trim to max and continue
+            values = values.slice(0, max);
+            window.alert(`Only first ${max} choices were accepted (maxSelect = ${max}).`);
+          }
+        }
+      }
+
+      // if other chosen, keep otherText attached
       if (otherOpt && values.includes(otherOpt.id)) {
         setAnswer({ values, otherText: otherText ?? (answers[qid]?.otherText ?? "") });
       } else {
@@ -322,15 +365,71 @@ export default function SurveyForm({
       return;
     }
 
-    // CASE: single-select (radio/dropdown/yes_no/picture_choice)
+    // CASE: dropdown - support multi-dropdown when config.multiple === true
+    if (question.type === "dropdown" && config.multiple) {
+      let values = [];
+      let otherText;
+
+      if (Array.isArray(rawValue)) {
+        values = rawValue.slice();
+      } else if (typeof rawValue === "string") {
+        // toggle-like behavior for multi-dropdown if frontend uses that pattern
+        const prev = answers[qid];
+        const prevVals = Array.isArray(prev) ? prev.slice() : prev?.values?.slice() || [];
+        if (prevVals.includes(rawValue)) {
+          values = prevVals.filter((v) => v !== rawValue);
+        } else {
+          values = [...prevVals, rawValue];
+        }
+      } else if (rawValue && typeof rawValue === "object") {
+        values = Array.isArray(rawValue.values) ? rawValue.values.slice() : [];
+        otherText = rawValue.otherText;
+      }
+
+      values = unique(values);
+
+      if (noneOpt) {
+        if (values.includes(noneOpt.id)) {
+          values = [noneOpt.id];
+          otherText = undefined;
+        } else {
+          values = values.filter((v) => v !== noneOpt.id);
+        }
+      }
+
+      if (config.maxSelections && Number(config.maxSelections) > 0) {
+        const max = Number(config.maxSelections);
+        if (typeof rawValue === "string") {
+          const prev = answers[qid];
+          const prevLen = Array.isArray(prev) ? prev.length : prev?.values?.length || 0;
+          const isAdding = !(Array.isArray(prev) ? prev.includes(rawValue) : (prev?.values || []).includes(rawValue));
+          if (isAdding && prevLen >= max) {
+            window.alert(`You can select maximum ${max} option${max === 1 ? "" : "s"}.`);
+            return;
+          }
+        } else {
+          if (values.length > max) {
+            values = values.slice(0, max);
+            window.alert(`Only first ${max} choices were accepted (maxSelect = ${max}).`);
+          }
+        }
+      }
+
+      if (otherOpt && values.includes(otherOpt.id)) {
+        setAnswer({ values, otherText: otherText ?? (answers[qid]?.otherText ?? "") });
+      } else {
+        setAnswer(values);
+      }
+
+      return;
+    }
+
+    // CASE: single-select (multiple_choice, dropdown-single, picture_choice, yes_no)
     if (
       ["multiple_choice", "dropdown", "picture_choice", "yes_no"].includes(
         question.type
       )
     ) {
-      // rawValue might be:
-      // - a string id
-      // - an object { value, otherText }
       if (rawValue && typeof rawValue === "object" && "value" in rawValue) {
         const val = rawValue.value;
         if (noneOpt && val === noneOpt.id) {
@@ -338,16 +437,13 @@ export default function SurveyForm({
           return;
         }
         if (otherOpt && val === otherOpt.id) {
-          // need otherText to be present in the object
           setAnswer({ value: val, otherText: rawValue.otherText ?? "" });
           return;
         }
-        // normal option
         setAnswer(val);
         return;
       }
 
-      // if rawValue is string id
       if (typeof rawValue === "string") {
         const val = rawValue;
         if (noneOpt && val === noneOpt.id) {
@@ -355,7 +451,6 @@ export default function SurveyForm({
           return;
         }
         if (otherOpt && val === otherOpt.id) {
-          // set as object with empty otherText (UI should later update otherText)
           setAnswer({ value: val, otherText: "" });
           return;
         }
@@ -363,16 +458,15 @@ export default function SurveyForm({
         return;
       }
 
-      // otherwise store as-is
       setAnswer(rawValue);
       return;
     }
 
-    // Default: pass through (text, number etc.)
+    // Default fallback for text/number/etc.
     setAnswers((prev) => ({ ...prev, [qid]: rawValue }));
   };
 
-  // used by Next/Submit: validate all required questions on current page
+  // validate required + minSelect before navigation/submission
   const validateCurrentPageRequired = () => {
     const currentPageQuestions = blockPages[currentPageIndex] || [];
     const pageQuestionsFiltered = currentPageQuestions.filter((q) => {
@@ -392,8 +486,17 @@ export default function SurveyForm({
       const cfg = q.config || defaultConfigMap[q.type] || {};
       if (cfg.required) {
         const ans = answers[q.questionId];
+
+        // Additional check: for checkbox & multi-dropdown, ensure minSelect satisfied if provided
+        if ((q.type === "checkbox" || (q.type === "dropdown" && cfg.multiple)) && cfg.minSelections) {
+          const vals = Array.isArray(ans) ? ans : ans?.values || [];
+          if (!vals || vals.length < Number(cfg.minSelections)) {
+            window.alert(`Please select at least ${cfg.minSelections} option${Number(cfg.minSelections) === 1 ? "" : "s"} for: ${q.label || "This question"}`);
+            return false;
+          }
+        }
+
         if (!isAnswered(q, ans)) {
-          // Focus behavior could be improved; for now show alert and return false
           window.alert("Please answer the required question: " + (q.label || "This question"));
           return false;
         }
@@ -405,7 +508,6 @@ export default function SurveyForm({
   const isLastBlock = currentBlockIndex === blocksWithQuestions.length - 1;
 
   const handleNextBlock = () => {
-    // validate required first — prevents navigation if any required unanswered
     if (!validateCurrentPageRequired()) return;
 
     const isLastPage = currentPageIndex === blockPages.length - 1;
@@ -690,7 +792,6 @@ export default function SurveyForm({
             }
       }
     >
-      {/* ---------- Overlay while submitting ---------- */}
       {submitting && (
         <div
           className="absolute inset-0 z-50 flex items-center justify-center"
@@ -706,7 +807,6 @@ export default function SurveyForm({
         </div>
       )}
 
-      {/* Sticky header */}
       <header className="sticky top-0 z-30 backdrop-blur bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] border-b border-orange-400/30 dark:border-[#222]">
         <div className="lg:max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -801,7 +901,6 @@ export default function SurveyForm({
             {isLastBlock ? (
               <button
                 onClick={async () => {
-                  // validate required before final submit
                   if (!validateCurrentPageRequired()) return;
 
                   if (
@@ -822,9 +921,7 @@ export default function SurveyForm({
                 }}
                 disabled={submitting}
                 className={`flex items-center text-sm lg:text-lg gap-2 px-6 py-3 rounded-md font-semibold transition-transform duration-150 ${
-                  submitting
-                    ? "opacity-70 cursor-not-allowed"
-                    : "hover:scale-105"
+                  submitting ? "opacity-70 cursor-not-allowed" : "hover:scale-105"
                 } bg-gradient-to-r from-green-500 to-green-600 text-white`}
               >
                 {submitting ? "Submitting…" : "Submit"}
