@@ -41,7 +41,16 @@ export async function PATCH(req, { params }) {
 
   try {
     const body = await req.json();
-    const payload = await encryptPayload(body);
+    
+    // ✅ Ensure contact_ids is present
+    if (!body.contact_ids || !Array.isArray(body.contact_ids)) {
+      return NextResponse.json(
+        { status: "error", message: "contact_ids array is required" }, 
+        { status: 400 }
+      );
+    }
+
+    const payload = ENC ? await encryptPayload(body) : body;
     
     const res = await fetch(`${BASE}/contact-lists/${encodeURIComponent(listId)}/contacts`, {
       method: "PATCH",
@@ -53,7 +62,7 @@ export async function PATCH(req, { params }) {
       signal: AbortSignal.timeout(30000),
     });
     
-    return forceDecryptResponse(res);
+    return ENC ? forceDecryptResponse(res) : NextResponse.json(await res.json(), { status: res.status });
   } catch (error) {
     console.error("Error adding contacts to list:", error);
     return NextResponse.json({ status: "error", message: error.message }, { status: 500 });
@@ -67,7 +76,26 @@ export async function DELETE(req, { params }) {
 
   try {
     const body = await req.json();
-    const payload = await encryptPayload(body);
+    
+    // ✅ Ensure contact_ids is present and properly formatted
+    if (!body.contact_ids || !Array.isArray(body.contact_ids)) {
+      return NextResponse.json(
+        { status: "error", message: "contact_ids array is required" }, 
+        { status: 400 }
+      );
+    }
+
+    // ✅ Flatten if double-wrapped and ensure all are strings
+    let contactIds = body.contact_ids;
+    if (contactIds.length === 1 && Array.isArray(contactIds[0])) {
+      contactIds = contactIds[0];
+    }
+    contactIds = contactIds.filter(id => typeof id === 'string');
+
+    console.log("🗑️ DELETE request - listId:", listId, "contact_ids:", contactIds);
+
+    const cleanBody = { contact_ids: contactIds };
+    const payload = ENC ? await encryptPayload(cleanBody) : cleanBody;
     
     const res = await fetch(`${BASE}/contact-lists/${encodeURIComponent(listId)}/contacts`, {
       method: "DELETE",
@@ -79,9 +107,18 @@ export async function DELETE(req, { params }) {
       signal: AbortSignal.timeout(30000),
     });
     
-    return forceDecryptResponse(res);
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error("❌ Backend error:", res.status, errorText);
+      return NextResponse.json(
+        { status: "error", message: errorText }, 
+        { status: res.status }
+      );
+    }
+    
+    return ENC ? forceDecryptResponse(res) : NextResponse.json(await res.json(), { status: res.status });
   } catch (error) {
-    console.error("Error removing contacts from list:", error);
+    console.error("❌ Error removing contacts from list:", error);
     return NextResponse.json({ status: "error", message: error.message }, { status: 500 });
   }
 }

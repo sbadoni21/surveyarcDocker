@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation'
 import { useMemo, useEffect } from 'react'
 import { useUser } from '@/providers/postGresPorviders/UserProvider'
+
 import BusinessCalendarsProvider from "@/providers/BusinessCalendarsProvider";
 import { OrganisationProvider } from "@/providers/postGresPorviders/organisationProvider";
 import { ProjectProvider } from "@/providers/postGresPorviders/projectProvider";
@@ -12,9 +13,21 @@ import { TagProvider } from "@/providers/postGresPorviders/TagProvider";
 import { ThemeProvider } from "@/providers/postGresPorviders/themeProvider";
 import { TicketCategoryProvider } from "@/providers/postGresPorviders/TicketCategoryProvider";
 import { TicketTaxonomyProvider } from "@/providers/postGresPorviders/TicketTaxonomyProvider";
-import { UserProvider } from "@/providers/postGresPorviders/UserProvider";
-import { SLAProvider } from "@/providers/slaProvider";
 import { TicketProvider } from "@/providers/ticketsProvider";
+
+const ALL_TABS = [
+  { name: 'Tickets',            path: 'tickets',            roles: ['owner', 'admin'] },
+  { name: 'Business Calendars', path: 'business-calendars', roles: ['owner', 'admin', 'manager'] },
+  { name: 'Category Management',path: 'category-management',roles: ['owner', 'admin', 'manager'] },
+  { name: 'My Group Tickets',   path: 'my-group-tickets',   roles: [ 'admin', 'manager'] },
+  { name: 'Routing',            path: 'routing',            roles: ['owner', 'admin', 'manager'] },
+  { name: 'SLA',                path: 'sla',                roles: ['owner', 'admin'] },
+  { name: 'Support Groups',     path: 'support-groups',     roles: ['owner', 'admin'] },
+  { name: 'Tags',               path: 'tags',               roles: ['owner', 'admin', 'manager'] },
+  { name: 'External Apis',      path: 'create-apis',        roles: ['owner', 'admin', 'manager'] },
+  { name: 'Agent Tickets',      path: 'agent-tickets',      roles: ['agent'] },
+  { name: 'Team Lead',          path: 'team-lead',          roles: [ 'team_lead'] },
+]
 
 export default function OrgTicketsLayout({ children }) {
   const pathname = usePathname()
@@ -22,7 +35,7 @@ export default function OrgTicketsLayout({ children }) {
   const { user } = useUser()
   const role = user?.role?.toLowerCase() || null
 
-  // Extract base path (language + postgres-org + orgId + dashboard)
+  // Base path: /[lang]/postgres-org/[orgId]/dashboard
   const basePath = useMemo(() => {
     const segments = pathname.split('/').filter(Boolean)
     const dashboardIndex = segments.findIndex(s => s === 'dashboard')
@@ -32,41 +45,25 @@ export default function OrgTicketsLayout({ children }) {
     return ''
   }, [pathname])
 
-  const allTabs = [
-    { name: 'Business Calendars', path: 'business-calendars', roles: ['owner', 'admin', 'manager'] },
-    { name: 'Tickets', path: 'tickets', roles: ['owner', 'admin', 'manager','user', 'team_lead'] },
-    { name: 'Category Management', path: 'category-management', roles: ['owner', 'admin', 'manager'] },
-    { name: 'My Group Tickets', path: 'my-group-tickets', roles: ['owner', 'admin', 'manager', 'team_lead'] },
-    { name: 'Routing', path: 'routing', roles: ['owner', 'admin', 'manager'] },
-    { name: 'SLA', path: 'sla', roles: ['owner', 'admin'] },
-    { name: 'Support Groups', path: 'support-groups', roles: ['owner', 'admin'] },
-    { name: 'Tags', path: 'tags', roles: ['owner', 'admin', 'manager'] },
-    { name: 'External Apis', path: 'create-apis', roles: ['owner', 'admin', 'manager'] },
-    { name: 'Agent Tickets', path: 'agent-tickets', roles: ['owner', 'admin', 'manager', 'team_lead', 'agent'] },
-    { name: 'Team Lead', path: 'team-lead', roles: ['owner', 'admin', 'team_lead'] },
-  ]
-
+  // Tabs allowed for this role
   const visibleTabs = useMemo(() => {
     if (!role) return []
-    return allTabs.filter(tab => tab.roles.includes(role.toLowerCase()))
+    return ALL_TABS.filter(tab => tab.roles.includes(role))
   }, [role])
 
-  // Find the segment immediately after "org-tickets"
+  // Segment after "org-tickets" (the tab key or an id)
   const tabSegment = useMemo(() => {
     const segments = pathname.split('/').filter(Boolean)
     const idx = segments.findIndex(s => s === 'org-tickets')
     if (idx !== -1) {
-      return segments.length > idx + 1 ? segments[idx + 1] : '' // '' means no tab segment present
+      return segments.length > idx + 1 ? segments[idx + 1] : ''
     }
-    // if 'org-tickets' not found, fallback to last segment
-    const last = segments[segments.length - 1] || ''
-    return last
+    return segments[segments.length - 1] || ''
   }, [pathname])
 
-  // Heuristic to detect an "id" (ticket id / calendar id). Adjust regex if you have strict formats.
+  // Heuristic to detect detail pages like /org-tickets/tickets/tkt_xxx
   const looksLikeId = useMemo(() => {
     if (!tabSegment) return false
-    // common patterns: contains underscore (tkt_...), long random hex, or purely numeric id
     if (tabSegment.includes('_')) return true
     if (/^[0-9a-f]{8,}$/i.test(tabSegment)) return true
     if (/^\d{4,}$/.test(tabSegment)) return true
@@ -74,11 +71,9 @@ export default function OrgTicketsLayout({ children }) {
   }, [tabSegment])
 
   useEffect(() => {
-    // Only decide to redirect after we know role and visibleTabs
     if (!role) return
 
-    // If there's no tab segment after org-tickets (user navigated to /org-tickets),
-    // redirect to the first visible tab.
+    // If user just hits /org-tickets → send to first allowed tab
     if (tabSegment === '') {
       if (visibleTabs.length > 0) {
         router.replace(`${basePath}/org-tickets/${visibleTabs[0].path}`)
@@ -86,21 +81,18 @@ export default function OrgTicketsLayout({ children }) {
       return
     }
 
-    // If the segment looks like an id (detail page), don't redirect.
+    // Detail page like /tickets/tkt_xxx → allow, don't redirect
     if (looksLikeId) return
 
-    // Now the segment is a candidate tab (like 'tickets' or 'business-calendars').
-    // If the user does not have access to that tab, redirect to first visible tab.
+    // Check if user can see this tab
     const hasAccess = visibleTabs.some(tab => tab.path === tabSegment)
-    if (!hasAccess) {
-      if (visibleTabs.length > 0) {
-        router.replace(`${basePath}/org-tickets/${visibleTabs[0].path}`)
-      }
+    if (!hasAccess && visibleTabs.length > 0) {
+      router.replace(`${basePath}/org-tickets/${visibleTabs[0].path}`)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, tabSegment, visibleTabs, basePath, router, looksLikeId])
 
-  // Show loading while we resolve the user's role
+  // Still resolving user
   if (!role) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-[#1A1A1E] flex items-center justify-center">
@@ -109,7 +101,7 @@ export default function OrgTicketsLayout({ children }) {
     )
   }
 
-  // If agent, keep things simple (no tabs)
+  // Pure agent view → no tabs
   if (role === 'agent') {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-[#1A1A1E]">
@@ -120,8 +112,20 @@ export default function OrgTicketsLayout({ children }) {
     )
   }
 
+  // If some weird role has no allowed tabs
+  if (visibleTabs.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-[#1A1A1E] flex items-center justify-center">
+        <div className="text-gray-600 dark:text-gray-400 text-sm">
+          You don’t have access to any ticket modules. Please contact your admin.
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#1A1A1E]">
+      {/* Top tab bar (only tabs allowed for this role) */}
       <div className="bg-white dark:bg-[#242428] border-b border-gray-200 dark:border-gray-800 shadow-sm">
         <div className="mx-auto px-4">
           <nav className="flex space-x-1 overflow-x-auto">
@@ -149,23 +153,25 @@ export default function OrgTicketsLayout({ children }) {
           </nav>
         </div>
       </div>
+
+      {/* Providers + page content */}
       <TagProvider>
         <TicketCategoryProvider>
-                          <TicketTaxonomyProvider>
-          <TicketProvider>
-                              <SupportGroupProvider>
-                                <SupportTeamProvider>
-                                  <BusinessCalendarsProvider>
-      <main className="mx-auto px-4 py-6">
-        {children}
-      </main>            </BusinessCalendarsProvider>
-                            </SupportTeamProvider>
-                          </SupportGroupProvider>
-                        </TicketProvider>
-                                </TicketTaxonomyProvider>
-
-              </TicketCategoryProvider>
-            </TagProvider>
+          <TicketTaxonomyProvider>
+            <TicketProvider>
+              <SupportGroupProvider>
+                <SupportTeamProvider>
+                  <BusinessCalendarsProvider>
+                    <main className="mx-auto px-4 py-6">
+                      {children}
+                    </main>
+                  </BusinessCalendarsProvider>
+                </SupportTeamProvider>
+              </SupportGroupProvider>
+            </TicketProvider>
+          </TicketTaxonomyProvider>
+        </TicketCategoryProvider>
+      </TagProvider>
     </div>
   )
 }

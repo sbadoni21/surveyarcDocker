@@ -242,23 +242,35 @@ const addContactsToList = useCallback(async (listId, contactIds) => {
     setLoading(false);
   }
 }, [invalidateCache]);
+// Add this to your contactProvider.js or wherever removeContactsFromList is defined
 
-const removeContactsFromList = useCallback(async (listId, contactIds) => {
-  setLoading(true);
+const removeContactsFromList = async (listId, contactIds) => {
   try {
-    await ListModel.removeContacts(listId, contactIds);
-    // Refresh the list to get updated contacts
-    const updated = await ListModel.get(listId);
-    setLists((prev) =>
-      prev.map((l) => (l.listId === listId ? updated : l))
-    );
-    invalidateCache();
-    return true;
-  } finally {
-    setLoading(false);
-  }
-}, [invalidateCache]);
+    // ✅ Flatten if accidentally nested
+    let idsArray = Array.isArray(contactIds) ? contactIds : [contactIds];
+    
+    // ✅ Check if first element is an array (double-wrapped)
+    if (idsArray.length === 1 && Array.isArray(idsArray[0])) {
+      console.warn("⚠️ contact_ids was double-wrapped, flattening...");
+      idsArray = idsArray[0];
+    }
+    
+    // ✅ Ensure all IDs are strings
+    idsArray = idsArray.filter(id => typeof id === 'string' && id.trim() !== '');
+    
+    if (idsArray.length === 0) {
+      throw new Error("No valid contact IDs provided");
+    }
 
+    console.log("🗑️ Removing contacts:", { listId, contactIds: idsArray });
+
+    const response = await ListModel.removeContacts(listId, idsArray);
+        return response;
+  } catch (error) {
+    console.error("❌ Error in removeContactsFromList:", error);
+    throw error;
+  }
+};
 const getAvailableContacts = useCallback(async (listId, orgId) => {
   setLoading(true);
   try {

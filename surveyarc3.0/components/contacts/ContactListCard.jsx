@@ -164,7 +164,7 @@ const handleAddExisting = (e) => {
               )}
             </button>
 
-        
+     
 
             <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
               <FolderOpen className="w-5 h-5 text-blue-600" />
@@ -210,7 +210,26 @@ const handleAddExisting = (e) => {
                       )}
                       {list.status}
                     </span>
-
+ <button onClick={async ()=>{
+  if (!confirm("Remove selected contacts from the list?")) return;
+  
+  const idsToRemove = Array.from(selectedContacts);
+  console.log("📋 Selected IDs to remove:", idsToRemove);
+  
+  try {
+    await removeContactsFromList(list.listId, idsToRemove);
+    setSelectedContacts(new Set());
+    await refresh();
+    alert("✅ Contacts removed successfully");
+  } catch(err){ 
+    console.error("❌ Remove failed:", err); 
+    alert("Failed: " + err.message); 
+  }
+}} 
+disabled={selectedContacts.size===0} 
+className="px-3 py-1 bg-red-600 text-white rounded">
+  Remove Selected ({selectedContacts.size})
+</button>
                     {list.createdAt && (
                       <span className="flex items-center gap-1 text-xs text-gray-500">
                         <Calendar className="w-3 h-3" />

@@ -2,7 +2,7 @@
 # SMART CAMPAIGN SENDER SERVICE V3 - DEBUG VERSION
 # app/services/campaign_sender_service_v3.py
 # ============================================
-
+import os
 from sqlalchemy.orm import joinedload
 import logging
 from datetime import datetime, timezone
@@ -20,6 +20,7 @@ from ..models.campaigns import (
 from ..models.outbox import Outbox
 from ..models.contact import Contact
 from ..utils.id_generator import generate_id
+from .survey_link_service import create_survey_link_reference, get_reference_url
 
 import secrets
 
@@ -30,6 +31,49 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 UTC = timezone.utc
+
+
+def get_final_survey_url(campaign: Campaign, contact: Contact, result: CampaignResult) -> str:
+    """
+    ✅ NEW: Get the FINAL survey form URL after variable replacement
+    This is what gets stored in the reference link database
+    
+    Returns: https://surveyarc-docker.vercel.app/form/{form_id}
+    """
+    logger.debug("Getting final survey URL...")
+    
+    # Get base survey URL from environment
+    base_url = os.getenv("SURVEY_BASE_URL", "https://surveyarc-docker.vercel.app/form")
+    
+    # Build the survey URL template (may contain {{variables}})
+    # Assuming campaign has a survey_link or we construct it
+    if hasattr(campaign, 'survey_link') and campaign.survey_link:
+        survey_url_template = campaign.survey_link
+    else:
+        # Construct default: base_url/survey_id
+        survey_url_template = f"{base_url}/{campaign.survey_id}"
+    
+    logger.debug(f"   - Template: {survey_url_template}")
+    
+    # ✅ CRITICAL: Replace variables in the survey URL
+    # This ensures {{survey_id}} or other variables are replaced
+    final_url = replace_variables(
+        template=survey_url_template,
+        contact=contact,
+        campaign=campaign,
+        result=result,
+        survey_link="",  # Not used in URL replacement
+        short_link=None
+    )
+    
+    logger.debug(f"   - Final URL: {final_url}")
+    
+    # Verify it's a valid URL
+    if not final_url.startswith('http'):
+        logger.warning(f"⚠️  URL doesn't start with http: {final_url}")
+        final_url = f"{base_url}/{campaign.survey_id}"
+    
+    return final_url
 
 
 def generate_tracking_token():
@@ -154,27 +198,20 @@ def create_campaign_results(
     
     return results_created
 
-
 def queue_campaign_sends(
     session: Session, 
     campaign: Campaign, 
     batch_size: int = 100
 ) -> int:
     """
-    ✅ SMART: Queue only QUEUED results with contact data for variable replacement
-    Returns: number of messages queued
+    ✅ UPDATED: Queue campaign sends with reference URL creation
     """
     logger.info("╔═══════════════════════════════════════════════════════════╗")
-    logger.info("║  QUEUEING CAMPAIGN SENDS                                  ║")
+    logger.info("║  QUEUEING CAMPAIGN SENDS (WITH REFERENCE URLS)            ║")
     logger.info("╚═══════════════════════════════════════════════════════════╝")
     logger.info(f"🆔 Campaign ID: {campaign.campaign_id}")
     logger.info(f"📦 Batch size: {batch_size}")
     logger.info("")
-    
-    logger.debug("🔍 Querying for QUEUED results...")
-    logger.debug(f"   - Campaign ID: {campaign.campaign_id}")
-    logger.debug(f"   - Status filter: {RecipientStatus.queued.value}")
-    logger.debug(f"   - Limit: {batch_size}")
     
     results = session.query(CampaignResult).options(
         joinedload(CampaignResult.contact).joinedload(Contact.emails),
@@ -199,14 +236,8 @@ def queue_campaign_sends(
     for idx, result in enumerate(results, 1):
         logger.debug("─" * 60)
         logger.debug(f"Processing result {idx}/{len(results)}")
-        logger.debug(f"   - Result ID: {result.result_id}")
-        logger.debug(f"   - Contact ID: {result.contact_id}")
-        logger.debug(f"   - Channel: {result.channel_used.value if hasattr(result.channel_used, 'value') else result.channel_used}")
-        logger.debug(f"   - Address: {result.recipient_address}")
         
         try:
-            # Get contact
-            logger.debug("🔍 Getting contact...")
             contact = result.contact
             
             if not contact:
@@ -216,52 +247,37 @@ def queue_campaign_sends(
                 error_count += 1
                 continue
             
-            logger.debug(f"✅ Contact found: {contact.name}")
-            
             # Check for existing outbox entry
             if result.outbox_id:
-                logger.debug(f"🔍 Checking existing outbox ID: {result.outbox_id}")
-                
                 existing_outbox = session.query(Outbox).filter(
                     Outbox.id == result.outbox_id
                 ).first()
                 
                 if existing_outbox:
                     logger.debug(f"⚠️  SKIPPED - Outbox entry already exists")
-                    logger.debug(f"   - Outbox ID: {existing_outbox.id}")
-                    logger.debug(f"   - Status: {existing_outbox.status}")
                     result.status = RecipientStatus.pending
                     skipped_count += 1
                     continue
             
-            # Build payload
-            logger.debug("🔨 Building campaign payload...")
+            # Build payload with reference URL (✅ UPDATED)
             kind = f"campaign.{result.channel_used.value if hasattr(result.channel_used, 'value') else result.channel_used}"
-            logger.debug(f"   - Kind: {kind}")
+            payload = build_campaign_payload(campaign, result, contact, session)  # Pass session
             
-            payload = build_campaign_payload(campaign, result, contact)
-            logger.debug(f"   - Payload keys: {list(payload.keys())}")
-            
-            # Create dedupe key
             dedupe_key = f"campaign:{campaign.campaign_id}:{result.result_id}"
-            logger.debug(f"   - Dedupe key: {dedupe_key}")
             
             # Check for duplicate
-            logger.debug("🔍 Checking for duplicate by dedupe_key...")
             existing_outbox = session.query(Outbox).filter(
                 Outbox.dedupe_key == dedupe_key
             ).first()
             
             if existing_outbox:
                 logger.warning(f"⚠️  SKIPPED - Duplicate dedupe_key")
-                logger.warning(f"   - Outbox ID: {existing_outbox.id}")
                 result.status = RecipientStatus.pending
                 result.outbox_id = existing_outbox.id
                 skipped_count += 1
                 continue
             
             # Create outbox entry
-            logger.debug("📤 Creating Outbox entry...")
             outbox = Outbox(
                 kind=kind,
                 dedupe_key=dedupe_key,
@@ -279,20 +295,16 @@ def queue_campaign_sends(
             
             queued_count += 1
             
-            logger.debug(f"✅ Result queued successfully")
-            logger.debug(f"   - Outbox ID: {outbox.id}")
-            logger.debug(f"   - New status: {result.status.value if hasattr(result.status, 'value') else result.status}")
-            
         except Exception as e:
             logger.error(f"❌ ERROR processing result {result.result_id}")
-            logger.error(f"   - Error: {e}")
-            logger.error("Full traceback:", exc_info=True)
+            logger.error(f"   - Error: {e}", exc_info=True)
             
             result.status = RecipientStatus.failed
             result.error = str(e)[:500]
             error_count += 1
     
-    logger.debug("─" * 60)
+    session.flush()
+    
     logger.info("")
     logger.info("📊 QUEUEING SUMMARY:")
     logger.info(f"   ✅ Queued: {queued_count}")
@@ -300,61 +312,74 @@ def queue_campaign_sends(
     logger.info(f"   ❌ Errors: {error_count}")
     logger.info("")
     
-    logger.debug("💾 Flushing session...")
-    session.flush()
-    logger.debug("✅ Session flushed")
-    
-    logger.info("╔═══════════════════════════════════════════════════════════╗")
-    logger.info(f"║  ✅ QUEUED {queued_count:3d} NEW MESSAGES TO OUTBOX               ║")
-    logger.info("╚═══════════════════════════════════════════════════════════╝")
-    logger.info("")
-    
     return queued_count
 
 
-def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: Contact) -> dict:
+
+def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: Contact, session: Session) -> dict:
     """
-    ✅ SMART: Build payload with full variable replacement
+    ✅ FIXED: Build payload with proper URL flow
+    
+    Flow:
+    1. Get final survey form URL (after variable replacement)
+    2. Store that in reference link database
+    3. Generate clean reference URL for users
+    4. Use reference URL in all communications
     """
     logger.debug("┌─────────────────────────────────────────────┐")
-    logger.debug("│  BUILDING CAMPAIGN PAYLOAD                  │")
+    logger.debug("│  BUILDING CAMPAIGN PAYLOAD (FIXED)          │")
     logger.debug("└─────────────────────────────────────────────┘")
     logger.debug(f"   - Channel: {result.channel_used.value if hasattr(result.channel_used, 'value') else result.channel_used}")
     logger.debug(f"   - Contact: {contact.name}")
     logger.debug(f"   - Tracking token: {result.tracking_token}")
     
-    survey_base_url = get_survey_base_url()
-    logger.debug(f"   - Survey base URL: {survey_base_url}")
+    # ✅ STEP 1: Get the FINAL survey form URL (after variable replacement)
+    # This is the actual destination URL: https://surveyarc-docker.vercel.app/form/{form_id}
+    final_survey_url = get_final_survey_url(campaign, contact, result)
+    logger.debug(f"   - Final survey URL: {final_survey_url}")
     
-    survey_link = build_tracking_url(
-        f"{survey_base_url}",
-        campaign,
-        contact,
-        result
+    # ✅ STEP 2: Create reference link that stores the final URL
+    # Database will store: reference_id → final_survey_url
+    link_ref = create_survey_link_reference(
+        session=session,
+        campaign=campaign,
+        result=result,
+        contact=contact,
+        full_tracking_url=final_survey_url,  # ✅ Store FINAL URL, not tracking params
+        expires_in_days=90
     )
-    logger.debug(f"   - Survey link: {survey_link[:50]}...")
+    logger.debug(f"   - Created reference ID: {link_ref.reference_id}")
+    logger.debug(f"   - Reference stores URL: {final_survey_url}")
     
-    # Shorten URL for SMS/WhatsApp
-    if result.channel_used in [CampaignChannel.sms, CampaignChannel.whatsapp]:
-        logger.debug("🔗 Shortening URL for SMS/WhatsApp...")
-        short_link = shorten_url(survey_link)
-        result.short_link = short_link
-        logger.debug(f"   - Short link: {short_link}")
-    else:
-        short_link = survey_link
+    # ✅ STEP 3: Generate clean public reference URL
+    # This is what users see: https://surveyarc-docker.vercel.app/r/{reference_id}
+    public_reference_url = get_reference_url(link_ref.reference_id)
+    logger.debug(f"   - Public reference URL: {public_reference_url}")
     
+    # ✅ VERIFY: No query parameters in public URL
+    if '?' in public_reference_url:
+        logger.error("❌ CRITICAL: Query parameters in public URL!")
+        public_reference_url = public_reference_url.split('?')[0]
+        logger.warning(f"   - Cleaned to: {public_reference_url}")
+    
+    # Store reference ID in result for tracking
+    result.short_link = link_ref.reference_id
+    
+    # ✅ STEP 4: Build base payload with reference URL
     base_payload = {
         "campaign_id": campaign.campaign_id,
         "result_id": result.result_id,
         "contact_id": result.contact_id,
         "tracking_token": result.tracking_token,
         "recipient_name": result.recipient_name or "there",
-        "survey_link": survey_link,
-        "short_link": short_link,
+        "survey_link": public_reference_url,  # ✅ Clean reference URL
+        "short_link": public_reference_url,   # ✅ Clean reference URL
+        "reference_id": link_ref.reference_id  # For internal tracking
     }
     
-    logger.debug(f"   - Base payload keys: {list(base_payload.keys())}")
+    logger.debug(f"   - survey_link in payload: {base_payload['survey_link']}")
     
+    # ✅ STEP 5: Build channel-specific payload with variable replacement
     if result.channel_used == CampaignChannel.email:
         logger.debug("📧 Building EMAIL payload...")
         
@@ -363,20 +388,23 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             contact,
             campaign,
             result,
-            survey_link,
-            short_link
+            public_reference_url,  # ✅ Pass reference URL for {{survey_link}}
+            public_reference_url   # ✅ Pass reference URL for {{short_link}}
         )
-        logger.debug(f"   - Subject: {email_subject[:50]}...")
         
         email_body = replace_variables(
             campaign.email_body_html or '',
             contact,
             campaign,
             result,
-            survey_link,
-            short_link
+            public_reference_url,  # ✅ Pass reference URL
+            public_reference_url
         )
-        logger.debug(f"   - Body length: {len(email_body)} chars")
+        
+        # ✅ VERIFY: No tracking params leaked into email
+        if 'campaign_id=' in email_body or 'tracking_token=' in email_body:
+            logger.error("❌ ERROR: Tracking parameters leaked into email body!")
+            logger.error("   Check your email template - it should use {{survey_link}}, not raw URLs")
         
         payload = {
             **base_payload,
@@ -395,10 +423,9 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             contact,
             campaign,
             result,
-            survey_link,
-            short_link
+            public_reference_url,
+            public_reference_url
         )
-        logger.debug(f"   - Message: {sms_message[:50]}...")
         
         payload = {
             **base_payload,
@@ -414,11 +441,9 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             contact,
             campaign,
             result,
-            survey_link,
-            short_link
+            public_reference_url,
+            public_reference_url
         )
-        logger.debug(f"   - Message: {whatsapp_message[:50]}...")
-        logger.debug(f"   - Template ID: {campaign.whatsapp_template_id or 'None'}")
         
         payload = {
             **base_payload,
@@ -435,10 +460,9 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             contact,
             campaign,
             result,
-            survey_link,
-            short_link
+            public_reference_url,
+            public_reference_url
         )
-        logger.debug(f"   - Script: {voice_script[:50]}...")
         
         payload = {
             **base_payload,
@@ -454,6 +478,7 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
     logger.debug("└─────────────────────────────────────────────┘")
     
     return payload
+
 
 
 def shorten_url(long_url: str) -> str:
@@ -654,6 +679,11 @@ def update_result_from_outbox(
     
     session.flush()
     logger.debug("─" * 60)
+
+
+
+
+
 
 
 def check_and_complete_campaigns():

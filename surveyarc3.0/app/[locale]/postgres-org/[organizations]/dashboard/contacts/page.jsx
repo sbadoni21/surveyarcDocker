@@ -419,7 +419,6 @@ const handleUpload = async ({
     
     try {
       await removeContactsFromList(listId, [contactId]);
-      await refresh();
     } catch (error) {
       console.error("Failed to remove contact:", error);
       alert("Failed to remove contact");
@@ -713,16 +712,7 @@ const filteredLists = (lists ?? []).filter(list =>
             </div>
           </div>
         )}
-<button onClick={async ()=>{
-  if (!confirm("Remove selected contacts from the list?")) return;
-  try {
-    await removeContactsFromList(list.listId, Array.from(selectedContacts));
-    setSelectedContacts(new Set());
-    await refresh();
-  } catch(err){ console.error(err); alert("Failed"); }
-}} disabled={selectedContacts.size===0} className="px-3 py-1 bg-red-600 text-white rounded">
-  Remove Selected ({selectedContacts.size})
-</button>
+
 
         {/* LOADING STATE */}
         {loading ? (
@@ -739,6 +729,8 @@ const filteredLists = (lists ?? []).filter(list =>
     setManualContactOpen={setManualContactOpen}
   setManualContactListId={setManualContactListId}
     key={list.listId}
+    removeContactsFromList={removeContactsFromList}
+    
     list={list}
     lists={lists}
     contacts={contacts}
