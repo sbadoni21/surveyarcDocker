@@ -5,18 +5,18 @@
 import { useState, useEffect } from "react";
 import TicketModel from "@/models/ticketModel";
 
-export default function StatusControlPanel({ 
-  ticket, 
+export default function StatusControlPanel({
+  ticket,
   onTicketUpdated,
   busy,
-  setBusy 
+  setBusy,
 }) {
   const [newStatus, setNewStatus] = useState(ticket.status);
 
   useEffect(() => {
     console.log("[StatusControlPanel] ticket changed", ticket);
     setNewStatus(ticket.status);
-  }, [ticket.status]);
+  }, [ticket.status, ticket]);
 
   const handleApply = async () => {
     console.log("[StatusControlPanel] Apply clicked", {
@@ -47,7 +47,10 @@ export default function StatusControlPanel({
         Array.isArray(followup.questions) &&
         followup.questions.length > 0
       ) {
-        console.log("[StatusControlPanel] Inline followup questions:", followup.questions);
+        console.log(
+          "[StatusControlPanel] Inline followup questions:",
+          followup.questions
+        );
 
         const allAnswered = followup.questions.every((q) => {
           const val = (q.answer ?? "").toString().trim();
@@ -96,9 +99,14 @@ export default function StatusControlPanel({
         payload: { status: newStatus },
       });
 
-      const updated = await TicketModel.update(ticket.ticketId, { status: newStatus });
+      const updated = await TicketModel.update(ticket.ticketId, {
+        status: newStatus,
+      });
 
-      console.log("[StatusControlPanel] Backend responded with updated ticket", updated);
+      console.log(
+        "[StatusControlPanel] Backend responded with updated ticket",
+        updated
+      );
 
       onTicketUpdated?.(updated);
     } catch (err) {
@@ -116,7 +124,10 @@ export default function StatusControlPanel({
           className="flex-1 border rounded-md px-3 py-2 text-sm"
           value={newStatus}
           onChange={(e) => {
-            console.log("[StatusControlPanel] Status select changed", e.target.value);
+            console.log(
+              "[StatusControlPanel] Status select changed",
+              e.target.value
+            );
             setNewStatus(e.target.value);
           }}
         >
