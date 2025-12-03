@@ -29,10 +29,13 @@ class FollowupConfig(BaseModel):
 
     - mode = "inline": use embedded questions[].
     - mode = "survey": use survey_id to redirect to an existing survey.
+    - response_id: stores the survey response id when the survey is completed.
     """
     mode: Literal["inline", "survey"] = "inline"
     survey_id: Optional[str] = None
+    response_id: Optional[str] = None          # ✅ NEW
     questions: List[FollowupQuestion] = Field(default_factory=list)
+
 
 class TagOut(BaseModel):
     tag_id: str

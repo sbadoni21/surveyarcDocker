@@ -2,12 +2,14 @@
 import { useState, useMemo, useEffect } from "react";
 import TicketModel from "@/models/ticketModel";
 import { useSurvey } from "@/providers/surveyPProvider";
+import { usePathname } from "next/navigation";
 
 export default function AgentFollowupPanel({ ticket, onTicketUpdated }) {
   const followup = ticket.followup;
 
-  // ✅ Correct keys from SurveyProvider: selectedSurvey + getSurvey
   const { selectedSurvey, getSurvey } = useSurvey();
+  const path = usePathname();
+  const orgId = path.split("/")[3];
 
   const [saving, setSaving] = useState(false);
   const [answers, setAnswers] = useState(() => {
@@ -19,14 +21,14 @@ export default function AgentFollowupPanel({ ticket, onTicketUpdated }) {
     return map;
   });
 
-  // ✅ Load survey details when mode = "survey"
+  // load survey details when mode = "survey"
   useEffect(() => {
     if (followup?.mode === "survey" && followup.surveyId) {
       getSurvey(followup.surveyId).catch((err) =>
         console.error("Failed to load followup survey", err)
       );
     }
-  }, [followup?.mode, followup?.surveyId, getSurvey]); // ✅
+  }, [followup?.mode, followup?.surveyId, getSurvey]);
 
   const hasInlineFollowup =
     followup &&
@@ -37,7 +39,6 @@ export default function AgentFollowupPanel({ ticket, onTicketUpdated }) {
   const hasSurveyFollowup =
     followup && followup.mode === "survey" && !!followup.surveyId;
 
-  // Required check only for inline mode (text/MCQ questions)
   const allAnsweredInline = useMemo(() => {
     if (!hasInlineFollowup) return true;
     return followup.questions.every((q) => {
@@ -46,12 +47,19 @@ export default function AgentFollowupPanel({ ticket, onTicketUpdated }) {
     });
   }, [followup, answers, hasInlineFollowup]);
 
-  // If no followup at all, hide panel
   if (!followup) return null;
 
   const handleChange = (qid, value) => {
     setAnswers((prev) => ({ ...prev, [qid]: value }));
   };
+
+  const domain =
+    process.env.NEXT_PUBLIC_DOMAIN || "https://surveyarc-docker.vercel.app";
+
+  const publicSurveyUrl =
+    followup?.surveyId && orgId && selectedSurvey
+      ? `${domain}/en/form?org_id=${orgId}&project_id=${selectedSurvey.project_id}&survey_id=${selectedSurvey.survey_id}&ticket_id=${ticket.ticketId}&followup=true`
+      : null;
 
   const handleSave = async () => {
     if (!ticket.ticketId) return;
@@ -72,7 +80,6 @@ export default function AgentFollowupPanel({ ticket, onTicketUpdated }) {
       onTicketUpdated?.(updated);
     } catch (err) {
       console.error("Failed to save followup answers", err);
-      // TODO: toast here
     } finally {
       setSaving(false);
     }
@@ -106,28 +113,43 @@ export default function AgentFollowupPanel({ ticket, onTicketUpdated }) {
         <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm space-y-2">
           <div className="flex items-center justify-between">
             <div>
-              <div className="font-medium text-slate-800">
-                Linked Survey
-              </div>
+              <div className="font-medium text-slate-800">Linked Survey</div>
               <div className="text-xs text-slate-500">
                 {selectedSurvey?.name || followup.surveyId}
+              </div>
+
+              {/* ✅ Show response id status here */}
+              <div className="text-[11px] mt-1">
+                {followup.responseId ? (
+                  <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700 border border-emerald-200">
+                    Response ID:&nbsp;
+                    <span className="font-mono text-[10px]">
+                      {followup.responseId}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-amber-700 border border-amber-200">
+                    No response recorded yet
+                  </span>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Here you can adapt the URL to your actual survey route */}
-          <a
-            href={`/en/surveys/${followup.surveyId}`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center text-xs mt-1 px-2 py-1 rounded border border-slate-300 hover:bg-slate-100"
-          >
-            Open survey
-          </a>
+          {publicSurveyUrl && (
+            <a
+              href={publicSurveyUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center text-xs mt-2 px-2 py-1 rounded border border-slate-300 hover:bg-slate-100"
+            >
+              Open survey
+            </a>
+          )}
 
           <p className="text-[11px] text-slate-500 mt-1">
-            This ticket’s follow-up will be collected through the linked
-            survey instead of inline questions.
+            This ticket’s follow-up will be collected through the linked survey
+            instead of inline questions.
           </p>
         </div>
       )}
@@ -165,7 +187,9 @@ export default function AgentFollowupPanel({ ticket, onTicketUpdated }) {
                     className="w-full border rounded-md px-2 py-1 text-sm"
                     rows={3}
                     value={answers[q.id] ?? ""}
-                    onChange={(e) => handleChange(q.id, e.target.value)}
+                    onChange={(e) =>
+                      handleChange(q.id, e.target.value )
+                    }
                   />
                 )}
               </div>

@@ -12,6 +12,8 @@ import { useContacts } from "@/providers/postGresPorviders/contactProvider";
 import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
 import { useResponse } from "@/providers/postGresPorviders/responsePProvider";
 import { useTheme } from "@/providers/postGresPorviders/themeProvider"; // <- theme provider
+import TicketModel from "@/models/ticketModel";
+import { Wind } from "lucide-react";
 
 export default function FormPage() {
   const searchParams = useSearchParams();
@@ -23,7 +25,8 @@ export default function FormPage() {
   const campaignID = searchParams.get("campaign_id") || null;
   const campaignType = searchParams.get("campaign_type") || null;
   const userKey = searchParams.get("user_id") || null;
-  const contactID = searchParams.get("contact_id") || null;
+    const contactID = searchParams.get("contact_id") || null;
+  const ticketID = searchParams.get("ticket_id") || null;
   const [startTime] = useState(() => new Date());
 
   const platform = useMemo(() => {
@@ -248,6 +251,26 @@ export default function FormPage() {
           ],
         });
       }
+if (ticketID) {
+  try {
+    // Fetch latest ticket so we don't drop any existing followup fields
+    const ticket = await TicketModel.get(ticketID);
+
+    const updatedFollowup = {
+      ...(ticket.followup || {}),
+      mode: "survey", // ensure mode is correct
+      surveyId,       // ensure survey is linked
+      responseId: savedResponse.response_id,  // 🔹 store responseId here
+    };
+
+    await TicketModel.update(ticketID, {
+      followup: updatedFollowup,
+    });
+  } catch (err) {
+    console.error("Failed to update ticket followup with responseId", err);
+    // optional: don't block the survey completion on this
+  }
+}
 
       const currentUsage =
         organisation?.subscription?.currentusage?.response || 0;
@@ -287,6 +310,8 @@ export default function FormPage() {
         path: "/",
         maxAge: 60 * 60 * 24 * 365,
       });
+router.push('/thank-you');
+    
 
     } catch (err) {
       console.error("Submission error:", err);

@@ -14,6 +14,8 @@ const toSnakeFollowup = (f) => {
   return {
     mode: f.mode,
     survey_id: f.surveyId ?? f.survey_id ?? null,
+        response_id: f.responseId ?? f.response_id ?? null,   // 🔹 NEW
+
     questions: Array.isArray(f.questions)
       ? f.questions.map((q) => ({
           id: q.id ?? undefined,
@@ -124,12 +126,16 @@ const toCamel = (t) => ({
   priority: t.priority,
   severity: t.severity,
   status: t.status,
-     followup: t.followup
+   followup: t.followup
     ? {
         mode: t.followup.mode || "inline",
         surveyId:
           t.followup.survey_id ??
           t.followup.surveyId ??
+          null,
+        responseId:
+          t.followup.response_id ??           // 🔹 NEW
+          t.followup.responseId ??
           null,
         questions: Array.isArray(t.followup.questions)
           ? t.followup.questions.map((q, idx) => ({
@@ -144,11 +150,10 @@ const toCamel = (t) => ({
                     .map((s) => s.trim())
                     .filter(Boolean)
                 : [],
-                 answer:
+              answer:
                 q.answer ??
                 q.value ?? // just in case you used another key
                 null,
-                
             }))
           : [],
       }
