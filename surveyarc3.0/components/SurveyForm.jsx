@@ -22,6 +22,7 @@ export default function SurveyForm({
   const [submitting, setSubmitting] = useState(false);
 
   const ruleEngine = useMemo(() => new RuleEngine(rules), [rules]);
+  console.log(ruleEngine)
 
   const [blocksWithQuestions, setBlocksWithQuestions] = useState(() =>
     (blocks || [])
@@ -174,8 +175,6 @@ export default function SurveyForm({
         ? { id: `opt_${idx}`, label: o }
         : { id: o.id ?? `opt_${idx}`, label: o.label ?? "", isOther: !!o.isOther, isNone: !!o.isNone }
     );
-
-  console.log(questions);
 
   const isAnswered = (question, answer) => {
     const qType = question?.type;
@@ -506,6 +505,61 @@ export default function SurveyForm({
   };
 
   const isLastBlock = currentBlockIndex === blocksWithQuestions.length - 1;
+// 🔹 Normalize followup config (same idea as RaiseTicketForm)
+// 🔹 Normalize followup config for both inline & survey modes
+const buildFollowupPayload = (rawFollowup) => {
+  if (!rawFollowup) return undefined;
+  const f = rawFollowup;
+
+  // Support both camelCase and snake_case
+  const rawSurveyId = f.surveyId ?? f.survey_id ?? null;
+  const surveyId = typeof rawSurveyId === "string" ? rawSurveyId.trim() : rawSurveyId;
+
+  // ✅ Survey mode: just keep surveyId, ignore questions
+  if (f.mode === "survey" && surveyId) {
+    return {
+      mode: "survey",
+      surveyId,
+      questions: [],   // always empty for survey mode
+    };
+  }
+
+  // ✅ Inline mode: normalize questions
+  if (
+    f.mode === "inline" &&
+    Array.isArray(f.questions) &&
+    f.questions.length
+  ) {
+    const qs = f.questions
+      .filter((q) => q.label && String(q.label).trim())
+      .map((q, idx) => ({
+        id: q.id ?? `fq_${idx + 1}`,
+        type: q.type || "text",
+        label: String(q.label).trim(),
+        options:
+          q.type === "mcq"
+            ? (Array.isArray(q.options)
+                ? q.options
+                : String(q.options || "")
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean))
+            : undefined,
+      }));
+
+    if (!qs.length) return undefined;
+
+    return {
+      mode: "inline",
+      surveyId: null,
+      questions: qs,
+    };
+  }
+
+  // Any other mode / invalid data → ignore
+  return undefined;
+};
+
 
   const handleNextBlock = () => {
     if (!validateCurrentPageRequired()) return;
@@ -571,6 +625,8 @@ export default function SurveyForm({
           try {
             if (action?.ticketData?.[0]) {
               const ticket = action.ticketData[0];
+              console.log(ticket)
+                const followupPayload = buildFollowupPayload(ticket.followup);
 
               const slaRes = SLAModel.get(ticket.slaId, ticket.orgId);
 
@@ -591,6 +647,7 @@ export default function SurveyForm({
               const updatedTicketData = {
                 ...ticket,
                 dueAt: resolutionDueAt,
+                followup: followupPayload,
                 sla_processing: {
                   ...ticket.sla_processing,
                   first_response_due_at: firstResponseDueAt,
@@ -606,6 +663,7 @@ export default function SurveyForm({
                   timestamp: new Date().toISOString(),
                 },
               };
+              
               raiseTicket(updatedTicketData);
             } else {
               console.warn("No ticketData found in action");

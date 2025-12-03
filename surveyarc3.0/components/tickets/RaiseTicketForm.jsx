@@ -26,6 +26,7 @@ import GroupSelect from "./GroupSelect";
 import CollaboratorsSelect from "./CollaboratorsSelect";
 import TagMultiSelect from "./TagMultiSelect";
 import { CategorySelector } from "./CategorySelector";
+import { useSurvey } from "@/providers/surveyPProvider";
 
 import { useSLA } from "@/providers/slaProvider";
 import { useTags } from "@/providers/postGresPorviders/TagProvider";
@@ -39,6 +40,7 @@ import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import { useTicketTaxonomies } from "@/providers/postGresPorviders/TicketTaxonomyProvider";
 import BizCalendarModel from "@/models/postGresModels/bizCalendarModel";
 import BusinessCalendarPreview from "./BusinessCalendarPreview";
+import { usePathname } from "next/navigation";
 
 const ReactQuill = dynamic(() => import("react-quill-new"), { ssr: false });
 
@@ -376,9 +378,9 @@ export default function RaiseTicketForm({
   onClose,
   onSaveTemplate,
   initial,
-  orgId,
   requestorId,
   currentUserId,
+  
   title = "New Ticket",
 }) {
   const [activeStep, setActiveStep] = useState(0);
@@ -395,6 +397,11 @@ export default function RaiseTicketForm({
   const { listCategories, listProducts } = useTicketCategories();
   const { getUsersByIds } = useUser();
   const { listFeatures, listImpacts, listRootCauses } = useTicketTaxonomies();
+  const { surveys, getAllSurveys, surveyLoading } = useSurvey();
+  const path = usePathname();
+  const projectId = path.split("/")[6]; // /[locale]/projects/[projectId]/...
+  const orgId = path.split("/")[3]; // /[locale]/projects/[projectId]/...
+
 
   // Load data on mount
   useEffect(() => {
@@ -447,10 +454,99 @@ export default function RaiseTicketForm({
           .filter(Boolean)
       : [],
     collaboratorIds: initial?.collaboratorIds || [],
+
+    // 🔹 NEW: followup config, normalized from initial if present
+    followup: initial?.followup
+      ? {
+          mode: initial.followup.mode || "inline",
+          surveyId:
+            initial.followup.surveyId ??
+            initial.followup.survey_id ??
+            "",
+          questions: Array.isArray(initial.followup.questions)
+            ? initial.followup.questions.map((q, idx) => ({
+                id: q.id ?? `fq_${idx + 1}`,
+                type: q.type || "text",
+                label: q.label || "",
+                // options may be string[], string (comma-separated), or null
+                options: Array.isArray(q.options)
+                  ? q.options
+                  : typeof q.options === "string"
+                  ? q.options
+                      .split(",")
+                      .map((s) => s.trim())
+                      .filter(Boolean)
+                  : [],
+              }))
+            : [],
+        }
+      : {
+          mode: "none", // "none" | "inline" | "survey" (only inline/survey are sent to backend)
+          surveyId: "",
+          questions: [],
+        },
   }));
+
 
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const isQueueOwned = form.queueOwned === true;
+  // ---------- Followup helpers ----------
+  const ensureFollowup = () =>
+    form.followup || { mode: "none", surveyId: "", questions: [] };
+
+  const setFollowupField = (field, value) => {
+    setForm((f) => ({
+      ...f,
+      followup: {
+        ...(f.followup || { mode: "none", surveyId: "", questions: [] }),
+        [field]: value,
+      },
+    }));
+  };
+
+  const addFollowupQuestion = () => {
+    setForm((f) => {
+      const base = f.followup || {
+        mode: "inline",
+        surveyId: "",
+        questions: [],
+      };
+      const nextQs = [
+        ...(base.questions || []),
+        {
+          id: `fq_${(base.questions?.length || 0) + 1}`,
+          type: "text",
+          label: "",
+          options: [],
+        },
+      ];
+      return {
+        ...f,
+        followup: {
+          ...base,
+          mode: base.mode === "none" ? "inline" : base.mode,
+          questions: nextQs,
+        },
+      };
+    });
+  };
+
+  const updateFollowupQuestion = (index, patch) => {
+    setForm((f) => {
+      const base = ensureFollowup();
+      const qs = [...(base.questions || [])];
+      qs[index] = { ...qs[index], ...patch };
+      return { ...f, followup: { ...base, questions: qs } };
+    });
+  };
+
+  const removeFollowupQuestion = (index) => {
+    setForm((f) => {
+      const base = ensureFollowup();
+      const qs = (base.questions || []).filter((_, i) => i !== index);
+      return { ...f, followup: { ...base, questions: qs } };
+    });
+  };
 
   /* --------------------- Fetch team's BizCalendar with proper error handling --------------------- */
   useEffect(() => {
@@ -726,6 +822,18 @@ export default function RaiseTicketForm({
       }));
     }
   }, [computedDue.first, computedDue.resolution]);
+// Replace the useEffect starting at line 1235 with this:
+
+// ⬇️ put this with the other useEffects, BEFORE any return
+useEffect(() => {
+              // only when modal is open
+  if (!projectId) return;
+  if (typeof getAllSurveys !== "function") return;
+
+  // let provider decide whether to actually hit the API
+  getAllSurveys(orgId, projectId).catch(console.error);
+}, [ orgId, projectId]);
+
 
   // Validation
   const validations = {
@@ -751,13 +859,54 @@ export default function RaiseTicketForm({
   const handleSubmit = async () => {
     setSaving(true);
     try {
-      const knownSlaIds = new Set(
+    const knownSlaIds = new Set(
         (availableSLAOptions || []).map((s) => s?.sla_id)
       );
       const safeSlaId =
         form.slaId && knownSlaIds.has(form.slaId) ? form.slaId : null;
 
-      const payload = {
+      // 🔹 Build followup payload (only inline/survey)
+      let followupPayload = undefined;
+      const f = form.followup;
+
+      if (f && f.mode === "survey" && f.surveyId?.trim()) {
+        followupPayload = {
+          mode: "survey",
+          surveyId: f.surveyId.trim(),
+          questions: [],
+        };
+      } else if (
+        f &&
+        f.mode === "inline" &&
+        Array.isArray(f.questions) &&
+        f.questions.length
+      ) {
+        const qs = f.questions
+          .filter((q) => q.label && q.label.trim())
+          .map((q) => ({
+            id: q.id,
+            type: q.type || "text",
+            label: q.label.trim(),
+            options:
+              q.type === "mcq"
+                ? (Array.isArray(q.options)
+                    ? q.options
+                    : String(q.options || "")
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean))
+                : undefined,
+          }));
+
+        if (qs.length) {
+          followupPayload = {
+            mode: "inline",
+            surveyId: null,
+            questions: qs,
+          };
+        }
+      }
+       const payload = {
         orgId,
         requesterId: requestorId,
         subject: form.subject.trim(),
@@ -776,6 +925,10 @@ export default function RaiseTicketForm({
         impactId: form.impactId || null,
         rcaId: form.rcaId || null,
         rcaNote: form.rcaNote || null,
+
+        // 🔹 NEW: followup
+        followup: followupPayload,
+
         sla_processing: safeSlaId
           ? {
               sla_mode: form.slaMode,
@@ -800,7 +953,7 @@ export default function RaiseTicketForm({
       onSaveTemplate?.(payload);
 
       onClose?.();
-      setForm({
+        setForm({
         subject: "",
         description: "",
         queueOwned: false,
@@ -824,7 +977,13 @@ export default function RaiseTicketForm({
         resolutionDueAt: "",
         tagIds: [],
         collaboratorIds: [],
+        followup: {
+          mode: "none",
+          surveyId: "",
+          questions: [],
+        },
       });
+
       setStagedUploads([]);
       setActiveStep(0);
     } finally {
@@ -1432,9 +1591,183 @@ export default function RaiseTicketForm({
         );
 
       case 5:
+                const followup = ensureFollowup();
+
         return (
           <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-6">
             <div className="space-y-3">
+              <div className="space-y-3">
+              <label className="block text-sm font-medium text-gray-700">
+                Follow-up
+              </label>
+
+              <div className="flex flex-wrap gap-4 text-sm">
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="followup-mode"
+                    value="none"
+                    checked={followup.mode === "none"}
+                    onChange={() => setFollowupField("mode", "none")}
+                  />
+                  <span>None</span>
+                </label>
+
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="followup-mode"
+                    value="inline"
+                    checked={followup.mode === "inline"}
+                    onChange={() => setFollowupField("mode", "inline")}
+                  />
+                  <span>Inline questions (MCQ/Text)</span>
+                </label>
+
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="followup-mode"
+                    value="survey"
+                    checked={followup.mode === "survey"}
+                    onChange={() => setFollowupField("mode", "survey")}
+                  />
+                  <span>Link existing survey</span>
+                </label>
+              </div>
+
+            {followup.mode === "survey" && (
+  <div className="mt-3 space-y-2">
+    <label className="block text-xs font-medium text-gray-600">
+      Select Survey
+    </label>
+
+    <select
+      value={followup.surveyId || ""}
+      onChange={(e) => setFollowupField("surveyId", e.target.value)}
+      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+    >
+      <option value="">
+        {surveyLoading ? "Loading surveys..." : "Select a survey"}
+      </option>
+      {surveys.map((s) => (
+        <option
+          key={s.survey_id ?? s.id}
+          value={s.survey_id ?? s.id}
+        >
+          {s.name || `Survey ${s.survey_id ?? s.id}`}
+        </option>
+      ))}
+    </select>
+
+    <p className="text-[11px] text-gray-500">
+      This ticket will reference an existing survey instead of inline
+      follow-up questions.
+    </p>
+  </div>
+)}
+
+
+              {followup.mode === "inline" && (
+                <div className="mt-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-gray-600">
+                      Follow-up Questions
+                    </span>
+                    <button
+                      type="button"
+                      onClick={addFollowupQuestion}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add question
+                    </button>
+                  </div>
+
+                  {(!followup.questions || followup.questions.length === 0) && (
+                    <p className="text-xs text-gray-500">
+                      No follow-up questions yet. Click &quot;Add question&quot;
+                      to add an MCQ or text question that will be asked after
+                      this ticket is created.
+                    </p>
+                  )}
+
+                  {followup.questions?.map((q, idx) => (
+                    <div
+                      key={q.id || idx}
+                      className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-gray-600">
+                          Question {idx + 1}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeFollowupQuestion(idx)}
+                          className="inline-flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
+                        >
+                          <X className="h-3 w-3" />
+                          Remove
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                        <div className="md:col-span-3">
+                          <input
+                            type="text"
+                            value={q.label}
+                            onChange={(e) =>
+                              updateFollowupQuestion(idx, {
+                                label: e.target.value,
+                              })
+                            }
+                            placeholder="Follow-up question text"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          />
+                        </div>
+                        <div>
+                          <select
+                            value={q.type}
+                            onChange={(e) =>
+                              updateFollowupQuestion(idx, {
+                                type: e.target.value,
+                              })
+                            }
+                            className="w-full px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+                          >
+                            <option value="text">Text</option>
+                            <option value="mcq">MCQ</option>
+                          </select>
+                        </div>
+                      </div>
+
+                    {q.type === "mcq" && (
+  <div className="space-y-1">
+    <label className="block text-xs font-medium text-gray-600">
+      Options (comma separated)
+    </label>
+    <input
+      type="text"
+      value={(q.options || []).join(", ")}
+      onChange={(e) =>
+        updateFollowupQuestion(idx, {
+          options: e.target.value
+            .split(",")
+            .map((s) => s.trim())   // ✅ keeps things neat
+            // .filter(Boolean)     // ❌ don't use this here
+        })
+      }
+      placeholder="Option 1, Option 2, Option 3…"
+      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+    />
+  </div>
+)}
+
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
               <label className="block text-sm font-medium text-gray-700">
                 Tags
               </label>

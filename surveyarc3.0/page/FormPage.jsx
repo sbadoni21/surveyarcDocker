@@ -288,7 +288,6 @@ export default function FormPage() {
         maxAge: 60 * 60 * 24 * 365,
       });
 
-      window.location.replace("/thank-you");
     } catch (err) {
       console.error("Submission error:", err);
       alert(`Something went wrong: ${err.message || err}`);

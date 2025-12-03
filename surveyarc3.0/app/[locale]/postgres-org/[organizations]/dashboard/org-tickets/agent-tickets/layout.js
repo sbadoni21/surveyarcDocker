@@ -13,6 +13,7 @@ import { TicketTaxonomyProvider } from "@/providers/postGresPorviders/TicketTaxo
 import { UserProvider } from "@/providers/postGresPorviders/UserProvider";
 import { QuestionProvider } from "@/providers/questionPProvider";
 import { SLAProvider } from "@/providers/slaProvider";
+import { SurveyProvider } from "@/providers/surveyPProvider";
 import { TicketProvider } from "@/providers/ticketsProvider";
 import React, { useState } from "react";
 
@@ -23,11 +24,13 @@ export default function Layout({ children }) {
     <div className="flex w-full bg-[#F5F5F5] dark:bg-[#121214]">
   
                        <QuestionProvider>
+                        <SurveyProvider>
                                 <main
                                 
                                 >
                                   {children}
                                 </main>
+                                </SurveyProvider>
                                 </QuestionProvider>
                             
     </div>

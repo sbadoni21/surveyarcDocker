@@ -7,9 +7,32 @@ from ..models.tickets import (
     TicketStatus, TicketPriority, TicketSeverity, TicketLinkType,
     WorklogType, SLAPauseReason, TicketPlatform
 )
+from typing import Literal
 
 
 # ------------------------------ Shared ------------------------------
+
+class FollowupQuestion(BaseModel):
+    """Single follow-up question attached to a ticket."""
+    id: Optional[str] = None
+    type: Literal["mcq", "text"] = "text"  # extend later if needed
+    label: str
+    # For MCQ questions
+    options: Optional[List[str]] = None
+    # For text questions you can ignore options
+    answer: Optional[str] = None
+
+
+class FollowupConfig(BaseModel):
+    """
+    Follow-up configuration for a ticket.
+
+    - mode = "inline": use embedded questions[].
+    - mode = "survey": use survey_id to redirect to an existing survey.
+    """
+    mode: Literal["inline", "survey"] = "inline"
+    survey_id: Optional[str] = None
+    questions: List[FollowupQuestion] = Field(default_factory=list)
 
 class TagOut(BaseModel):
     tag_id: str
@@ -119,6 +142,7 @@ class TicketBase(BaseModel):
     status: TicketStatus = TicketStatus.new
     priority: TicketPriority = TicketPriority.normal
     severity: TicketSeverity = TicketSeverity.sev4
+    custom_fields: Dict[str, Any] = Field(default_factory=dict)
 
     requester_id: str
 
@@ -157,6 +181,7 @@ class TicketBase(BaseModel):
 
     category_id: Optional[str] = None
     subcategory_id: Optional[str] = None
+    followup: Optional[FollowupConfig] = None
 
     # Backward-compat coercion from lists (first item wins)
     @model_validator(mode="after")
@@ -195,6 +220,7 @@ class TicketUpdate(BaseModel):
     status: Optional[TicketStatus] = None
     priority: Optional[TicketPriority] = None
     severity: Optional[TicketSeverity] = None
+    followup: Optional[FollowupConfig] = None
 
     # Single agent/team updates
     assignee_id: Optional[str] = None
@@ -562,7 +588,8 @@ class TicketOut(TicketBase):
     # Relations
     tags: List[TagOut] = Field(default_factory=list)
     sla_status: Optional[TicketSLAStatusOut] = None
-    
+    followup: Optional[FollowupConfig] = None   # ← optional, for clarity
+
     # ✨ NEW: Include SLA-related events for complete audit trail
     sla_events: List[TicketEventOut] = Field(default_factory=list)
 
@@ -577,3 +604,4 @@ class TicketOut(TicketBase):
                 if e.event_type in ('sla_paused', 'sla_resumed', 'sla_assigned', 'sla_breached')
             ]
         return self
+    

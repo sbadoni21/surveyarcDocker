@@ -34,7 +34,6 @@ export default function AgentTicketsPage() {
         status: filters.status || undefined,
         limit: 200,
       }).catch(() => []);
-
       const normalized = (list || []).map((t) => ({
         ...t,
         ticketId: t.ticketId || t.ticket_id,
@@ -74,6 +73,7 @@ export default function AgentTicketsPage() {
   };
 
   const handleTicketChanged = (updatedTicket) => {
+    console.log(updatedTicket)
     setTickets((prev) =>
       prev.map((t) => (t.ticketId === updatedTicket.ticketId ? { ...t, ...updatedTicket } : t))
     );

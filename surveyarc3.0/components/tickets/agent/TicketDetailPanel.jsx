@@ -11,6 +11,7 @@ import WorklogsSection from "./WorklogsSection";
 import SidebarActionsPanel from "./SidebarActionsPanel";
 import SLAInfoCard from "./SLAInfoCard";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
+import AgentFollowupPanel from "./AgentFollowupPanel";
 
 export default function TicketDetailPanel({ ticket, onTicketChanged, currentUserId }) {
   const [busy, setBusy] = useState(false);
@@ -29,7 +30,6 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
       const data = await CommentModel.list(ticket.ticketId);
       setComments(data || []);
 
-      // ----- NEW: hydrate authors in a single batch -----
       const ids = Array.from(
         new Set(
           (data || [])
@@ -116,7 +116,8 @@ export default function TicketDetailPanel({ ticket, onTicketChanged, currentUser
     <div className="flex-1 min-h-0 flex flex-col">
       <TicketHeader ticket={full} />
       <TicketMetadata ticket={full} />
-
+  
+<AgentFollowupPanel ticket={full} onTicketUpdated={handleTicketUpdated} />
       <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12">
         <div className="xl:col-span-8 border-r min-h-0 flex flex-col">
           <ConversationSection

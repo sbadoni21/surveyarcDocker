@@ -9,6 +9,33 @@ const json = async (res) => {
   }
   return res.json();
 };
+const toSnakeFollowup = (f) => {
+  if (!f) return undefined;
+  return {
+    mode: f.mode,
+    survey_id: f.surveyId ?? f.survey_id ?? null,
+    questions: Array.isArray(f.questions)
+      ? f.questions.map((q) => ({
+          id: q.id ?? undefined,
+          type: q.type || "text",
+          label: q.label || "",
+          options:
+            q.type === "mcq"
+              ? Array.isArray(q.options)
+                ? q.options
+                : typeof q.options === "string"
+                ? q.options
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+                : []
+              : undefined,
+              answer: q.answer ?? null,
+        }))
+      : [],
+  };
+};
+
 
 const normalizePriority = (p) => (p === "medium" ? "normal" : p);
 const omitNullish = (obj) => {
@@ -53,8 +80,9 @@ const toCamelSLAStatus = (sla) => {
     totalPausedFirstResponseMinutes: sla.total_paused_first_response_minutes ?? 0,
     breachedFirstResponse: sla.breached_first_response ?? false,
     lastResumeFirstResponse: sla.last_resume_first_response ?? null,
-    
+ 
     // Resolution
+    
     resolutionDueAt: sla.resolution_due_at ?? null,
     resolutionStartedAt: sla.resolution_started_at ?? null,
     resolutionCompletedAt: sla.resolution_completed_at ?? null,
@@ -96,7 +124,35 @@ const toCamel = (t) => ({
   priority: t.priority,
   severity: t.severity,
   status: t.status,
-
+     followup: t.followup
+    ? {
+        mode: t.followup.mode || "inline",
+        surveyId:
+          t.followup.survey_id ??
+          t.followup.surveyId ??
+          null,
+        questions: Array.isArray(t.followup.questions)
+          ? t.followup.questions.map((q, idx) => ({
+              id: q.id ?? `fq_${idx + 1}`,
+              type: q.type || "text",
+              label: q.label || "",
+              options: Array.isArray(q.options)
+                ? q.options
+                : typeof q.options === "string"
+                ? q.options
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+                : [],
+                 answer:
+                q.answer ??
+                q.value ?? // just in case you used another key
+                null,
+                
+            }))
+          : [],
+      }
+    : null,
   // human-readable names
   category: t.category ?? null,
   subcategory: t.subcategory ?? null,
@@ -225,7 +281,10 @@ const TicketModel = {
       agent_id: data.agentId ?? null,
 
       assignment: data.assignment ?? undefined,
-
+   followup:
+        data.followup && data.followup.mode !== "none"
+          ? toSnakeFollowup(data.followup)
+          : undefined,
       sla_processing: {
         first_response_due_at: data.firstResponseDueAt ?? null,
         resolution_due_at: data.resolutionDueAt ?? null,
@@ -236,6 +295,7 @@ const TicketModel = {
     };
 
     const payload = omitNullish(payloadRaw);
+    console.log(payload);
     const res = await fetch(`${BASE}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -249,6 +309,14 @@ const TicketModel = {
   async update(ticketId, patch) {
     const map = (p) => {
       const out = { ...p };
+
+      if ("followup" in out && out.followup) {
+        // convert camelCase followup to snake_case for backend
+        out.followup =
+          out.followup.mode && out.followup.mode !== "none"
+            ? toSnakeFollowup(out.followup)
+            : null;
+      }
 
       if ("priority" in out) out.priority = normalizePriority(out.priority);
       if ("orgId" in out) { out.org_id = out.orgId; delete out.orgId; }

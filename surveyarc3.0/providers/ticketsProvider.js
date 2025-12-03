@@ -54,7 +54,12 @@ const setImpactArea = useCallback(async (ticketId, impactId) => {
   setSelectedTicket(prev => (prev && prev.ticketId === ticketId ? updated : prev));
   return updated;
 }, []);
-
+const setFollowup = useCallback(async (ticketId, followup) => {
+  const updated = await TicketModel.update(ticketId, { followup });
+  setTickets(prev => prev.map(t => (t.ticketId === ticketId ? updated : t)));
+  setSelectedTicket(prev => (prev && prev.ticketId === ticketId ? updated : prev));
+  return updated;
+}, []);
 const setRootCause = useCallback(async (ticketId, { rcaId, rcaNote } = {}) => {
   const updated = await TicketModel.update(ticketId, { rcaId, rcaNote });
   setTickets(prev => prev.map(t => (t.ticketId === ticketId ? updated : t)));
@@ -136,12 +141,14 @@ const listGroupQueue = useCallback(async (params) => {
 
   // Optional queue helper
   listGroupQueue,
+      setFollowup,
 
       setSelectedTicket,
       setTickets,
     }),
     [
-  tickets, selectedTicket, loading,
+  tickets, selectedTicket, loading,      setFollowup,
+
   list, get, create, update, remove, count,
   assignGroup, assignTeam, assignAgent, getParticipants,
   setFeature, setImpactArea, setRootCause,
