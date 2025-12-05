@@ -12,9 +12,13 @@ const BASE = process.env.FASTAPI_BASE_URL;
 const ENC = process.env.ENCRYPT_SURVEYS === "1";
 
 const looksEncrypted = (o) =>
-  o && typeof o === "object" &&
-  "key_id" in o && "encrypted_key" in o &&
-  "ciphertext" in o && "iv" in o && "tag" in o;
+  o &&
+  typeof o === "object" &&
+  "key_id" in o &&
+  "encrypted_key" in o &&
+  "ciphertext" in o &&
+  "iv" in o &&
+  "tag" in o;
 
 const safeParse = (t) => {
   try {
@@ -30,7 +34,10 @@ async function forceDecryptResponse(res, label = "") {
   const parsed = safeParse(text);
   if (!parsed.ok) {
     console.warn(`[${label}] not JSON, returning raw`);
-    return NextResponse.json({ status: "error", raw: parsed.raw }, { status: res.status });
+    return NextResponse.json(
+      { status: "error", raw: parsed.raw },
+      { status: res.status }
+    );
   }
 
   const data = parsed.json;
@@ -41,7 +48,10 @@ async function forceDecryptResponse(res, label = "") {
         const dec = await decryptGetResponse(data);
         return NextResponse.json(dec, { status: res.status });
       } catch (e) {
-        console.warn(`[${label}] ❌ decrypt failed, returning raw object:`, e);
+        console.warn(
+          `[${label}] ❌ decrypt failed, returning raw object:`,
+          e
+        );
         return NextResponse.json(data, { status: res.status });
       }
     }
@@ -57,7 +67,10 @@ async function forceDecryptResponse(res, label = "") {
               const d = await decryptGetResponse(item);
               return d;
             } catch (e) {
-              console.warn(`[${label}] decrypt failed for item[${i}], returning raw`, e);
+              console.warn(
+                `[${label}] decrypt failed for item[${i}], returning raw`,
+                e
+              );
               return item;
             }
           }
@@ -76,29 +89,62 @@ async function forceDecryptResponse(res, label = "") {
 
 function toSnakeCase(body) {
   const out = { ...body };
-  
-  if ("surveyId" in out) { out.survey_id = out.surveyId; delete out.surveyId; }
-  if ("orgId" in out) { out.org_id = out.orgId; delete out.orgId; }
-  if ("projectId" in out) { out.project_id = out.projectId; delete out.projectId; }
-  if ("createdBy" in out) { out.created_by = out.createdBy; delete out.createdBy; }
-  if ("updatedBy" in out) { out.updated_by = out.updatedBy; delete out.updatedBy; }
-  if ("questionOrder" in out) { out.question_order = out.questionOrder; delete out.questionOrder; }
-  if ("metaData" in out) { out.meta_data = out.metaData; delete out.metaData; }
-  
+
+  if ("surveyId" in out) {
+    out.survey_id = out.surveyId;
+    delete out.surveyId;
+  }
+  if ("orgId" in out) {
+    out.org_id = out.orgId;
+    delete out.orgId;
+  }
+  if ("projectId" in out) {
+    out.project_id = out.projectId;
+    delete out.projectId;
+  }
+  if ("createdBy" in out) {
+    out.created_by = out.createdBy;
+    delete out.createdBy;
+  }
+  if ("updatedBy" in out) {
+    out.updated_by = out.updatedBy;
+    delete out.updatedBy;
+  }
+  if ("questionOrder" in out) {
+    out.question_order = out.questionOrder;
+    delete out.questionOrder;
+  }
+  if ("metaData" in out) {
+    out.meta_data = out.metaData;
+    delete out.metaData;
+  }
+
   return out;
 }
 
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
-  const projectId = searchParams.get("project_id") || searchParams.get("projectId");
-  
+
+  // 🔹 Accept both camel & snake case from frontend
+  const projectId =
+    searchParams.get("project_id") || searchParams.get("projectId");
+  const orgId = searchParams.get("org_id") || searchParams.get("orgId");
 
   try {
-    const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
-    const res = await fetch(`${BASE}/surveys${qs}`, {
+    // 🔹 Build query string for FastAPI: /surveys?project_id=..&org_id=..
+    const qsParams = new URLSearchParams();
+    if (projectId) qsParams.set("project_id", projectId);
+    if (orgId) qsParams.set("org_id", orgId);
+
+    const qs = qsParams.toString() ? `?${qsParams.toString()}` : "";
+
+    const url = `${BASE}/surveys${qs}`;
+    console.log("[GET /surveys] forwarding to:", url);
+
+    const res = await fetch(url, {
       signal: AbortSignal.timeout(30000),
     });
-    
+
     return forceDecryptResponse(res, "GET /surveys");
   } catch (e) {
     console.error("[GET /surveys] error:", e);
@@ -126,7 +172,7 @@ export async function POST(req) {
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30000),
     });
-    
+
     return forceDecryptResponse(res, "POST /surveys");
   } catch (e) {
     console.error("[POST /surveys] error:", e);

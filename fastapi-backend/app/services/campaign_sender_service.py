@@ -318,68 +318,48 @@ def queue_campaign_sends(
 
 def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: Contact, session: Session) -> dict:
     """
-    ✅ FIXED: Build payload with proper URL flow
-    
+    Build payload with the ORIGINAL survey URL (no reference / short link indirection).
+
     Flow:
     1. Get final survey form URL (after variable replacement)
-    2. Store that in reference link database
-    3. Generate clean reference URL for users
-    4. Use reference URL in all communications
+    2. Use that URL directly as survey_link and short_link in templates
     """
     logger.debug("┌─────────────────────────────────────────────┐")
-    logger.debug("│  BUILDING CAMPAIGN PAYLOAD (FIXED)          │")
+    logger.debug("│  BUILDING CAMPAIGN PAYLOAD (DIRECT URL)    │")
     logger.debug("└─────────────────────────────────────────────┘")
     logger.debug(f"   - Channel: {result.channel_used.value if hasattr(result.channel_used, 'value') else result.channel_used}")
     logger.debug(f"   - Contact: {contact.name}")
     logger.debug(f"   - Tracking token: {result.tracking_token}")
     
     # ✅ STEP 1: Get the FINAL survey form URL (after variable replacement)
-    # This is the actual destination URL: https://surveyarc-docker.vercel.app/form/{form_id}
+    # This is the actual destination URL: e.g. https://surveyarc-docker.vercel.app/form/{form_id}
     final_survey_url = get_final_survey_url(campaign, contact, result)
     logger.debug(f"   - Final survey URL: {final_survey_url}")
-    
-    # ✅ STEP 2: Create reference link that stores the final URL
-    # Database will store: reference_id → final_survey_url
-    link_ref = create_survey_link_reference(
-        session=session,
-        campaign=campaign,
-        result=result,
-        contact=contact,
-        full_tracking_url=final_survey_url,  # ✅ Store FINAL URL, not tracking params
-        expires_in_days=90
-    )
-    logger.debug(f"   - Created reference ID: {link_ref.reference_id}")
-    logger.debug(f"   - Reference stores URL: {final_survey_url}")
-    
-    # ✅ STEP 3: Generate clean public reference URL
-    # This is what users see: https://surveyarc-docker.vercel.app/r/{reference_id}
-    public_reference_url = get_reference_url(link_ref.reference_id)
-    logger.debug(f"   - Public reference URL: {public_reference_url}")
-    
-    # ✅ VERIFY: No query parameters in public URL
-    if '?' in public_reference_url:
-        logger.error("❌ CRITICAL: Query parameters in public URL!")
-        public_reference_url = public_reference_url.split('?')[0]
-        logger.warning(f"   - Cleaned to: {public_reference_url}")
-    
-    # Store reference ID in result for tracking
-    result.short_link = link_ref.reference_id
-    
-    # ✅ STEP 4: Build base payload with reference URL
+
+    # (Optional) – if you ever want tracking params, you could do:
+    # final_survey_url = build_tracking_url(final_survey_url, campaign, contact, result)
+
+    # ✅ We are NOT creating any SurveyLinkReference now
+    # result.short_link can be set to the same URL for compatibility
+    result.short_link = final_survey_url
+
+    # ✅ STEP 2: Build base payload using the ORIGINAL URL
     base_payload = {
         "campaign_id": campaign.campaign_id,
         "result_id": result.result_id,
         "contact_id": result.contact_id,
         "tracking_token": result.tracking_token,
         "recipient_name": result.recipient_name or "there",
-        "survey_link": public_reference_url,  # ✅ Clean reference URL
-        "short_link": public_reference_url,   # ✅ Clean reference URL
-        "reference_id": link_ref.reference_id  # For internal tracking
+        "survey_link": final_survey_url,   # 🔥 Original URL
+        "short_link": final_survey_url,    # 🔥 Also original URL
+        "reference_id": None,              # No reference ID anymore
     }
     
     logger.debug(f"   - survey_link in payload: {base_payload['survey_link']}")
-    
-    # ✅ STEP 5: Build channel-specific payload with variable replacement
+
+    public_url = final_survey_url  # just for readability in replace_variables calls
+
+    # ✅ STEP 3: Build channel-specific payload with variable replacement
     if result.channel_used == CampaignChannel.email:
         logger.debug("📧 Building EMAIL payload...")
         
@@ -388,8 +368,8 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             contact,
             campaign,
             result,
-            public_reference_url,  # ✅ Pass reference URL for {{survey_link}}
-            public_reference_url   # ✅ Pass reference URL for {{short_link}}
+            public_url,  # {{survey_link}}
+            public_url   # {{short_link}}
         )
         
         email_body = replace_variables(
@@ -397,14 +377,9 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             contact,
             campaign,
             result,
-            public_reference_url,  # ✅ Pass reference URL
-            public_reference_url
+            public_url,
+            public_url
         )
-        
-        # ✅ VERIFY: No tracking params leaked into email
-        if 'campaign_id=' in email_body or 'tracking_token=' in email_body:
-            logger.error("❌ ERROR: Tracking parameters leaked into email body!")
-            logger.error("   Check your email template - it should use {{survey_link}}, not raw URLs")
         
         payload = {
             **base_payload,
@@ -423,8 +398,8 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             contact,
             campaign,
             result,
-            public_reference_url,
-            public_reference_url
+            public_url,
+            public_url
         )
         
         payload = {
@@ -441,8 +416,8 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             contact,
             campaign,
             result,
-            public_reference_url,
-            public_reference_url
+            public_url,
+            public_url
         )
         
         payload = {
@@ -460,8 +435,8 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             contact,
             campaign,
             result,
-            public_reference_url,
-            public_reference_url
+            public_url,
+            public_url
         )
         
         payload = {

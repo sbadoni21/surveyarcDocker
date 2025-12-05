@@ -12,12 +12,10 @@ export default function Layout({ children }) {
       {/* Header */}
       <CampaignResultProvider>
         <CampaignProvider>
-          <SurveyProvider>
             <SupportTeamProvider>
               {/* Main Content */}
               <main className="">{children}</main>
             </SupportTeamProvider>
-          </SurveyProvider>
         </CampaignProvider>
       </CampaignResultProvider>
     </div>

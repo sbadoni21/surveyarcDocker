@@ -398,7 +398,6 @@ const handleResponseCountClick = async (surveyId) => {
                 <TableRow>
                   {[
                     { key: "name", label: "Survey Name" },
-                    { key: "time", label: "Duration" },
                     { key: "surveyId", label: "Survey ID" },
                     { key: "status", label: "Status" },
                     { key: "responseCount", label: "Total responses" },
@@ -488,27 +487,7 @@ const handleResponseCountClick = async (surveyId) => {
                         </Box>
                       </TableCell>
 
-                      {/* Duration */}
-                      <TableCell
-                        sx={{
-                          borderBottom: "none",
-                        }}
-                      >
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <AccessTimeIcon
-                            sx={{ color: "#9CA3AF" }}
-                            fontSize="small"
-                          />
-                          <Typography
-                            fontSize={14}
-                            sx={{
-                              color: isDarkMode ? "#96949C" : "text.secondary",
-                            }}
-                          >
-                            {survey.time}
-                          </Typography>
-                        </Box>
-                      </TableCell>
+            
 
                       <TableCell
                         sx={{

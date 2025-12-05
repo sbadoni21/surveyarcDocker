@@ -12,6 +12,7 @@ import { TicketCategoryProvider } from "@/providers/postGresPorviders/TicketCate
 import { TicketTaxonomyProvider } from "@/providers/postGresPorviders/TicketTaxonomyProvider";
 import { UserProvider } from "@/providers/postGresPorviders/UserProvider";
 import { SLAProvider } from "@/providers/slaProvider";
+import { SurveyProvider } from "@/providers/surveyPProvider";
 import { TicketProvider } from "@/providers/ticketsProvider";
 import React, { useState } from "react";
 
@@ -25,6 +26,7 @@ export default function Layout({ children }) {
               <ThemeProvider>
                   
                           <ProjectProvider>
+                            <SurveyProvider>
                             <QuotaProvider>
                               <Sidebar
                                 isCollapsed={isCollapsed}
@@ -42,6 +44,7 @@ export default function Layout({ children }) {
                                 </main>
                               </SLAProvider>
                             </QuotaProvider>
+                            </SurveyProvider>
                           </ProjectProvider>
             
               </ThemeProvider>

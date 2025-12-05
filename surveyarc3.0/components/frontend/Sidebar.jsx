@@ -97,6 +97,12 @@ export default function Sidebar() {
     return user.role.toLowerCase();
   }, [user]);
 
+  // owner/admin check for Contacts / Team / Settings
+  const canSeeAdminSections = useMemo(
+    () => ['owner', 'admin'].includes(userRole),
+    [userRole]
+  );
+
   // Determine first available org-tickets page based on role
   const getOrgTicketsPath = () => {
     const roleMap = {
@@ -104,7 +110,8 @@ export default function Sidebar() {
       admin: 'business-calendars',
       manager: 'business-calendars',
       team_lead: 'my-group-tickets',
-      agent: 'agent-tickets'
+      agent: 'agent-tickets',
+      user: 'agent-tickets'
     };
     return `org-tickets/${roleMap[userRole] || 'agent-tickets'}`;
   };
@@ -112,16 +119,43 @@ export default function Sidebar() {
   // Only show Org Tickets if user has a valid role
   const shouldShowOrgTickets = userRole && ['owner', 'admin', 'manager', 'team_lead', 'agent','user'].includes(userRole);
 
-  const menuItems = [
-    { icon: LayoutDashboard, label: "Dashboard", path: "" },
-        { icon: FolderOpen, label: "Survey Management", path: "projects" },
+  // =========================
+  //      MENU ITEMS LOGIC
+  // =========================
 
-    ...(shouldShowOrgTickets ? [{ icon: Building2, label: "Tickets Management", path: getOrgTicketsPath() }] : []),
-        { icon: Contact2, label: "Contacts Management", path: "contacts" },
+  let menuItems;
 
-    { icon: Users, label: "Team", path: "team" },
-    { icon: Settings, label: "Settings", path: "settings" },
-  ];
+  if (userRole === 'agent') {
+    // 👇 Agent: ONLY Tickets Management
+    menuItems = shouldShowOrgTickets
+      ? [{ icon: Building2, label: "Tickets Management", path: getOrgTicketsPath() }]
+      : [];
+  } else {
+    // Everyone else (owner/admin/manager/team_lead/user)
+    menuItems = [
+      { icon: LayoutDashboard, label: "Dashboard", path: "" },
+      { icon: FolderOpen, label: "Survey Management", path: "projects" },
+
+      ...(shouldShowOrgTickets
+        ? [{ icon: Building2, label: "Tickets Management", path: getOrgTicketsPath() }]
+        : []),
+
+      // Contacts Management: owner/admin only
+      ...(canSeeAdminSections
+        ? [{ icon: Contact2, label: "Contacts Management", path: "contacts" }]
+        : []),
+
+      // Team: owner/admin only
+      ...(canSeeAdminSections
+        ? [{ icon: Users, label: "Team", path: "team" }]
+        : []),
+
+      // Settings: owner/admin only
+      ...(canSeeAdminSections
+        ? [{ icon: Settings, label: "Settings", path: "settings" }]
+        : []),
+    ];
+  }
 
   const getActiveItemFromPath = (currentPath) => {
     const parts = currentPath.split("/").filter(Boolean);
@@ -137,7 +171,7 @@ export default function Sidebar() {
     const segment = parts[dashboardIdx + 1];
     
     // Check if we're in org-tickets section
-    if (segment === "org-tickets") return "Org Tickets";
+    if (segment === "org-tickets") return "Tickets Management"; // 🔁 match menu label
     
     // Match against menu items
     const match = menuItems.find((m) => m.path.startsWith(segment));

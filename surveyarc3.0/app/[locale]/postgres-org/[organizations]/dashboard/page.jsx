@@ -7,12 +7,13 @@ import { Icon } from "@iconify/react";
 import UserAvatar from "@/components/frontend/UseAvatar";
 import UpgradePopup from "@/components/UpgradePopup";
 import DashboardSkeleton from "@/components/frontend/DashboardSkeleton";
-import { useSearchParams, useRouter } from "next/navigation";
+import {  useRouter } from "next/navigation";
 import { db } from "@/firebase/firebase";
 import { doc, updateDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { setCookie, getCookie } from "cookies-next";
 import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
 import OrgAndSubscriptionInfo from "@/components/postgres-components/OrgAndSubscriptionInfo";
+import OrganizationAnalyticsDashboard from "@/components/projects/OrganizationAnalyticsDashboard";
 
 function OrgSwitcher({ currentOrgId }) {
   const router = useRouter();
@@ -350,7 +351,7 @@ export default function Page() {
             />
           </>
         )}
-
+{/* <OrganizationAnalyticsDashboard orgId={organisation?.id} /> */}
         {showUpgradePopup && (
           <UpgradePopup
             onClose={() => setShowUpgradePopup(false)}

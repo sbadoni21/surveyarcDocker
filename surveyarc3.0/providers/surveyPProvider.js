@@ -1,4 +1,3 @@
-// providers/surveyPProvider.js
 'use client';
 import SurveyModel from '@/models/surveyModel';
 import React, { createContext, useContext, useState } from 'react';
@@ -16,16 +15,88 @@ export const SurveyProvider = ({ children }) => {
     return data;
   };
 
+  // 🔹 PROJECT-SCOPED: Load surveys for a specific project into state
   const getAllSurveys = async (_orgId, projectId) => {
     setLoading(true);
-
     try {
+      const raw = await SurveyModel.getAllByProject(projectId);
+      console.log('getAllSurveys raw response:', raw);
 
-      const list = await SurveyModel.getAllByProject(projectId);
-      setSurveys(list || []);
+      // Handle both array and { items: [] } style responses
+      const list = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw?.items)
+        ? raw.items
+        : [];
+
+      setSurveys(list);
       return list;
+    } catch (error) {
+      console.error('Error in getAllSurveys:', error);
+      return [];
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 🔹 PROJECT-SCOPED: Fetch surveys but don't touch global state
+  const fetchSurveysByProject = async (projectId) => {
+    try {
+      const raw = await SurveyModel.getAllByProject(projectId);
+      console.log(`Surveys for project ${projectId}:`, raw);
+
+      const list = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw?.items)
+        ? raw.items
+        : [];
+
+      return list;
+    } catch (error) {
+      console.error(`Error fetching surveys for project ${projectId}:`, error);
+      return [];
+    }
+  };
+
+  // 🔹 ORG-SCOPED: Load all surveys for an org into state
+  const getAllOrgSurveys = async (orgId) => {
+    setLoading(true);
+    try {
+      const raw = await SurveyModel.getAll(orgId);
+      console.log('getAllOrgSurveys raw response:', raw);
+
+      const list = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw?.items)
+        ? raw.items
+        : [];
+
+      setSurveys(list);
+      return list;
+    } catch (error) {
+      console.error('Error in getAllOrgSurveys:', error);
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 🔹 ORG-SCOPED: Fetch all surveys for an org without touching state
+  const fetchAllOrgSurveys = async (orgId) => {
+    try {
+      const raw = await SurveyModel.getAll(orgId);
+      console.log('fetchAllOrgSurveys raw response:', raw);
+
+      const list = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw?.items)
+        ? raw.items
+        : [];
+
+      return list;
+    } catch (error) {
+      console.error('Error in fetchAllOrgSurveys:', error);
+      return [];
     }
   };
 
@@ -53,7 +124,7 @@ export const SurveyProvider = ({ children }) => {
   };
 
   const countResponses = async (surveyId) => {
-    return SurveyModel.countResponses(surveyId); // { count }
+    return SurveyModel.countResponses(surveyId);
   };
 
   return (
@@ -61,13 +132,26 @@ export const SurveyProvider = ({ children }) => {
       value={{
         surveys,
         selectedSurvey,
+        surveyLoading,
+
+        // single survey
         getSurvey,
+        setSelectedSurvey,
+
+        // project-scoped
         getAllSurveys,
+        fetchSurveysByProject,
+
+        // org-scoped
+        getAllOrgSurveys,
+        fetchAllOrgSurveys,
+
+        // mutations
         saveSurvey,
         updateSurvey,
         deleteSurvey,
-        setSelectedSurvey,
-        surveyLoading,
+
+        // responses
         listResponses,
         countResponses,
       }}

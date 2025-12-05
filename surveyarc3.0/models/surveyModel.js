@@ -41,6 +41,18 @@ const SurveyModel = {
     });
     return json(res);
   },
+  
+  async getAll(orgId) {
+    const url = new URL(BASE, window.location.origin);
+    if (orgId) {
+      url.searchParams.set("org_id", String(orgId));
+    }
+    const res = await fetch(url.toString(), {
+      method: "GET",
+      cache: "no-store",
+    });
+    return json(res);
+  },
 
   async getAllByProject(projectId) {
     const res = await fetch(`${BASE}?project_id=${encodeURIComponent(projectId)}`, {

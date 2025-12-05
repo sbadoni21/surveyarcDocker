@@ -58,21 +58,46 @@ def get_survey(survey_id: str, db: Session = Depends(get_db)):
     RedisSurveyService.cache_survey(survey)
     return survey
 
+
 @router.get("", response_model=List[SurveyOut])
-def list_surveys(project_id: Optional[str] = Query(None), db: Session = Depends(get_db)):
+def list_surveys(
+    project_id: Optional[str] = Query(None),
+    org_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """
+    List surveys.
+
+    - If project_id is provided: return surveys for that project (with cache)
+    - Else if org_id is provided: return all surveys for that org (no cache for now)
+    - Else: return all surveys in the system (careful if DB is huge)
+    """
+    # --- 1) By project (existing behaviour + cache) ---
     if project_id:
         cached_list = RedisSurveyService.get_project_surveys(project_id)
-        if cached_list is not None:  # FIXED: explicit None check
-            print(f"[API] Returning {len(cached_list)} surveys from cache for project {project_id}")
+        if cached_list is not None:
+            print(
+                f"[API] Returning {len(cached_list)} surveys from cache for project {project_id}"
+            )
             return cached_list
-        
+
         print(f"[API] Cache miss for project {project_id}, fetching from DB")
         surveys = db.query(Survey).filter(Survey.project_id == project_id).all()
         if surveys:
             RedisSurveyService.set_project_surveys_exact(project_id, surveys)
-        return surveys    
-    # If no project_id passed, return empty or all (choose your policy)
-    return []
+        return surveys
+
+    # --- 2) By org ---
+    if org_id:
+        print(f"[API] Fetching surveys for org {org_id} from DB")
+        surveys = db.query(Survey).filter(Survey.org_id == org_id).all()
+        # you can add org-level cache later if needed
+        return surveys
+
+    # --- 3) All surveys (no filters) ---
+    print("[API] Fetching ALL surveys from DB (no project/org filter)")
+    surveys = db.query(Survey).all()
+    return surveys
 
 @router.get("/project/{project_id}", response_model=List[SurveyOut])
 def get_all_surveys(project_id: str, db: Session = Depends(get_db)):
