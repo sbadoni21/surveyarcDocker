@@ -5,7 +5,7 @@ import QUESTION_TYPES from "@/enums/questionTypes";
 import QuestionConfigForm from "./QuestionFrom";
 import { ICONS_MAP } from "@/utils/questionTypes";
 
-export default function QuestionEditorPanel({
+export default function QuestionEdritorPanel({
   selectedQuestion,
   selectedType,
   setSelectedType,

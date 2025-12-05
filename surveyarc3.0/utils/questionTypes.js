@@ -7,10 +7,92 @@ import { IoCaretDown } from "react-icons/io5";
 
 export const ICONS_MAP = {
   // Contact Information
+    MONADIC_TEST: (
+    <Icon
+      color="#4B4187"
+      icon="mdi:test-tube"
+      width="22"
+      height="22"
+    />
+  ),
+  FORCED_EXPOSURE: (
+    <Icon
+      color="#4B4187"
+      icon="mdi:exposure-plus-1"
+      width="22"
+      height="22"
+    />
+  ),
+  SEQUENTIAL_MONADIC: (
+    <Icon
+      color="#4B4187"
+      icon="mdi:test-tube-empty"
+      width="22"
+      height="22"
+    />
+  ),
+    BAYES_ACQ: (
+    <Icon color="#35667D" icon="mdi:chart-bell-curve-cumulative" width="22" height="22" />
+  ),LIKERT: (
+  <Icon color="#9F2929" icon="mdi:format-list-bulleted" width="22" height="22" />
+),
+SEGMENTATION_SELECTOR: (
+  <Icon color="#9F2929" icon="mdi:shape-plus" width="22" height="22" />
+),
+PERSONA_QUIZ: (
+  <Icon
+    color="#4B4187"
+    icon="mdi:account-star-outline"
+    width="22"
+    height="22"
+  />
+),
+
+SMILEY_RATING: (
+  <Icon color="#FFA000" icon="mdi:emoticon-happy-outline" width="22" height="22" />
+),
+IMAGE_CLICK_RATING: (
+  <Icon color="#4B4187" icon="mdi:image-filter-center-focus" width="22" height="22" />
+),
+TABLE_GRID:(
+  <Icon color="#4B4187" icon="mdi:table" width="22" height="22" />
+),
+MULTI_GRID:(
+  <Icon color="#4B4187" icon="mdi:table-multiple" width="22" height="22" />
+),
+MATRIX_RATING:(
+  <Icon color="#4B4187" icon="mdi:table-multiple" width="22" height="22" />
+),
+  SIDE_BY_SIDE: (
+    <Icon color="#9F2929" icon="mdi:table-merge-cells" width="22" height="22" />
+  ),
+  COMPARISON_GRID: (
+    <Icon color="#9F2929" icon="mdi:table-eye" width="22" height="22" />
+  ),
   CONTACT_EMAIL: <MdMailOutline className="text-[#CD7323]" size={22} />,
   CONTACT_PHONE: <MdOutlineLocalPhone className="text-[#CD7323]" size={22} />,
   CONTACT_ADDRESS: <FiMapPin className="text-[#CD7323]" size={22} />,
   CONTACT_WEBSITE: <CiGlobe className="text-[#CD7323]" size={22} />,
+  GABOR_GRANGER: (
+  <Icon color="#9F2929" icon="mdi:cash-check" width="22" height="22" />
+),
+WEIGHTED_MULTI: (
+  <Icon
+    color="#9F2929"
+    icon="mdi:weight"
+    width="22"
+    height="22"
+  />
+),
+
+  PRICE_SENSITIVITY: (
+    <Icon
+      color="#9F2929"
+      icon="mdi:currency-inr"
+      width="22"
+      height="22"
+    />
+  ),
 
   MULTIPLE_CHOICE: (
     <Icon color="#35667D" icon="bi:list-ol" width="22" height="22" />
@@ -37,6 +119,30 @@ export const ICONS_MAP = {
     <Icon
       color="#9F2929"
       icon="material-symbols:star-outline-rounded"
+      width="22"
+      height="22"
+    />
+  ),  MAXDIFF: (
+    <Icon
+      color="#9F2929"
+      icon="mdi:compare-horizontal"
+      width="22"
+      height="22"
+    />
+  ),
+    SEMANTIC_DIFF: (
+    <Icon
+      color="#9F2929"
+      icon="material-symbols:align-horizontal-center"
+      width="22"
+      height="22"
+    />
+  ),
+
+  CONJOINT: (
+    <Icon
+      color="#9F2929"
+      icon="mdi:view-grid-plus-outline"
       width="22"
       height="22"
     />
@@ -76,6 +182,9 @@ export const ICONS_MAP = {
   NUMBER: <Icon color="#71843F" icon="tabler:hash" width="22" height="22" />,
   DATE: (
     <Icon color="#71843F" icon="proicons:calendar" width="22" height="22" />
+  ),
+  GABOR_GRANGER: (
+    <Icon color="#9F2929" icon="mdi:cash-check" width="22" height="22" />
   ),
 
   FILE_UPLOAD: (

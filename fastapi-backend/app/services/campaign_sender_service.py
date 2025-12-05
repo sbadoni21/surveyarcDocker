@@ -34,45 +34,34 @@ UTC = timezone.utc
 
 
 def get_final_survey_url(campaign: Campaign, contact: Contact, result: CampaignResult) -> str:
-    """
-    ✅ NEW: Get the FINAL survey form URL after variable replacement
-    This is what gets stored in the reference link database
-    
-    Returns: https://surveyarc-docker.vercel.app/form/{form_id}
-    """
     logger.debug("Getting final survey URL...")
-    
-    # Get base survey URL from environment
+
     base_url = os.getenv("SURVEY_BASE_URL", "https://surveyarc-docker.vercel.app/form")
-    
-    # Build the survey URL template (may contain {{variables}})
-    # Assuming campaign has a survey_link or we construct it
+
+    # If you store a custom URL in campaign.survey_link, keep honoring that
     if hasattr(campaign, 'survey_link') and campaign.survey_link:
         survey_url_template = campaign.survey_link
     else:
-        # Construct default: base_url/survey_id
-        survey_url_template = f"{base_url}/{campaign.survey_id}"
-    
+        # ✅ DO NOT append survey_id in the path anymore
+        survey_url_template = base_url
+
     logger.debug(f"   - Template: {survey_url_template}")
-    
-    # ✅ CRITICAL: Replace variables in the survey URL
-    # This ensures {{survey_id}} or other variables are replaced
+
     final_url = replace_variables(
         template=survey_url_template,
         contact=contact,
         campaign=campaign,
         result=result,
-        survey_link="",  # Not used in URL replacement
+        survey_link="",  # not used here
         short_link=None
     )
-    
+
     logger.debug(f"   - Final URL: {final_url}")
-    
-    # Verify it's a valid URL
-    if not final_url.startswith('http'):
+
+    if not final_url.startswith("http"):
         logger.warning(f"⚠️  URL doesn't start with http: {final_url}")
-        final_url = f"{base_url}/{campaign.survey_id}"
-    
+        final_url = base_url   # also without survey_id
+
     return final_url
 
 

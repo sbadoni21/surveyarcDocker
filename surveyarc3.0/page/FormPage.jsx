@@ -28,6 +28,8 @@ export default function FormPage() {
     const contactID = searchParams.get("contact_id") || null;
   const ticketID = searchParams.get("ticket_id") || null;
   const [startTime] = useState(() => new Date());
+  const prefillQuestionId = searchParams.get("prefill_q") || null;
+  const prefillAnswer = searchParams.get("prefill_a") || null;
 
   const platform = useMemo(() => {
     return campaignType?.toLowerCase() === "social media"
@@ -121,12 +123,19 @@ export default function FormPage() {
               return null;
             }
 
-            const randomizedBlocks = (surveyDoc.blocks || []).map(
+              let randomizedBlocks = (surveyDoc.blocks || []).map(
               applyBlockRandomization
+            );
+
+            // 🔹 If coming from 1-click email (prefill_q), bring that Q first
+            randomizedBlocks = reorderBlocksForPrefill(
+              randomizedBlocks,
+              prefillQuestionId
             );
 
             setSurvey(surveyDoc);
             setBlocks(randomizedBlocks);
+
 
             if (surveyDoc?.theme_id) {
               try {
@@ -353,6 +362,49 @@ router.push('/thank-you');
 
     return expanded.length ? expanded : blocks;
   };
+  const reorderBlocksForPrefill = (blocksArr, targetQuestionId) => {
+    if (!targetQuestionId) return blocksArr;
+
+    const blocksCopy = [...blocksArr];
+
+    // Find the block that contains this question
+    const idx = blocksCopy.findIndex((block) =>
+      (block.questionOrder || []).includes(targetQuestionId)
+    );
+    if (idx === -1) return blocksArr;
+
+    const targetBlock = blocksCopy[idx];
+
+    // Ensure this question is first in that block's questionOrder
+    let qOrder = targetBlock.questionOrder || [];
+
+    // Remove it from its old place
+    qOrder = qOrder.filter((id) => id !== targetQuestionId);
+
+    // Insert at the very beginning (before any PB- markers)
+    qOrder = [targetQuestionId, ...qOrder];
+
+    const newTargetBlock = {
+      ...targetBlock,
+      questionOrder: qOrder,
+    };
+
+    // Move that entire block to the front of the survey
+    const remaining = blocksCopy.filter((_, i) => i !== idx);
+    return [newTargetBlock, ...remaining];
+  };
+  const prefillAnswers = useMemo(() => {
+    if (!prefillQuestionId || !prefillAnswer || !questions.length) return {};
+
+    const q = questions.find(
+      (qq) =>
+        qq.questionId === prefillQuestionId || qq.id === prefillQuestionId
+    );
+    if (!q) return {};
+
+    const qid = q.questionId || q.id;
+    return { [qid]: prefillAnswer }; // 🔹 we store answer as the option id
+  }, [prefillQuestionId, prefillAnswer, questions]);
 
   return (
     <div>
@@ -372,6 +424,8 @@ router.push('/thank-you');
             handleSubmit={handleSubmit}
             rules={rules}
             theme={theme} // <- pass theme into SurveyForm
+                        initialAnswers={prefillAnswers}   // 🔹 NEW
+
           />
         </>
       )}

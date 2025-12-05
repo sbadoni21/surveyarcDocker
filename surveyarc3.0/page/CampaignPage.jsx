@@ -20,6 +20,7 @@ import { useOrganisation } from "@/providers/postGresPorviders/organisationProvi
 import { useSurvey } from "@/providers/surveyPProvider";
 import { usePathname } from "next/navigation";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
+import { useQuestion } from "@/providers/questionPProvider";
 
 const CampaignPage = () => {
   const [activeTab, setActiveTab] = useState("overview");
@@ -57,12 +58,13 @@ const CampaignPage = () => {
   } = useContacts();
   
   const { organisation } = useOrganisation();
-  
+  const [surveyQuestions, setSurveyQuestions] = useState([]);
+
   const { 
     surveys, 
     getAllSurveys 
   } = useSurvey();
-
+const {getAllQuestions} = useQuestion();
   // FIXED: Use useCallback to memoize these functions
   const handleLoadSurveys = useCallback(async () => {
     if (organisation?.org_id && projectId) {
@@ -98,6 +100,23 @@ const CampaignPage = () => {
   useEffect(() => {
     handleLoadSurveys();
   }, [organisation?.org_id, projectId]); // Removed handleLoadSurveys from dependencies
+
+
+const handleLoadSurveyQuestions = useCallback(
+  async (surveyId) => {
+    if (!organisation?.org_id || !surveyId) return [];
+    try {
+      const qs = await getAllQuestions(organisation.org_id, surveyId);
+      setSurveyQuestions(qs || []);
+      return qs || [];
+    } catch (err) {
+      console.error("Error loading survey questions:", err);
+      setSurveyQuestions([]);
+      return [];
+    }
+  },
+  [organisation?.org_id, getAllQuestions]
+);
 
   // Calculate aggregate statistics
   const totals = campaigns.reduce((acc, c) => ({
@@ -555,6 +574,9 @@ const CampaignPage = () => {
         onCreate={create}
         lists={lists}
         contacts={contacts}
+          surveyQuestions={surveyQuestions}                   // 👈 NEW
+  onLoadSurveyQuestions={handleLoadSurveyQuestions}   // 👈 NEW
+
         surveys={surveys}
         onLoadLists={handleLoadLists}
         onLoadContacts={handleLoadContacts}

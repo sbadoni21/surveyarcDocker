@@ -13,10 +13,12 @@ export default function SurveyForm({
   handleSubmit,
   rules,
   theme,
+    initialAnswers = {},     // 🔹 NEW
+
 }) {
   const [currentBlockIndex, setCurrentBlockIndex] = useState(0);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
-  const [answers, setAnswers] = useState({});
+  const [answers, setAnswers] = useState(initialAnswers || {});
   const [pendingActions, setPendingActions] = useState([]);
   const [jumpToQuestion, setJumpToQuestion] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -37,6 +39,15 @@ export default function SurveyForm({
           block.questions.length > 0 && !block.blockId.startsWith("unassigned_")
       )
   );
+  useEffect(() => {
+    if (!initialAnswers || !Object.keys(initialAnswers).length) return;
+
+    // Merge prefill into existing answers (don't wipe user input)
+    setAnswers((prev) => ({
+      ...initialAnswers,
+      ...prev,
+    }));
+  }, [initialAnswers]);
 
   useEffect(() => {
     setBlocksWithQuestions(
