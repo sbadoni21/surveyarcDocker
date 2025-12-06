@@ -31,8 +31,8 @@ from app.routes import (
     marketplace, metric, order, organisation, payment, pricing_plan, rule, contacts, 
     support_groups, support_teams, support_routing, slas, business_calendars, tags, 
     ticket_categories, ticket_sla, ticket_taxonomies, audit_events, contact_emails, 
-    contact_lists, list_members, contact_phone, contact_socials, ticket_templates, 
-    themes, campaigns, scheduler_routes
+    contact_lists, list_members, contact_phone, contact_socials, ticket_templates, audience_files,
+    themes, campaigns, scheduler_routes, salesforce_routes
 )
 
 # Configure logging
@@ -411,3 +411,6 @@ app.include_router(ticket_templates.router, tags=["Ticket Templates"])
 app.include_router(themes.router, tags=["Themes Survey"])
 app.include_router(campaigns.router, tags=["Campaigns Survey"])
 app.include_router(scheduler_routes.router, tags=["Campaigns Scheduler"])
+app.include_router(audience_files.router)
+app.include_router(salesforce_routes.router)
+

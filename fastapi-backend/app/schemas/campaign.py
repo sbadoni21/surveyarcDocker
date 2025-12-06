@@ -42,7 +42,8 @@ class CampaignBase(BaseModel):
     channel: CampaignChannelEnum = CampaignChannelEnum.email
     fallback_channel: Optional[CampaignChannelEnum] = None
     channel_priority: Optional[List[str]] = Field(default=None, description="Channel priority order for 'multi' channel")
-    
+    audience_file_id: Optional[str] = None
+
     # Targeting
     contact_list_id: Optional[str] = None
     contact_filters: Optional[Dict[str, Any]] = Field(default_factory=dict)

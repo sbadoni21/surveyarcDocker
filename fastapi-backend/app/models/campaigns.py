@@ -29,7 +29,15 @@ class CampaignChannel(str, enum.Enum):
 
 class Campaign(Base):
     __tablename__ = "campaigns"
+    audience_file_id = Column(
+        String,
+        ForeignKey("audience_files.id"),
+        nullable=True,
+        index=True,
+    )
 
+    # Relationship
+    audience_file = relationship("AudienceFile", backref="campaigns")
     campaign_id = Column(String, primary_key=True, index=True)
     org_id = Column(String, index=True, nullable=False)
     user_id = Column(String, nullable=True)

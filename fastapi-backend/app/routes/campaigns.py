@@ -20,6 +20,8 @@ from ..schemas.campaign import (
     CampaignFilter, ResultFilter,
     EmailTrackingEvent, SMSTrackingEvent, SurveyResponseEvent
 )
+from ..models.audience_file import AudienceFile
+
 from ..services.redis_campaign_service import RedisCampaignService
 from ..services.campaign_sender_service import (
     create_campaign_results, 
@@ -183,7 +185,19 @@ def create_campaign(
     print(f"   User ID: {campaign_data.user_id}")
     print(f"   Survey ID: {campaign_data.survey_id}")
     print(f"   Contact List ID: {campaign_data.contact_list_id}")
-    
+        # 🔹 NEW: enforce that contacts world and B2C audience world don't mix
+    if campaign_data.contact_list_id and getattr(campaign_data, "audience_file_id", None):
+        raise HTTPException(
+            status_code=400,
+            detail="Campaign cannot have both contact_list_id and audience_file_id"
+        )
+
+    if not campaign_data.contact_list_id and not getattr(campaign_data, "audience_file_id", None):
+        raise HTTPException(
+            status_code=400,
+            detail="Either contact_list_id or audience_file_id is required"
+        )
+
     # ✅ Validate user has access to this org
     user_org_id = current_user.get("org_id")
     if campaign_data.org_id != user_org_id:
@@ -202,7 +216,17 @@ def create_campaign(
             raise HTTPException(status_code=404, detail="Contact list not found")
         
         print(f"   Using contact list: {contact_list.list_name}")
-    
+        # 🔹 NEW: validate audience file if provided (B2C CSV/Excel)
+    if getattr(campaign_data, "audience_file_id", None):
+        audience_file = db.query(AudienceFile).filter(
+            AudienceFile.id == campaign_data.audience_file_id,
+            AudienceFile.org_id == campaign_data.org_id
+        ).first()
+        if not audience_file:
+            raise HTTPException(status_code=404, detail="Audience file not found")
+
+        print(f"   Using audience file: {audience_file.filename}")
+
     # Create campaign
     campaign = Campaign(
         campaign_id=generate_id(),
@@ -358,6 +382,14 @@ def send_campaign(
             ContactList.list_id == campaign.contact_list_id,
             Contact.status == "active"
         ).all()
+        # 🔹 NEW: this is where B2C CSV sending will go later
+    elif campaign.audience_file_id:
+        # TODO: implement B2C sender from AudienceFile (no contacts)
+        raise HTTPException(
+            status_code=400,
+            detail="B2C audience file sending not implemented yet"
+        )
+
     else:
         raise HTTPException(status_code=400, detail="No recipients specified")
     
