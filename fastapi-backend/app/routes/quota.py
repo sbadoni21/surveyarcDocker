@@ -1,69 +1,70 @@
 # app/routes/quota.py
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from ..utils.jsonlogic_local import jsonLogic
 from ..db import get_db
-from ..models.quota import SurveyQuota, SurveyQuotaCell, SurveyQuotaEvent
 
-# Avoid name collision by aliasing service imports
+# Schemas
 from ..schemas.quota import (
     QuotaCreate,
     QuotaCell,
-    Quota,
     QuotaWithCells,
     QuotaEvaluateRequest,
     QuotaEvaluateResult,
     QuotaIncrementRequest,
 )
 
-# import services but avoid function name shadowing
-from ..services import quota as quota_service  # expects services/quota.py
-# or if you have functions in app/services/quota.py you can do:
-# from ..services.quota import create_quota as create_quota_service, fetch_quota_with_cells as fetch_quota_with_cells_service, ...
+# Service layer
+from ..services import quota as quota_service
+
 
 router = APIRouter(prefix="/quotas", tags=["quotas"])
 
 
+# ------------------------------------------------------------
+# Helper: Convert cell SQLAlchemy objects → Pydantic Models
+# ------------------------------------------------------------
+def to_quota_cell_model(cell) -> QuotaCell:
+    return QuotaCell(
+        id=cell.id,
+        quota_id=cell.quota_id,
+        label=cell.label,
+        cap=cell.cap,
+        count=cell.count,
+        condition=cell.condition,
+        is_enabled=cell.is_enabled,
+        created_at=cell.created_at,
+        updated_at=cell.updated_at,
+    )
+
+
+# ------------------------------------------------------------
+# Create Quota
+# ------------------------------------------------------------
 @router.post("", response_model=QuotaWithCells)
-async def create_quota_endpoint(payload: QuotaCreate, db: AsyncSession = Depends(get_db)):
+async def create_quota_endpoint(
+    payload: QuotaCreate,
+    db: AsyncSession = Depends(get_db),
+):
     """
-    Create a new quota and its cells.
-    Uses quota_service.create_quota to do DB work (avoid name collision).
+    Create a new quota along with its cells.
     """
     try:
-        # Call the service function (aliased) that actually creates rows
-        row = await quota_service.create_quota(db, payload)
+        created = await quota_service.create_quota(db, payload)
     except HTTPException:
-        # re-raise HTTPExceptions so FastAPI returns them as-is
         raise
     except Exception as e:
-        # log and return a friendly 500 during development; you can also raise HTTPException
-        # (in production you might not want to expose raw exception text)
         raise HTTPException(status_code=500, detail=f"Failed to create quota: {e}")
 
-    # fetch fresh
-    rc = await quota_service.fetch_quota_with_cells(db, row.id)
+    # Fetch updated version with cells
+    rc = await quota_service.fetch_quota_with_cells(db, created.id)
+
     quota = rc["quota"]
     cells = rc["cells"]
 
-    # convert to Pydantic response shape
-    cell_models = []
-    for c in cells:
-        cell_models.append(
-            QuotaCell(
-                id=c.id,
-                quota_id=c.quota_id,
-                label=c.label,
-                cap=c.cap,
-                count=c.count,
-                condition=c.condition,
-                is_enabled=c.is_enabled,
-                created_at=c.created_at,
-                updated_at=c.updated_at,
-            )
-        )
-
-    q = QuotaWithCells(
+    return QuotaWithCells(
         id=quota.id,
         org_id=quota.org_id,
         survey_id=quota.survey_id,
@@ -75,39 +76,30 @@ async def create_quota_endpoint(payload: QuotaCreate, db: AsyncSession = Depends
         action_payload=quota.action_payload,
         created_at=quota.created_at,
         updated_at=quota.updated_at,
-        cells=cell_models,
+        cells=[to_quota_cell_model(c) for c in cells],
     )
-    return q
 
 
+# ------------------------------------------------------------
+# List quotas by survey
+# ------------------------------------------------------------
 @router.get("/by-survey/{survey_id}", response_model=list[QuotaWithCells])
-async def list_by_survey(survey_id: str, db: AsyncSession = Depends(get_db)):
-    ids_res = await db.execute(
-        "SELECT id FROM survey_quotas WHERE survey_id = :sid AND is_enabled = TRUE ORDER BY created_at ASC",
-        {"sid": survey_id},
-    )
-    ids = [r.id for r in ids_res.fetchall()]
-    out = []
-    for qid in ids:
+async def list_by_survey(
+    survey_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get all enabled quotas for a survey.
+    """
+    quota_ids = await quota_service.fetch_quota_ids_by_survey(db, survey_id)
+    results = []
+
+    for qid in quota_ids:
         rc = await quota_service.fetch_quota_with_cells(db, qid)
         quota = rc["quota"]
         cells = rc["cells"]
-        cell_models = []
-        for c in cells:
-            cell_models.append(
-                QuotaCell(
-                    id=c.id,
-                    quota_id=c.quota_id,
-                    label=c.label,
-                    cap=c.cap,
-                    count=c.count,
-                    condition=c.condition,
-                    is_enabled=c.is_enabled,
-                    created_at=c.created_at,
-                    updated_at=c.updated_at,
-                )
-            )
-        out.append(
+
+        results.append(
             QuotaWithCells(
                 id=quota.id,
                 org_id=quota.org_id,
@@ -120,52 +112,79 @@ async def list_by_survey(survey_id: str, db: AsyncSession = Depends(get_db)):
                 action_payload=quota.action_payload,
                 created_at=quota.created_at,
                 updated_at=quota.updated_at,
-                cells=cell_models,
+                cells=[to_quota_cell_model(c) for c in cells],
             )
         )
-    return out
+
+    return results
 
 
+# ------------------------------------------------------------
+# Evaluate Quota
+# ------------------------------------------------------------
 @router.post("/{quota_id}/evaluate", response_model=QuotaEvaluateResult)
-async def evaluate_quota_endpoint(quota_id: str, payload: QuotaEvaluateRequest, db: AsyncSession = Depends(get_db)):
+async def evaluate_quota_endpoint(
+    quota_id: str,
+    payload: QuotaEvaluateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Evaluate JSONLogic rules for a quota and determine if the respondent is allowed.
+    """
     rc = await quota_service.evaluate_quota(db, quota_id, payload.facts)
     if not rc:
         raise HTTPException(status_code=404, detail="Quota not found")
+
     quota_row, cells = rc
-    matched = []
+
+    matched_cells = []
     blocked = False
     reason = None
-    for c in cells:
-        if not c.is_enabled:
+
+    for cell in cells:
+        if not cell.is_enabled:
             continue
+
         try:
-            # evaluate JSONLogic condition
-            if jsonLogic(c.condition, payload.facts):
-                matched.append(c.id)
-                # check capacity depending on stop_condition
+            if jsonLogic(cell.condition, payload.facts):
+                matched_cells.append(cell.id)
+
+                # capacity check
                 if quota_row.stop_condition == "greater":
-                    if c.count >= c.cap:
+                    if cell.count >= cell.cap:
                         blocked = True
-                        reason = f"Cell '{c.label}' full"
+                        reason = f"Cell '{cell.label}' full"
                         break
-                else:  # equal
-                    if c.count == c.cap:
+                else:  # equal logic
+                    if cell.count == cell.cap:
                         blocked = True
-                        reason = f"Cell '{c.label}' full"
+                        reason = f"Cell '{cell.label}' full"
                         break
+
         except Exception:
-            # invalid rule -> skip this cell
+            # Skip invalid rules instead of failing entire evaluation
             continue
-    action = quota_row.when_met if blocked else None
+
     return QuotaEvaluateResult(
-        matched_cells=matched,
+        matched_cells=matched_cells,
         blocked=blocked,
         reason=reason,
-        action=action,
+        action=quota_row.when_met if blocked else None,
         action_payload=quota_row.action_payload if blocked else None,
     )
 
 
+# ------------------------------------------------------------
+# Increment Quota
+# ------------------------------------------------------------
 @router.post("/{quota_id}/increment")
-async def increment(quota_id: str, payload: QuotaIncrementRequest, db: AsyncSession = Depends(get_db)):
+async def increment_quota_endpoint(
+    quota_id: str,
+    payload: QuotaIncrementRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Increment quota counters for matched cells.
+    Uses service-layer logic to avoid race conditions.
+    """
     return await quota_service.increment_quota(db, quota_id, payload)

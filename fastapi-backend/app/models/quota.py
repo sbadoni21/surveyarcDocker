@@ -37,7 +37,7 @@ class SurveyQuotaEvent(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     cell_id = Column(UUID(as_uuid=True), nullable=False)
     quota_id = Column(UUID(as_uuid=True), nullable=False)
-    survey_id = Column(UUID(as_uuid=True), nullable=False)
+    survey_id = Column(Text, nullable=False)  
     respondent_id = Column(UUID(as_uuid=True), nullable=True)
     delta = Column(Integer, nullable=False)
     reason = Column(Text, nullable=False)
