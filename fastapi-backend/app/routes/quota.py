@@ -1,11 +1,11 @@
 # app/routes/quota.py
 import logging
+import inspect
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..utils.jsonlogic_local import jsonLogic
 from ..db import get_db
 
-# Pydantic schemas
 from ..schemas.quota import (
     QuotaCreate,
     QuotaCell,
@@ -16,7 +16,6 @@ from ..schemas.quota import (
     QuotaIncrementRequest,
 )
 
-# Import service functions explicitly (avoid package import shortcuts)
 from ..services.quota import (
     create_quota as create_quota_service,
     fetch_quota_with_cells as fetch_quota_with_cells_service,
@@ -28,6 +27,30 @@ from ..services.quota import (
 logger = logging.getLogger("quota_routes")
 router = APIRouter(prefix="/quotas", tags=["quotas"])
 
+# sanity checks on import
+def _check_service_callable(name, fn):
+    if fn is None:
+        logger.error("Service import check FAILED: %s is None", name)
+        return False
+    if not callable(fn):
+        logger.error("Service import check FAILED: %s is not callable (type=%s)", name, type(fn))
+        return False
+    logger.info("Service %s imported from %s; iscoroutinefunction=%s", name, getattr(fn, "__module__", "<unknown>"), inspect.iscoroutinefunction(fn))
+    return True
+
+_checks = {
+    "create_quota_service": _check_service_callable("create_quota_service", create_quota_service),
+    "fetch_quota_with_cells_service": _check_service_callable("fetch_quota_with_cells_service", fetch_quota_with_cells_service),
+    "evaluate_quota_service": _check_service_callable("evaluate_quota_service", evaluate_quota_service),
+    "increment_cell_safe_service": _check_service_callable("increment_cell_safe_service", increment_cell_safe_service),
+}
+
+if not all(_checks.values()):
+    missing = [k for k, ok in _checks.items() if not ok]
+    msg = f"Service import issues detected for: {', '.join(missing)}. See server logs for details."
+    logger.error(msg)
+    raise RuntimeError(msg)
+
 
 @router.post("", response_model=QuotaWithCells)
 async def create_quota_endpoint(payload: QuotaCreate, db: AsyncSession = Depends(get_db)):
@@ -37,10 +60,12 @@ async def create_quota_endpoint(payload: QuotaCreate, db: AsyncSession = Depends
         raise
     except Exception as e:
         logger.exception("Failed creating quota")
-        # expose a helpful 500 during dev — change in prod if needed
         raise HTTPException(status_code=500, detail=f"Failed to create quota: {e}")
 
     rc = await fetch_quota_with_cells_service(db, row.id)
+    if not rc:
+        raise HTTPException(status_code=500, detail="Failed to fetch created quota")
+
     quota = rc["quota"]
     cells = rc["cells"]
 
@@ -162,9 +187,10 @@ async def evaluate_quota_endpoint(quota_id: str, payload: QuotaEvaluateRequest, 
 
 @router.post("/{quota_id}/increment")
 async def increment_endpoint(quota_id: str, payload: QuotaIncrementRequest, db: AsyncSession = Depends(get_db)):
-    # wrap service call to produce clear errors and logging
     try:
-        res = await increment_cell_safe_service(db, quota_id, payload)
+        # payload is QuotaIncrementRequest (Pydantic)
+        # call helper increment function. increment_cell_safe returns row with ok/new_count/cap or raises.
+        res = await increment_cell_safe_service(db, payload.matched_cell_id, quota_id, payload.respondent_id, payload.reason, payload.metadata)
         return res
     except HTTPException:
         raise

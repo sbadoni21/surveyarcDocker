@@ -8,15 +8,15 @@ from ..db import Base
 class SurveyQuota(Base):
     __tablename__ = "survey_quotas"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    org_id = Column(Text, nullable=False)       # changed from UUID to Text
-    survey_id = Column(Text, nullable=False)    
+    org_id = Column(Text, nullable=False)
+    survey_id = Column(Text, nullable=False)
     name = Column(Text, nullable=False)
     description = Column(Text)
     is_enabled = Column(Boolean, default=True, nullable=False)
     stop_condition = Column(Text, default="greater", nullable=False)
     when_met = Column(Text, default="close_survey", nullable=False)
     action_payload = Column(JSON)
-    quota_metadata = Column("metadata", JSON)  # DB column stays 'metadata', Python attr is quota_metadata
+    quota_metadata = Column("metadata", JSON)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), onupdate=func.now())
 
@@ -37,11 +37,10 @@ class SurveyQuotaEvent(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     cell_id = Column(UUID(as_uuid=True), nullable=False)
     quota_id = Column(UUID(as_uuid=True), nullable=False)
-    survey_id = Column(Text, nullable=False)  
+    survey_id = Column(Text, nullable=False)
     respondent_id = Column(UUID(as_uuid=True), nullable=True)
     delta = Column(Integer, nullable=False)
     reason = Column(Text, nullable=False)
-    # Python attr = event_metadata, DB column name stays "metadata"
     event_metadata = Column("metadata", JSON)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), onupdate=func.now())

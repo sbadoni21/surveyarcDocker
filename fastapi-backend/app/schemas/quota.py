@@ -1,6 +1,6 @@
-# app/quota.py
+# app/schemas/quota.py
 from pydantic import BaseModel, Field
-from typing import Optional, List, Any
+from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
 
@@ -12,7 +12,7 @@ class QuotaCellCreate(BaseModel):
     target_option_id: Optional[str] = None
 
 class QuotaCreate(BaseModel):
-    org_id: str                # accept string; we'll coerce later if needed
+    org_id: str
     survey_id: str
     question_id: Optional[str] = None
     name: str
