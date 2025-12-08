@@ -495,6 +495,8 @@ const handleToggleStatus = async () => {
               handleAddQuestion={handleAddQuestion}
               handleUpdateQuestion={handleUpdateQuestion}
               addingQuestion={addingQuestion}
+              surveyId={surveyId}
+              orgId={orgId}
               onBlocksChange={(newBlocks) =>
                 setSurvey((prev) =>
                   prev ? { ...prev, blocks: newBlocks } : prev

@@ -20,7 +20,9 @@ const QuestionsTab = ({
   addingQuestion,
   selectedBlockId,
   newQuestionSignal,
-  onRequestNewQuestion, 
+  onRequestNewQuestion,
+  surveyId,
+  orgId,
 }) => {
   const [selectedQuestionId, setSelectedQuestionId] = useState(null);
   const [unsaved, setUnsaved] = useState(false);
@@ -173,6 +175,8 @@ const QuestionsTab = ({
         onDirtyChange={onDirtyChange}
         saveRequestCounter={saveRequest}
         onSaved={onChildSaved}
+        surveyId={surveyId}
+        orgId={orgId}
       />
     </div>
   );

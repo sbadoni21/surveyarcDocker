@@ -1,3 +1,4 @@
+// app/[locale]/api/post-gres-apis/quotaApi/route.js
 import { NextResponse } from "next/server";
 import { encryptPayload } from "@/utils/crypto_utils";
 import { decryptGetResponse } from "@/utils/crypto_client";
@@ -6,11 +7,21 @@ const BASE = process.env.FASTAPI_BASE_URL;
 const ENC = process.env.ENCRYPT_RESPONSES === "1";
 
 const looksEnvelope = (o) =>
-  o && typeof o === "object" &&
-  "key_id" in o && "encrypted_key" in o &&
-  "ciphertext" in o && "iv" in o && "tag" in o;
+  o &&
+  typeof o === "object" &&
+  "key_id" in o &&
+  "encrypted_key" in o &&
+  "ciphertext" in o &&
+  "iv" in o &&
+  "tag" in o;
 
-const safeParse = (t) => { try { return { ok: true, json: JSON.parse(t) }; } catch { return { ok: false, raw: t }; } };
+const safeParse = (t) => {
+  try {
+    return { ok: true, json: JSON.parse(t) };
+  } catch {
+    return { ok: false, raw: t };
+  }
+};
 
 async function decryptResponse(res) {
   const text = await res.text();
@@ -18,9 +29,7 @@ async function decryptResponse(res) {
   if (!parsed.ok) return NextResponse.json({ error: parsed.raw }, { status: res.status });
 
   if (Array.isArray(parsed.json)) {
-    const out = await Promise.all(
-      parsed.json.map((i) => looksEnvelope(i) ? decryptGetResponse(i) : i)
-    );
+    const out = await Promise.all(parsed.json.map((i) => (looksEnvelope(i) ? decryptGetResponse(i) : i)));
     return NextResponse.json(out, { status: res.status });
   }
 
@@ -32,34 +41,45 @@ async function decryptResponse(res) {
   return NextResponse.json(parsed.json, { status: res.status });
 }
 
+function buildForwardUrl(pathParam, search = "") {
+  let urlPath = "";
+  if (Array.isArray(pathParam)) {
+    urlPath = pathParam.filter(Boolean).join("/");
+  } else if (typeof pathParam === "string" && pathParam.length > 0) {
+    urlPath = pathParam;
+  }
+  const baseQuotas = `${BASE.replace(/\/$/, "")}/quotas`;
+  return urlPath ? `${baseQuotas}/${urlPath}${search}` : `${baseQuotas}${search}`;
+}
+
 export async function GET(req, ctx) {
-  const { path } = ctx.params;
-
-  const urlPath = path.join("/");
-  const url = `${BASE}/quotas/${urlPath}${req.nextUrl.search}`;
-
   try {
+    const { path } = ctx.params ?? {};
+    const url = buildForwardUrl(path, req.nextUrl.search);
+    console.log("[quotaApi proxy] GET ->", url);
+
     const res = await fetch(url, {
       method: "GET",
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(60000),
     });
 
     return decryptResponse(res);
   } catch (e) {
+    console.error("[quotaApi proxy] GET error:", e);
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }
 
 export async function POST(req, ctx) {
-  const { path } = ctx.params;
-
-  const urlPath = path.join("/");
-  const url = `${BASE}/quotas/${urlPath}`;
-
   try {
+    const { path } = ctx.params ?? {};
+    const url = buildForwardUrl(path);
+    console.log("[quotaApi proxy] POST ->", url);
+
     const body = await req.json();
     const payload = ENC ? await encryptPayload(body) : body;
 
+    // send to FastAPI (dev: no tight timeout so you can see backend error body)
     const res = await fetch(url, {
       method: "POST",
       headers: {
@@ -67,11 +87,26 @@ export async function POST(req, ctx) {
         ...(ENC ? { "x-encrypted": "1" } : {}),
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(30000),
+      // consider adding a moderate timeout in production:
+      signal: AbortSignal.timeout(60000),
     });
 
-    return decryptResponse(res);
+    const backendText = await res.text().catch(() => "<no-body>");
+    console.log("[quotaApi proxy] backend status:", res.status, "body:", backendText);
+
+    if (!res.ok) {
+      try {
+        const parsed = JSON.parse(backendText);
+        return NextResponse.json({ backendStatus: res.status, backendBody: parsed }, { status: res.status });
+      } catch (e) {
+        return NextResponse.json({ backendStatus: res.status, backendBody: backendText }, { status: res.status });
+      }
+    }
+
+    // if OK, attempt to decrypt/parse as before
+    return decryptResponse(new Response(backendText, { status: res.status }));
   } catch (e) {
+    console.error("[quotaApi proxy] POST error:", e);
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }

@@ -1,5 +1,6 @@
+// components/questions/QuestionConfigForm.jsx
 "use client";
-import React from "react";
+import React, { useState } from "react";
 import QUESTION_TYPES from "@/enums/questionTypes";
 
 import PhoneNumberConfig from "./QuestionsConfigComponents/PhoneNumberConfig";
@@ -29,7 +30,6 @@ import OptionsConfig from "./QuestionsConfigComponents/OptionsConfig";
 import NpsQuestion from "./QuestionsConfigComponents/NPSQuestion";
 import OSATConfig from "./QuestionsConfigComponents/OSATConfig";
 
-// advanced / research types
 import MaxDiffConfig from "./QuestionsConfigComponents/MaxDiffConfig";
 import ConjointConfig from "./QuestionsConfigComponents/ConjointConfig";
 import PriceSensitivityConfig from "./QuestionsConfigComponents/PriceSensitivityConfig";
@@ -52,9 +52,21 @@ import PersonaQuizConfig from "./QuestionsConfigComponents/PersonaQuizConfig";
 import MonadicConfig from "./QuestionsConfigComponents/MonadicConfig";
 import SequentialMonadicConfig from "./QuestionsConfigComponents/SequentialMonadicConfig";
 import ForcedExposureConfig from "./QuestionsConfigComponents/ForcedExposureConfig";
-export default function QuestionConfigForm({ type, config, updateConfig }) {
+
+import quotaModel from "@/models/postGresModels/quotaModel";
+import QuestionQuotaModal from "./QuestionQuotaModel";
+
+export default function QuestionConfigForm({
+  type,
+  config = {},
+  updateConfig,
+  surveyId = null, // pass from QuestionEditorPanel
+  orgId = null, // pass from QuestionEditorPanel
+  questionId = null, // pass if available
+}) {
+  const [showQuotaModal, setShowQuotaModal] = useState(false);
+
   const componentsMap = {
-    // 📌 Contact Information
     [QUESTION_TYPES.CONTACT_EMAIL]: (
       <EmailConfig config={config} updateConfig={updateConfig} />
     ),
@@ -62,31 +74,32 @@ export default function QuestionConfigForm({ type, config, updateConfig }) {
       <PhoneNumberConfig config={config} updateConfig={updateConfig} />
     ),
     [QUESTION_TYPES.WEIGHTED_MULTI]: (
-  <WeightedMultiConfig config={config} updateConfig={updateConfig} />
-),
-
-// inside componentsMap:
-[QUESTION_TYPES.LIKERT]: (<LikertConfig config={config} updateConfig={updateConfig} />),
-[QUESTION_TYPES.SMILEY_RATING]: (<SmileyRatingConfig config={config} updateConfig={updateConfig} />),
-[QUESTION_TYPES.IMAGE_CLICK_RATING]: (<ImageClickRatingConfig config={config} updateConfig={updateConfig} />),
-     [QUESTION_TYPES.BAYES_ACQ]: (
-    <BayesAcqConfig config={config} updateConfig={updateConfig} />
-  ),
-
+      <WeightedMultiConfig config={config} updateConfig={updateConfig} />
+    ),
+    [QUESTION_TYPES.LIKERT]: (
+      <LikertConfig config={config} updateConfig={updateConfig} />
+    ),
+    [QUESTION_TYPES.SMILEY_RATING]: (
+      <SmileyRatingConfig config={config} updateConfig={updateConfig} />
+    ),
+    [QUESTION_TYPES.IMAGE_CLICK_RATING]: (
+      <ImageClickRatingConfig config={config} updateConfig={updateConfig} />
+    ),
+    [QUESTION_TYPES.BAYES_ACQ]: (
+      <BayesAcqConfig config={config} updateConfig={updateConfig} />
+    ),
     [QUESTION_TYPES.SIDE_BY_SIDE]: (
-    <SideBySideConfig config={config} updateConfig={updateConfig} />
-  ),
-
-  [QUESTION_TYPES.COMPARISON_GRID]: (
-    <ComparisonGridConfig config={config} updateConfig={updateConfig} />
-  ),
-  [QUESTION_TYPES.TABLE_GRID]: (
-    <TableGridConfig config={config} updateConfig={updateConfig} />
-  ),
-   [QUESTION_TYPES.MATRIX_RATING]: (
-    <MatrixRatingConfig config={config} updateConfig={updateConfig} />
-  ),
-
+      <SideBySideConfig config={config} updateConfig={updateConfig} />
+    ),
+    [QUESTION_TYPES.COMPARISON_GRID]: (
+      <ComparisonGridConfig config={config} updateConfig={updateConfig} />
+    ),
+    [QUESTION_TYPES.TABLE_GRID]: (
+      <TableGridConfig config={config} updateConfig={updateConfig} />
+    ),
+    [QUESTION_TYPES.MATRIX_RATING]: (
+      <MatrixRatingConfig config={config} updateConfig={updateConfig} />
+    ),
     [QUESTION_TYPES.TURF]: (
       <TurfProConfig config={config} updateConfig={updateConfig} />
     ),
@@ -96,8 +109,6 @@ export default function QuestionConfigForm({ type, config, updateConfig }) {
     [QUESTION_TYPES.CONTACT_WEBSITE]: (
       <WebsiteConfig config={config} updateConfig={updateConfig} />
     ),
-
-    // 📌 Choice Questions
     [QUESTION_TYPES.MULTIPLE_CHOICE]: (
       <OptionsConfig config={config} updateConfig={updateConfig} />
     ),
@@ -108,9 +119,9 @@ export default function QuestionConfigForm({ type, config, updateConfig }) {
         type="dropdown"
       />
     ),
-      [QUESTION_TYPES.SLIDER]: (
-    <SliderConfig config={config} updateConfig={updateConfig} />
-  ),
+    [QUESTION_TYPES.SLIDER]: (
+      <SliderConfig config={config} updateConfig={updateConfig} />
+    ),
     [QUESTION_TYPES.CHECKBOX]: (
       <OptionsConfig
         config={config}
@@ -123,29 +134,27 @@ export default function QuestionConfigForm({ type, config, updateConfig }) {
         No extra config required (Yes/No).
       </p>
     ),
-     [QUESTION_TYPES.SEGMENTATION_SELECTOR]: (
-    <SegmentationSelectorConfig config={config} updateConfig={updateConfig} />
-  ), [QUESTION_TYPES.MONADIC_TEST]: (
+    [QUESTION_TYPES.SEGMENTATION_SELECTOR]: (
+      <SegmentationSelectorConfig config={config} updateConfig={updateConfig} />
+    ),
+    [QUESTION_TYPES.MONADIC_TEST]: (
       <MonadicConfig config={config} updateConfig={updateConfig} />
-    ),  [QUESTION_TYPES.SEQUENTIAL_MONADIC]: (
-      <SequentialMonadicConfig
-        config={config}
-        updateConfig={updateConfig}
-      />
-    ),[QUESTION_TYPES.FORCED_EXPOSURE]: (
+    ),
+    [QUESTION_TYPES.SEQUENTIAL_MONADIC]: (
+      <SequentialMonadicConfig config={config} updateConfig={updateConfig} />
+    ),
+    [QUESTION_TYPES.FORCED_EXPOSURE]: (
       <ForcedExposureConfig config={config} updateConfig={updateConfig} />
     ),
-  [QUESTION_TYPES.PERSONA_QUIZ]: (
-    <PersonaQuizConfig config={config} updateConfig={updateConfig} />
-  ),
+    [QUESTION_TYPES.PERSONA_QUIZ]: (
+      <PersonaQuizConfig config={config} updateConfig={updateConfig} />
+    ),
     [QUESTION_TYPES.PICTURE_CHOICE]: (
       <PictureChoiceConfig config={config} updateConfig={updateConfig} />
     ),
     [QUESTION_TYPES.LEGAL]: (
       <LegalConfig config={config} updateConfig={updateConfig} />
     ),
-
-    // 📌 Rating & Opinion
     [QUESTION_TYPES.NPS]: (
       <NpsQuestion config={config} updateConfig={updateConfig} />
     ),
@@ -164,8 +173,6 @@ export default function QuestionConfigForm({ type, config, updateConfig }) {
     [QUESTION_TYPES.MATRIX]: (
       <MatrixConfig config={config} updateConfig={updateConfig} />
     ),
-
-    // 📌 Text & Media
     [QUESTION_TYPES.SHORT_TEXT]: (
       <TextConfig config={config} updateConfig={updateConfig} />
     ),
@@ -180,8 +187,6 @@ export default function QuestionConfigForm({ type, config, updateConfig }) {
         No additional config needed for AI.
       </p>
     ),
-
-    // 📌 Data Collection
     [QUESTION_TYPES.NUMBER]: (
       <NumberConfig config={config} updateConfig={updateConfig} />
     ),
@@ -200,8 +205,6 @@ export default function QuestionConfigForm({ type, config, updateConfig }) {
     [QUESTION_TYPES.CALENDLY]: (
       <CalendlyConfig config={config} updateConfig={updateConfig} />
     ),
-
-    // 🎭 Flow / Structure
     [QUESTION_TYPES.WELCOME]: (
       <WelcomeConfig config={config} updateConfig={updateConfig} />
     ),
@@ -228,10 +231,8 @@ export default function QuestionConfigForm({ type, config, updateConfig }) {
       </p>
     ),
     [QUESTION_TYPES.MULTI_GRID]: (
-    <MultiGridConfig config={config} updateConfig={updateConfig} />
+      <MultiGridConfig config={config} updateConfig={updateConfig} />
     ),
-
-    // 🧪 Advanced / Research
     [QUESTION_TYPES.MAXDIFF]: (
       <MaxDiffConfig config={config} updateConfig={updateConfig} />
     ),
@@ -250,6 +251,39 @@ export default function QuestionConfigForm({ type, config, updateConfig }) {
   };
 
   const Specific = componentsMap[type] || <DefaultConfig />;
+
+  // Quota helpers
+  const existingQuota = config?.quota ?? null;
+
+  const assignQuotaToQuestion = (quota) => {
+    // store compact summary in question config; you can store only quotaId if you prefer
+    const qInfo = {
+      id: quota.id,
+      name: quota.name,
+      cells: quota.cells ?? (quota.cells || []),
+      isEnabled: quota.isEnabled ?? quota.is_enabled ?? true,
+    };
+    // updateConfig should be implemented by parent to merge config into question
+    updateConfig("quota", qInfo);
+  };
+
+  const removeQuotaFromQuestion = () => {
+    updateConfig("quota", null);
+  };
+  // derive options from question config (adapt keys your app uses)
+  const questionOptions = (
+    config?.options ||
+    config?.choices ||
+    config?.items ||
+    []
+  ).map((o) =>
+    typeof o === "string"
+      ? { id: o, label: o }
+      : {
+          id: o.id ?? o.value ?? o.key ?? o.optionId ?? o.label,
+          label: o.label ?? o.text ?? o.value ?? String(o.id ?? o),
+        }
+  );
 
   return (
     <div className="space-y-4 p-3">
@@ -275,6 +309,92 @@ export default function QuestionConfigForm({ type, config, updateConfig }) {
 
       {/* Specific config UI */}
       <div>{Specific}</div>
+
+      {/* Quota controls */}
+      <div className="mt-4 border-t pt-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <div className="text-sm font-medium">Question Quota</div>
+            <div className="text-xs text-gray-500">
+              Attach a quota that controls how many respondents can answer this
+              question.
+            </div>
+
+            {existingQuota ? (
+              <div className="mt-2 text-sm">
+                <div>
+                  Quota: <strong>{existingQuota.name}</strong>
+                </div>
+                <div className="text-xs text-gray-500">
+                  Cells: {existingQuota.cells?.length ?? 0}
+                </div>
+                <div className="text-xs text-gray-500">
+                  ID: {existingQuota.id}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-2 text-sm text-gray-500">
+                No quota attached.
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col items-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowQuotaModal(true)}
+              className="px-3 py-1 border rounded"
+            >
+              {existingQuota ? "Edit / Replace" : "Add Quota"}
+            </button>
+
+            {existingQuota && (
+              <button
+                type="button"
+                onClick={removeQuotaFromQuestion}
+                className="px-3 py-1 text-sm text-red-600"
+              >
+                Remove
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={async () => {
+                if (!existingQuota?.id) return;
+                try {
+                  const counts = await quotaModel.evaluate(
+                    existingQuota.id,
+                    {}
+                  );
+                  // optional: show a small alert/modal — kept simple here
+                  window.alert(
+                    "Quota evaluate result: " + JSON.stringify(counts)
+                  );
+                } catch (e) {
+                  console.error(e);
+                  window.alert(
+                    "Failed to fetch quota evaluation: " + String(e)
+                  );
+                }
+              }}
+              className="px-3 py-1 text-sm border rounded"
+            >
+              Preview Counts
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <QuestionQuotaModal
+        open={showQuotaModal}
+        setOpen={setShowQuotaModal}
+        surveyId={surveyId}
+        orgId={orgId}
+        questionId={questionId}
+        questionOptions={questionOptions}
+        onQuotaAssigned={assignQuotaToQuestion}
+      />
     </div>
   );
 }

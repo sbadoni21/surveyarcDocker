@@ -19,6 +19,8 @@ export default function QuestionEdritorPanel({
   onDirtyChange,
   saveRequestCounter,
   onSaved,
+  surveyId,
+  orgId,
 }) {
   const [editableQuestion, setEditableQuestion] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -91,7 +93,6 @@ export default function QuestionEdritorPanel({
         await onCreateClick(true);
       }
     })();
-    
   }, [saveRequestCounter]);
 
   const isScreenType = (t) =>
@@ -246,6 +247,9 @@ export default function QuestionEdritorPanel({
                 type={editableQuestion?.type}
                 config={editableQuestion?.config || {}}
                 updateConfig={normalizedUpdateConfig}
+                surveyId={surveyId}
+                orgId={orgId}
+                questionId={editableQuestion?.questionId}
               />
             </div>
 
@@ -298,6 +302,9 @@ export default function QuestionEdritorPanel({
                 type={selectedType}
                 config={newQuestionData?.config || {}}
                 updateConfig={normalizedUpdateConfig}
+                surveyId={surveyId}
+                orgId={orgId}
+                questionId={newQuestionData?.questionId}
               />
             </div>
 
@@ -317,7 +324,6 @@ export default function QuestionEdritorPanel({
     </main>
   );
 }
-
 
 function EditorCard({ title, icon, children }) {
   return (

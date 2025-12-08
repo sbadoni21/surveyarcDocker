@@ -1,10 +1,10 @@
-const BASE = "/api/post-gres-apis/quotas";
+// file: /models/postGresModels/quotaModel.js
+const BASE = "/api/post-gres-apis/quotaApi";
 
 const toJson = async (res) => {
   const txt = await res.text();
   let data = {};
   try { data = txt ? JSON.parse(txt) : {}; } catch {}
-
   if (!res.ok) {
     const msg =
       typeof data === "object" && data?.detail
@@ -41,8 +41,19 @@ const camelToSnake = (obj) => {
   return obj;
 };
 
-// ---------- MODEL ----------
 const quotaModel = {
+  // CREATE
+  async create(payload) {
+    console.log("Received paylod in quota Model", payload);
+    const body = JSON.stringify(camelToSnake(payload || {}));
+    const res = await fetch(`${BASE}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    return snakeToCamel(await toJson(res));
+  },
+
   // LIST QUOTAS FOR SURVEY
   async listBySurvey(surveyId) {
     const url = new URL(`${BASE}/by-survey/${surveyId}`, window.location.origin);

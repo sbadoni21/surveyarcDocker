@@ -1,6 +1,5 @@
 import quotaModel from "@/models/postGresModels/quotaModel";
 import React, { createContext, useContext, useState } from "react";
-// <-- correct import
 
 const QuotaContext = createContext(null);
 
@@ -11,6 +10,7 @@ export const QuotaProvider = ({ children }) => {
   const loadQuotas = async (surveyId) => {
     const data = await quotaModel.listBySurvey(surveyId);
     setQuotas(data);
+    return data;
   };
 
   // Evaluate a specific quota
