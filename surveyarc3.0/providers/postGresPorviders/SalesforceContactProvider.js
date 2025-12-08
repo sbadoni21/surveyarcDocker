@@ -48,6 +48,13 @@ export const SalesforceContactProvider = ({ children }) => {
 
     return updated;
   }, []);
+const listByAccount = useCallback(async (accountId) => {
+  const items = await SalesforceContactModel.contactsByAccount(accountId);
+  console.log(items)
+  setContacts(items);
+  setTotal(items.length);
+  return items;
+}, []);
 
   const remove = useCallback(async (contactId) => {
     await SalesforceContactModel.remove(contactId);
@@ -68,6 +75,7 @@ export const SalesforceContactProvider = ({ children }) => {
     loading,
     list,
     get,
+    listByAccount,
     update,
     remove,
   };

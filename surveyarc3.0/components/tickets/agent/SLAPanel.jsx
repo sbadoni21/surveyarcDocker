@@ -6,11 +6,18 @@ import SLAModel from "@/models/slaModel";
 import TicketModel from "@/models/ticketModel";
 
 function TimerRow({ data, dimension }) {
-  if (!data) return <div className="ml-6 text-xs text-gray-600">No data</div>;
+  clgog("SLAPanel TimerRow data:", data, "dimension:", dimension);
+  if (!data) {
+    return <div className="ml-6 text-xs text-gray-600">No data</div>;
+  }
 
   const due = data.due_at ? new Date(data.due_at).toLocaleString() : "—";
   const paused = data.paused ? "Paused" : "Running";
-  const elapsed = typeof data.elapsed_minutes === "number" ? `${data.elapsed_minutes}m elapsed` : "—";
+  const elapsed =
+    typeof data.elapsed_minutes === "number"
+      ? `${data.elapsed_minutes}m elapsed`
+      : "—";
+  const completed = data.completed_at ? new Date(data.completed_at).toLocaleString() : null;
 
   return (
     <div className="ml-6 text-xs text-gray-600">
@@ -18,28 +25,118 @@ function TimerRow({ data, dimension }) {
         Due: <span className="font-medium text-gray-800">{due}</span>
       </div>
       <div>
-        State: <span className="font-medium text-gray-800">{paused}</span>
+        State:{" "}
+        <span className="font-medium text-gray-800">
+          {completed ? "Completed" : paused}
+        </span>
       </div>
+      {completed && (
+        <div>
+          Completed:{" "}
+          <span className="font-medium text-gray-800">{completed}</span>
+        </div>
+      )}
       <div>{elapsed}</div>
     </div>
   );
 }
 
+// 🔵 helper to normalize both camelCase and snake_case from backend
+function mapTimersToDimension(data, dim) {
+  if (!data) return null;
+
+  if (dim === "first_response") {
+    return {
+      due_at:
+        data.firstResponseDueAt ??
+        data.first_response_due_at ??
+        null,
+      started_at:
+        data.firstResponseStartedAt ??
+        data.first_response_started_at ??
+        null,
+      completed_at:
+        data.firstResponseCompletedAt ??
+        data.first_response_completed_at ??
+        null,
+      paused:
+        data.firstResponsePaused ??
+        data.first_response_paused ??
+        false,
+      paused_at:
+        data.firstResponsePausedAt ??
+        data.first_response_paused_at ??
+        null,
+      elapsed_minutes:
+        data.elapsedFirstResponseMinutes ??
+        data.elapsed_first_response_minutes ??
+        null,
+      total_paused_minutes:
+        data.totalPausedFirstResponseMinutes ??
+        data.total_paused_first_response_minutes ??
+        null,
+      breached:
+        data.breachedFirstResponse ??
+        data.breached_first_response ??
+        false,
+    };
+  }
+
+  // resolution
+  return {
+    due_at:
+      data.resolutionDueAt ??
+      data.resolution_due_at ??
+      null,
+    started_at:
+      data.resolutionStartedAt ??
+      data.resolution_started_at ??
+      null,
+    completed_at:
+      data.resolutionCompletedAt ??
+      data.resolution_completed_at ??
+      null,
+    paused:
+      data.resolutionPaused ??
+      data.resolution_paused ??
+      false,
+    paused_at:
+      data.resolutionPausedAt ??
+      data.resolution_paused_at ??
+      null,
+    elapsed_minutes:
+      data.elapsedResolutionMinutes ??
+      data.elapsed_resolution_minutes ??
+      null,
+    total_paused_minutes:
+      data.totalPausedResolutionMinutes ??
+      data.total_paused_resolution_minutes ??
+      null,
+    breached:
+      data.breachedResolution ??
+      data.breached_resolution ??
+      false,
+  };
+}
+
 export default function SLAPanel({ ticket, onTicketUpdated, busy, setBusy }) {
-  // Store SLA data independently - never clear once set
   const [firstResponse, setFirstResponse] = useState(null);
   const [resolution, setResolution] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const currentTicketId = useRef(null);
   const isLoadingRef = useRef(false);
-  
-  const hasSLA = !!(ticket?.sla_status || ticket?.slaStatus);
 
-  // Load SLA data - only when ticket ID changes
+  // ✅ consider SLA present if we have slaId / sla_id OR a status object
+  const hasSLA = !!(
+    ticket?.sla_id ||
+    ticket?.slaId ||
+    ticket?.sla_status ||
+    ticket?.slaStatus
+  );
+
+  // Initial load: when ticket ID changes
   useEffect(() => {
-
-
     if (!ticket?.ticketId || !hasSLA) {
       if (!hasSLA) {
         setFirstResponse(null);
@@ -52,49 +149,22 @@ export default function SLAPanel({ ticket, onTicketUpdated, busy, setBusy }) {
     if (currentTicketId.current === ticket.ticketId) {
       return;
     }
-
     currentTicketId.current = ticket.ticketId;
 
-    if (isLoadingRef.current) {
-      return;
-    }
-    
+    if (isLoadingRef.current) return;
+
     isLoadingRef.current = true;
     setIsLoading(true);
 
     SLAModel.getTimers(ticket.ticketId)
       .then((data) => {
         if (data) {
-          // Transform flat structure to nested structure
-          const firstResponseData = {
-            due_at: data.first_response_due_at,
-            started_at: data.first_response_started_at,
-            completed_at: data.first_response_completed_at,
-            paused: data.first_response_paused,
-            paused_at: data.first_response_paused_at,
-            elapsed_minutes: data.elapsed_first_response_minutes,
-            total_paused_minutes: data.total_paused_first_response_minutes,
-            breached: data.breached_first_response,
-          };
-
-          const resolutionData = {
-            due_at: data.resolution_due_at,
-            started_at: data.resolution_started_at,
-            completed_at: data.resolution_completed_at,
-            paused: data.resolution_paused,
-            paused_at: data.resolution_paused_at,
-            elapsed_minutes: data.elapsed_resolution_minutes,
-            total_paused_minutes: data.total_paused_resolution_minutes,
-            breached: data.breached_resolution,
-          };
-
-          setFirstResponse(firstResponseData);
-          setResolution(resolutionData);
+          setFirstResponse(mapTimersToDimension(data, "first_response"));
+          setResolution(mapTimersToDimension(data, "resolution"));
         }
       })
       .catch((err) => {
         console.error("[SLAPanel] Failed to load SLA timers:", err);
-        // Don't clear data on error
       })
       .finally(() => {
         setIsLoading(false);
@@ -104,7 +174,7 @@ export default function SLAPanel({ ticket, onTicketUpdated, busy, setBusy }) {
 
   const refreshSLAData = async () => {
     if (!ticket?.ticketId) return;
-    
+
     setIsLoading(true);
     try {
       const [updatedTicket, slaData] = await Promise.all([
@@ -112,40 +182,16 @@ export default function SLAPanel({ ticket, onTicketUpdated, busy, setBusy }) {
         SLAModel.getTimers(ticket.ticketId).catch(() => null),
       ]);
 
-      // Transform and update SLA data
       if (slaData) {
-        const firstResponseData = {
-          due_at: slaData.first_response_due_at,
-          started_at: slaData.first_response_started_at,
-          completed_at: slaData.first_response_completed_at,
-          paused: slaData.first_response_paused,
-          paused_at: slaData.first_response_paused_at,
-          elapsed_minutes: slaData.elapsed_first_response_minutes,
-          total_paused_minutes: slaData.total_paused_first_response_minutes,
-          breached: slaData.breached_first_response,
-        };
-
-        const resolutionData = {
-          due_at: slaData.resolution_due_at,
-          started_at: slaData.resolution_started_at,
-          completed_at: slaData.resolution_completed_at,
-          paused: slaData.resolution_paused,
-          paused_at: slaData.resolution_paused_at,
-          elapsed_minutes: slaData.elapsed_resolution_minutes,
-          total_paused_minutes: slaData.total_paused_resolution_minutes,
-          breached: slaData.breached_resolution,
-        };
-
-        setFirstResponse(firstResponseData);
-        setResolution(resolutionData);
+        setFirstResponse(mapTimersToDimension(slaData, "first_response"));
+        setResolution(mapTimersToDimension(slaData, "resolution"));
       }
 
-      // Update parent ticket
       if (updatedTicket) {
         onTicketUpdated?.(updatedTicket);
       }
     } catch (err) {
-      console.error("Failed to refresh SLA:", err);
+      console.error("[SLAPanel] Failed to refresh SLA:", err);
     } finally {
       setIsLoading(false);
     }
@@ -154,9 +200,9 @@ export default function SLAPanel({ ticket, onTicketUpdated, busy, setBusy }) {
   const handlePause = async () => {
     setBusy(true);
     try {
-      await SLAModel.pause(ticket.ticketId, { 
-        dimension: "resolution", 
-        reason: "agent_paused" 
+      await SLAModel.pause(ticket.ticketId, {
+        dimension: "resolution",
+        reason: "agent_paused",
       });
       await refreshSLAData();
     } catch (err) {

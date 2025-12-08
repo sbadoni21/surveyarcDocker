@@ -6,6 +6,8 @@ import {
   MenuItem, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField,
   Tooltip, Typography
 } from "@mui/material";
+import { Pencil, Trash2 } from "lucide-react";
+
 import {
   Delete as DeleteIcon, Edit as EditIcon, Add as AddIcon, ContentCopy as CopyIcon, Bolt as BoltIcon,
   LibraryAdd as BulkIcon, UploadFile as ImportIcon, Download as ExportIcon,
@@ -385,241 +387,757 @@ const saveCredit = async (payloadFromDialog, slaFromDialog) => {
     setComplianceData(await compliance(orgId, { from_date: from, to_date: to }));
   };
 
-  return (
-    <Stack spacing={2}>
-      {/* top toolbar */}
-      <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ xs: "stretch", md: "center" }} justifyContent="space-between">
-        <Typography variant="h6">SLA Policies</Typography>
-        <Stack direction="row" spacing={1} flexWrap="wrap">
-          <TextField size="small" placeholder="Search by name or slug…" value={query} onChange={(e) => setQuery(e.target.value)} />
-          <FormControlLabel control={<Checkbox checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} />} label="Active only" />
-          <Button startIcon={<AddIcon />} variant="contained" onClick={handleOpenCreate}>New SLA</Button>
-          <Button startIcon={<ExportIcon />} onClick={doExport}>Export</Button>
-          <Button startIcon={<ImportIcon />} onClick={() => setOpenImport(true)}>Import</Button>
-          <Button startIcon={<BulkIcon />} onClick={() => setOpenBulk(true)}>Bulk</Button>
-          <Button startIcon={<TestIcon />} onClick={() => setOpenTest(true)}>Test</Button>
-          <Button startIcon={<InfoIcon />} onClick={openStatsDialog}>Stats</Button>
-          <Button startIcon={<CleanupIcon />} color="warning" onClick={() => setOpenCleanup(true)}>Cleanup</Button>
-        </Stack>
-      </Stack>
+  
+return (
+  <div className="space-y-6">
+    {/* Top toolbar */}
+    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div>
+        <h1 className="text-lg font-semibold text-gray-900">SLA Policies</h1>
+        <p className="text-xs text-gray-500">
+          Manage SLA rules, objectives, credits, and compliance in one place.
+        </p>
+      </div>
 
-      {busy && <LinearProgress />}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Search */}
+        <div className="flex items-center rounded-lg border border-gray-200 bg-white px-2 py-1 shadow-sm">
+          <input
+            type="text"
+            placeholder="Search by name or slug…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-40 bg-transparent px-1 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none md:w-56"
+          />
+        </div>
 
-      {/* table */}
-      <SLATable slas={filtered} onAction={{
-        edit: handleOpenEdit,
-        duplicate: onDuplicate,
-        activateToggle: onActivateToggle,
-        delete: onDeleteSLA,
-        publish: doPublish,
-        archive: doArchive,
-        validate: doValidate,
-        versions: openVersionList,
-        newVersion: makeNewVersion,
-        dependencies: openDepsDialog,
-        objectives: openObjectiveFor,
-        creditRules: openCreditFor,
-      }} />
-        <SLAFormDialog
-        open={openSla}
-        onClose={() => setOpenSla(false)}
-        editing={editing}
-        formData={form}
-        onUpdate={update}
-        onSave={saveSla}
-        busy={busy}
-      />
-<ObjectivesDialog
-  open={openObjective}
-  onClose={() => setOpenObjective(false)}
-  editingObjective={editingObjective}
-  DIMENSIONS={DIMENSIONS}
-  BREACH_GRADES={BREACH_GRADES}
-  ObjectivesTable={ObjectivesTable}
-  onEditObjective={editObjective}
-  onDeleteObjective={deleteObjective}
-  onSaveObjective={saveObjective}
-/>
+        {/* Active only */}
+        <label className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
+          <input
+            type="checkbox"
+            checked={activeOnly}
+            onChange={(e) => setActiveOnly(e.target.checked)}
+            className="h-3 w-3 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+          />
+          Active only
+        </label>
 
-     
+        {/* Actions */}
+        <button
+          onClick={handleOpenCreate}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-1"
+        >
+          {/* <AddIcon className="h-4 w-4" /> */}
+          New SLA
+        </button>
 
-  <CreditRulesDialog
-  open={openCredit}
-  onClose={() => setOpenCredit(false)}
-  editingCredit={editingCredit}
-  DIMENSIONS={DIMENSIONS}
-  BREACH_GRADES={BREACH_GRADES}
-  CREDIT_UNITS={CREDIT_UNITS}
-  CreditRulesTable={CreditRulesTable}
-  onEditCredit={editCredit}
-  onDeleteCredit={deleteCredit}
-  onSaveCredit={saveCredit} // NOTE: must accept (payload, sla)
- />
+        <button
+          onClick={doExport}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+        >
+          {/* <ExportIcon className="h-4 w-4" /> */}
+          Export
+        </button>
 
+        <button
+          onClick={() => setOpenImport(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+        >
+          {/* <ImportIcon className="h-4 w-4" /> */}
+          Import
+        </button>
 
-      {/* Import */}
-      <Dialog open={openImport} onClose={() => setOpenImport(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Import SLAs (JSON)</DialogTitle>
-        <DialogContent dividers>
-          <Alert severity="info" sx={{ mb: 2 }}>Uploads expect the same structure as the Export.</Alert>
-          <input type="file" accept="application/json" onChange={(e) => setImportFile(e.target.files?.[0] || null)} />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenImport(false)}>Close</Button>
-          <Button variant="contained" onClick={doImport} disabled={!importFile}>Import</Button>
-        </DialogActions>
-      </Dialog>
+        <button
+          onClick={() => setOpenBulk(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+        >
+          {/* <BulkIcon className="h-4 w-4" /> */}
+          Bulk
+        </button>
 
-      {/* Bulk */}
-      <Dialog open={openBulk} onClose={() => setOpenBulk(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Bulk Upsert / Delete</DialogTitle>
-        <DialogContent dividers>
-          <Typography variant="body2" sx={{ mb: 1 }}>
-            Paste JSON array. For delete, you can paste <code>["sla_x","sla_y"]</code> (ids) or full objects containing <code>sla_id</code>.
-          </Typography>
-          <TextField multiline minRows={10} fullWidth value={bulkJson} onChange={(e) => setBulkJson(e.target.value)} />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenBulk(false)}>Close</Button>
-          <Button onClick={doBulkDelete} color="error">Bulk Delete</Button>
-          <Button variant="contained" onClick={doBulkUpsert}>Bulk Upsert</Button>
-        </DialogActions>
-      </Dialog>
+        <button
+          onClick={() => setOpenTest(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+        >
+          {/* <TestIcon className="h-4 w-4" /> */}
+          Test
+        </button>
 
-      {/* Test (match/simulate/effective) */}
-      <Dialog open={openTest} onClose={() => setOpenTest(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Test SLAs</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={1.5}>
-            <Stack direction="row" spacing={1}>
-              <TextField select label="Mode" value={testMode} onChange={(e) => setTestMode(e.target.value)}>
-                <MenuItem value="match">Match</MenuItem>
-                <MenuItem value="simulate">Simulate</MenuItem>
-                <MenuItem value="effective">Effective</MenuItem>
-              </TextField>
-              {testMode === "effective" ? (
-                <TextField type="datetime-local" label="At time" value={testInput.at_time || ""} onChange={(e) => setTestInput((f) => ({ ...f, at_time: e.target.value }))} />
-              ) : (
-                <>
-                  <TextField label="Priority" placeholder="low/normal/high/urgent" value={testInput.priority} onChange={(e) => setTestInput((f) => ({ ...f, priority: e.target.value }))} />
-                  <TextField label="Severity" placeholder="sev4–sev1" value={testInput.severity} onChange={(e) => setTestInput((f) => ({ ...f, severity: e.target.value }))} />
-                  <TextField label="Tags (comma)" value={testInput.tags} onChange={(e) => setTestInput((f) => ({ ...f, tags: e.target.value }))} fullWidth />
-                </>
+        <button
+          onClick={openStatsDialog}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+        >
+          {/* <InfoIcon className="h-4 w-4" /> */}
+          Stats
+        </button>
+
+        <button
+          onClick={() => setOpenCleanup(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 shadow-sm hover:bg-red-100"
+        >
+          {/* <CleanupIcon className="h-4 w-4" /> */}
+          Cleanup
+        </button>
+      </div>
+    </div>
+
+    {/* Busy indicator */}
+    {busy && (
+      <div className="h-1 w-full overflow-hidden rounded-full bg-orange-100">
+        <div className="h-full w-1/3 animate-[pulse_1.5s_ease-in-out_infinite] bg-orange-500" />
+      </div>
+    )}
+
+    {/* Table card */}
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <div className="border-b border-gray-100 px-4 py-2.5">
+        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+          SLA list
+        </p>
+      </div>
+      <div className="px-3 py-3">
+        <SLATable
+          slas={filtered}
+          onAction={{
+            edit: handleOpenEdit,
+            duplicate: onDuplicate,
+            activateToggle: onActivateToggle,
+            delete: onDeleteSLA,
+            publish: doPublish,
+            archive: doArchive,
+            validate: doValidate,
+            versions: openVersionList,
+            newVersion: makeNewVersion,
+            dependencies: openDepsDialog,
+            objectives: openObjectiveFor,
+            creditRules: openCreditFor,
+          }}
+        />
+      </div>
+    </div>
+
+    {/* SLA create/edit dialog (your existing component, just wrapped nicely) */}
+    <SLAFormDialog
+      open={openSla}
+      onClose={() => setOpenSla(false)}
+      editing={editing}
+      formData={form}
+      onUpdate={update}
+      onSave={saveSla}
+      busy={busy}
+    />
+
+    <ObjectivesDialog
+      open={openObjective}
+      onClose={() => setOpenObjective(false)}
+      editingObjective={editingObjective}
+      DIMENSIONS={DIMENSIONS}
+      BREACH_GRADES={BREACH_GRADES}
+      ObjectivesTable={ObjectivesTable}
+      onEditObjective={editObjective}
+      onDeleteObjective={deleteObjective}
+      onSaveObjective={saveObjective}
+    />
+
+    <CreditRulesDialog
+      open={openCredit}
+      onClose={() => setOpenCredit(false)}
+      editingCredit={editingCredit}
+      DIMENSIONS={DIMENSIONS}
+      BREACH_GRADES={BREACH_GRADES}
+      CREDIT_UNITS={CREDIT_UNITS}
+      CreditRulesTable={CreditRulesTable}
+      onEditCredit={editCredit}
+      onDeleteCredit={deleteCredit}
+      onSaveCredit={saveCredit}
+    />
+
+    {/* Import dialog */}
+    {openImport && (
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+        <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+            <h2 className="text-sm font-semibold text-gray-900">
+              Import SLAs (JSON)
+            </h2>
+            <button
+              onClick={() => setOpenImport(false)}
+              className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="space-y-3 px-4 py-4">
+            <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+              Uploads expect the same structure as the Export.
+            </div>
+            <input
+              type="file"
+              accept="application/json"
+              onChange={(e) =>
+                setImportFile(e.target.files?.[0] || null)
+              }
+              className="block w-full text-xs text-gray-700 file:mr-3 file:rounded-md file:border file:border-gray-200 file:bg-gray-50 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-gray-700 hover:file:bg-gray-100"
+            />
+          </div>
+          <div className="flex justify-end gap-2 border-t border-gray-100 px-4 py-3">
+            <button
+              onClick={() => setOpenImport(false)}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+            >
+              Close
+            </button>
+            <button
+              onClick={doImport}
+              disabled={!importFile}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-orange-600 disabled:opacity-60"
+            >
+              Import
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Bulk dialog */}
+    {openBulk && (
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+        <div className="w-full max-w-3xl rounded-2xl bg-white shadow-xl">
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+            <h2 className="text-sm font-semibold text-gray-900">
+              Bulk Upsert / Delete
+            </h2>
+            <button
+              onClick={() => setOpenBulk(false)}
+              className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="space-y-3 px-4 py-4">
+            <p className="text-xs text-gray-600">
+              Paste JSON array. For delete, you can paste{" "}
+              <code className="rounded bg-gray-100 px-1 py-0.5 text-[10px]">
+                ["sla_x","sla_y"]
+              </code>{" "}
+              (ids) or full objects containing{" "}
+              <code className="rounded bg-gray-100 px-1 py-0.5 text-[10px]">
+                sla_id
+              </code>
+              .
+            </p>
+            <textarea
+              rows={10}
+              value={bulkJson}
+              onChange={(e) => setBulkJson(e.target.value)}
+              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-mono text-gray-800 shadow-sm focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
+            />
+          </div>
+          <div className="flex justify-between gap-2 border-t border-gray-100 px-4 py-3">
+            <button
+              onClick={() => setOpenBulk(false)}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+            >
+              Close
+            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={doBulkDelete}
+                className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100"
+              >
+                Bulk Delete
+              </button>
+              <button
+                onClick={doBulkUpsert}
+                className="rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-orange-600"
+              >
+                Bulk Upsert
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Test dialog */}
+    {openTest && (
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+        <div className="w-full max-w-3xl rounded-2xl bg-white shadow-xl">
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+            <h2 className="text-sm font-semibold text-gray-900">
+              Test SLAs
+            </h2>
+            <button
+              onClick={() => setOpenTest(false)}
+              className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="px-4 py-4">
+            <div className="space-y-3">
+              <div className="flex flex-col gap-2 md:flex-row">
+                {/* Mode select */}
+                <div className="w-full md:w-40">
+                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                    Mode
+                  </label>
+                  <select
+                    value={testMode}
+                    onChange={(e) => setTestMode(e.target.value)}
+                    className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 shadow-sm focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  >
+                    <option value="match">Match</option>
+                    <option value="simulate">Simulate</option>
+                    <option value="effective">Effective</option>
+                  </select>
+                </div>
+
+                {testMode === "effective" ? (
+                  <div className="w-full md:w-60">
+                    <label className="mb-1 block text-xs font-medium text-gray-600">
+                      At time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={testInput.at_time || ""}
+                      onChange={(e) =>
+                        setTestInput((f) => ({
+                          ...f,
+                          at_time: e.target.value,
+                        }))
+                      }
+                      className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 shadow-sm focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div className="w-full md:w-40">
+                      <label className="mb-1 block text-xs font-medium text-gray-600">
+                        Priority
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="low/normal/high/urgent"
+                        value={testInput.priority}
+                        onChange={(e) =>
+                          setTestInput((f) => ({
+                            ...f,
+                            priority: e.target.value,
+                          }))
+                        }
+                        className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 shadow-sm focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      />
+                    </div>
+                    <div className="w-full md:w-36">
+                      <label className="mb-1 block text-xs font-medium text-gray-600">
+                        Severity
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="sev4–sev1"
+                        value={testInput.severity}
+                        onChange={(e) =>
+                          setTestInput((f) => ({
+                            ...f,
+                            severity: e.target.value,
+                          }))
+                        }
+                        className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 shadow-sm focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      />
+                    </div>
+                    <div className="w-full">
+                      <label className="mb-1 block text-xs font-medium text-gray-600">
+                        Tags (comma separated)
+                      </label>
+                      <input
+                        type="text"
+                        value={testInput.tags}
+                        onChange={(e) =>
+                          setTestInput((f) => ({
+                            ...f,
+                            tags: e.target.value,
+                          }))
+                        }
+                        className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 shadow-sm focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <button
+                onClick={runTest}
+                className="inline-flex items-center gap-2 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-orange-600"
+              >
+                {/* <TestIcon className="h-4 w-4" /> */}
+                Run
+              </button>
+
+              {testOutput && (
+                <div className="mt-2 rounded-lg border border-gray-200 bg-gray-900 p-3 text-[11px] text-gray-100">
+                  <pre className="overflow-x-auto">
+                    {JSON.stringify(testOutput, null, 2)}
+                  </pre>
+                </div>
               )}
-            </Stack>
-            <Button variant="contained" onClick={runTest} startIcon={<TestIcon />}>Run</Button>
-            {testOutput && (
-              <Paper variant="outlined" sx={{ p: 2, whiteSpace: "pre-wrap", fontFamily: "monospace", fontSize: 12 }}>
-                {JSON.stringify(testOutput, null, 2)}
-              </Paper>
-            )}
-          </Stack>
-        </DialogContent>
-        <DialogActions><Button onClick={() => setOpenTest(false)}>Close</Button></DialogActions>
-      </Dialog>
+            </div>
+          </div>
+          <div className="flex justify-end border-t border-gray-100 px-4 py-3">
+            <button
+              onClick={() => setOpenTest(false)}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
 
-      {/* Stats & Compliance */}
-      <Dialog open={openStats} onClose={() => setOpenStats(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Org Stats & Compliance</DialogTitle>
-        <DialogContent dividers>
-          {statsData ? (
-            <Stack spacing={2}>
-              <Paper variant="outlined" sx={{ p: 2 }}>
-                <Typography variant="subtitle2">Counts</Typography>
-                <Typography variant="body2">Total: {statsData.total_slas} • Active: {statsData.active_slas}</Typography>
-                <Typography variant="body2">By scope: {JSON.stringify(statsData.by_scope || {})}</Typography>
-                <Typography variant="body2">By aggregation: {JSON.stringify(statsData.by_aggregation || {})}</Typography>
-                <Typography variant="body2">With objectives: {statsData.with_objectives} • With credit rules: {statsData.with_credit_rules}</Typography>
-              </Paper>
-              <Divider />
-              <Stack direction="row" spacing={1}>
-                <TextField type="date" label="From" InputLabelProps={{ shrink: true }} value={complianceRange.from} onChange={(e) => setComplianceRange((f) => ({ ...f, from: e.target.value }))} />
-                <TextField type="date" label="To" InputLabelProps={{ shrink: true }} value={complianceRange.to} onChange={(e) => setComplianceRange((f) => ({ ...f, to: e.target.value }))} />
-                <Button onClick={loadCompliance}>Load Compliance</Button>
-              </Stack>
-              {Array.isArray(complianceData) && (
-                <Paper variant="outlined" sx={{ p: 2 }}>
-                  <Typography variant="subtitle2" sx={{ mb: 1 }}>Compliance</Typography>
-                  <Table size="small">
-                    <TableHead><TableRow><TableCell>SLA</TableCell><TableCell>Total</TableCell><TableCell>Met</TableCell><TableCell>Breached</TableCell><TableCell>In Progress</TableCell><TableCell>Rate %</TableCell></TableRow></TableHead>
-                    <TableBody>
-                      {complianceData.map((r) => (
-                        <TableRow key={r.sla_id}>
-                          <TableCell>{r.sla_name}</TableCell>
-                          <TableCell>{r.total_tickets}</TableCell>
-                          <TableCell>{r.met}</TableCell>
-                          <TableCell>{r.breached}</TableCell>
-                          <TableCell>{r.in_progress}</TableCell>
-                          <TableCell>{r.compliance_rate}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </Paper>
+    {/* Stats & Compliance dialog */}
+    {openStats && (
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+        <div className="w-full max-w-3xl rounded-2xl bg-white shadow-xl">
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+            <h2 className="text-sm font-semibold text-gray-900">
+              Org Stats &amp; Compliance
+            </h2>
+            <button
+              onClick={() => setOpenStats(false)}
+              className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="px-4 py-4">
+            {statsData ? (
+              <div className="space-y-4 text-xs text-gray-700">
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                  <p className="mb-1 text-[11px] font-semibold text-gray-600">
+                    Counts
+                  </p>
+                  <p>
+                    Total: <b>{statsData.total_slas}</b> • Active:{" "}
+                    <b>{statsData.active_slas}</b>
+                  </p>
+                  <p className="mt-1">
+                    By scope:{" "}
+                    <span className="font-mono text-[11px]">
+                      {JSON.stringify(statsData.by_scope || {})}
+                    </span>
+                  </p>
+                  <p className="mt-1">
+                    By aggregation:{" "}
+                    <span className="font-mono text-[11px]">
+                      {JSON.stringify(statsData.by_aggregation || {})}
+                    </span>
+                  </p>
+                  <p className="mt-1">
+                    With objectives:{" "}
+                    <b>{statsData.with_objectives}</b> • With credit rules:{" "}
+                    <b>{statsData.with_credit_rules}</b>
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2 md:flex-row md:items-end">
+                  <div className="w-full md:w-40">
+                    <label className="mb-1 block text-[11px] font-medium text-gray-600">
+                      From
+                    </label>
+                    <input
+                      type="date"
+                      value={complianceRange.from}
+                      onChange={(e) =>
+                        setComplianceRange((f) => ({
+                          ...f,
+                          from: e.target.value,
+                        }))
+                      }
+                      className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 shadow-sm focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                  </div>
+                  <div className="w-full md:w-40">
+                    <label className="mb-1 block text-[11px] font-medium text-gray-600">
+                      To
+                    </label>
+                    <input
+                      type="date"
+                      value={complianceRange.to}
+                      onChange={(e) =>
+                        setComplianceRange((f) => ({
+                          ...f,
+                          to: e.target.value,
+                        }))
+                      }
+                      className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 shadow-sm focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                  </div>
+                  <button
+                    onClick={loadCompliance}
+                    className="inline-flex items-center justify-center rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-black/90"
+                  >
+                    Load Compliance
+                  </button>
+                </div>
+
+                {Array.isArray(complianceData) && (
+                  <div className="mt-2 overflow-hidden rounded-xl border border-gray-200">
+                    <div className="border-b border-gray-100 bg-gray-50 px-3 py-2">
+                      <p className="text-[11px] font-semibold text-gray-600">
+                        Compliance
+                      </p>
+                    </div>
+                    <div className="max-h-80 overflow-auto">
+                      <table className="min-w-full divide-y divide-gray-100 text-[11px]">
+                        <thead className="bg-gray-50">
+                          <tr className="text-left text-[11px] font-semibold text-gray-500">
+                            <th className="px-3 py-2">SLA</th>
+                            <th className="px-3 py-2">Total</th>
+                            <th className="px-3 py-2">Met</th>
+                            <th className="px-3 py-2">Breached</th>
+                            <th className="px-3 py-2">In Progress</th>
+                            <th className="px-3 py-2">Rate %</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {complianceData.map((r) => (
+                            <tr key={r.sla_id} className="hover:bg-gray-50">
+                              <td className="px-3 py-1.5">{r.sla_name}</td>
+                              <td className="px-3 py-1.5">
+                                {r.total_tickets}
+                              </td>
+                              <td className="px-3 py-1.5">{r.met}</td>
+                              <td className="px-3 py-1.5">{r.breached}</td>
+                              <td className="px-3 py-1.5">
+                                {r.in_progress}
+                              </td>
+                              <td className="px-3 py-1.5">
+                                {r.compliance_rate}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex h-32 items-center justify-center text-xs text-gray-500">
+                Loading stats…
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end border-t border-gray-100 px-4 py-3">
+            <button
+              onClick={() => setOpenStats(false)}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Versions dialog */}
+    {openVersions && (
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+        <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+            <h2 className="text-sm font-semibold text-gray-900">
+              Versions {versionsOf.sla ? `• ${versionsOf.sla.name}` : ""}
+            </h2>
+            <button
+              onClick={() => setOpenVersions(false)}
+              className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="px-4 py-4 text-xs text-gray-700">
+            {Array.isArray(versionsOf.list) && versionsOf.list.length ? (
+              <div className="overflow-hidden rounded-xl border border-gray-200">
+                <table className="min-w-full divide-y divide-gray-100 text-[11px]">
+                  <thead className="bg-gray-50">
+                    <tr className="text-left text-[11px] font-semibold text-gray-500">
+                      <th className="px-3 py-2">Version</th>
+                      <th className="px-3 py-2">Active</th>
+                      <th className="px-3 py-2">Effective</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {versionsOf.list.map((v) => (
+                      <tr key={v.sla_id} className="hover:bg-gray-50">
+                        <td className="px-3 py-1.5">{v.version}</td>
+                        <td className="px-3 py-1.5">
+                          {v.active ? "Yes" : "No"}
+                        </td>
+                        <td className="px-3 py-1.5">
+                          {v.effective_from || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">No versions found.</p>
+            )}
+          </div>
+          <div className="flex justify-end border-t border-gray-100 px-4 py-3">
+            <button
+              onClick={() => setOpenVersions(false)}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Dependencies dialog */}
+    {openDeps && (
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+        <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+            <h2 className="text-sm font-semibold text-gray-900">
+              Dependencies
+            </h2>
+            <button
+              onClick={() => setOpenDeps(false)}
+              className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="px-4 py-4 text-xs text-gray-700">
+            {depsInfo ? (
+              <div className="space-y-3">
+                <p>
+                  Active tickets:{" "}
+                  <b className="font-semibold">
+                    {depsInfo.active_tickets}
+                  </b>
+                </p>
+                <p>
+                  Can delete:{" "}
+                  <b className="font-semibold">
+                    {depsInfo.can_delete ? "Yes" : "No"}
+                  </b>
+                </p>
+                <div>
+                  <p className="mb-1 text-[11px] font-semibold text-gray-600">
+                    Sample Ticket IDs
+                  </p>
+                  <div className="max-h-48 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-2 font-mono text-[11px]">
+                    {depsInfo.affected_ticket_ids?.length
+                      ? depsInfo.affected_ticket_ids.join("\n")
+                      : "—"}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex h-24 items-center justify-center text-xs text-gray-500">
+                Loading dependencies…
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end border-t border-gray-100 px-4 py-3">
+            <button
+              onClick={() => setOpenDeps(false)}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Cleanup dialog */}
+    {openCleanup && (
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+        <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+            <h2 className="text-sm font-semibold text-gray-900">
+              Cleanup old inactive SLAs
+            </h2>
+            <button
+              onClick={() => setOpenCleanup(false)}
+              className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="px-4 py-4 text-xs text-gray-700">
+            <div className="space-y-3">
+              <div className="flex flex-col gap-2 md:flex-row md:items-end">
+                <div className="w-full md:w-40">
+                  <label className="mb-1 block text-[11px] font-medium text-gray-600">
+                    Older than days
+                  </label>
+                  <input
+                    type="number"
+                    value={cleanupOpts.days}
+                    onChange={(e) =>
+                      setCleanupOpts((f) => ({
+                        ...f,
+                        days: e.target.value,
+                      }))
+                    }
+                    className="block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-800 shadow-sm focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  />
+                </div>
+                <label className="inline-flex items-center gap-2 text-xs text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={!!cleanupOpts.dry}
+                    onChange={(e) =>
+                      setCleanupOpts((f) => ({
+                        ...f,
+                        dry: e.target.checked,
+                      }))
+                    }
+                    className="h-3 w-3 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                  />
+                  Dry run
+                </label>
+                <button
+                  onClick={doCleanup}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-orange-600"
+                >
+                  {/* <CleanupIcon className="h-4 w-4" /> */}
+                  Run
+                </button>
+              </div>
+
+              {cleanupResult && (
+                <div className="rounded-lg border border-gray-200 bg-gray-900 p-3 text-[11px] text-gray-100">
+                  <pre className="overflow-x-auto">
+                    {JSON.stringify(cleanupResult, null, 2)}
+                  </pre>
+                </div>
               )}
-            </Stack>
-          ) : <LinearProgress />}
-        </DialogContent>
-        <DialogActions><Button onClick={() => setOpenStats(false)}>Close</Button></DialogActions>
-      </Dialog>
+            </div>
+          </div>
+          <div className="flex justify-end border-t border-gray-100 px-4 py-3">
+            <button
+              onClick={() => setOpenCleanup(false)}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+);
 
-      {/* Versions */}
-      <Dialog open={openVersions} onClose={() => setOpenVersions(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Versions {versionsOf.sla ? `• ${versionsOf.sla.name}` : ""}</DialogTitle>
-        <DialogContent dividers>
-          {Array.isArray(versionsOf.list) && versionsOf.list.length ? (
-            <Table size="small">
-              <TableHead><TableRow><TableCell>Version</TableCell><TableCell>Active</TableCell><TableCell>Effective</TableCell></TableRow></TableHead>
-              <TableBody>
-                {versionsOf.list.map((v) => (
-                  <TableRow key={v.sla_id}><TableCell>{v.version}</TableCell><TableCell>{v.active ? "Yes" : "No"}</TableCell><TableCell>{v.effective_from || "—"}</TableCell></TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : <Typography variant="body2" color="text.secondary">No versions found.</Typography>}
-        </DialogContent>
-        <DialogActions><Button onClick={() => setOpenVersions(false)}>Close</Button></DialogActions>
-      </Dialog>
 
-      {/* Dependencies */}
-      <Dialog open={openDeps} onClose={() => setOpenDeps(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Dependencies</DialogTitle>
-        <DialogContent dividers>
-          {depsInfo ? (
-            <Stack spacing={1}>
-              <Typography variant="body2">Active tickets: <b>{depsInfo.active_tickets}</b></Typography>
-              <Typography variant="body2">Can delete: <b>{depsInfo.can_delete ? "Yes" : "No"}</b></Typography>
-              <Typography variant="subtitle2" sx={{ mt: 1 }}>Sample Ticket IDs</Typography>
-              <Paper variant="outlined" sx={{ p: 1, fontFamily: "monospace", fontSize: 12 }}>
-                {depsInfo.affected_ticket_ids?.join("\n") || "—"}
-              </Paper>
-            </Stack>
-          ) : <LinearProgress />}
-        </DialogContent>
-        <DialogActions><Button onClick={() => setOpenDeps(false)}>Close</Button></DialogActions>
-      </Dialog>
-
-      {/* Cleanup */}
-      <Dialog open={openCleanup} onClose={() => setOpenCleanup(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Cleanup old inactive SLAs</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={1.5}>
-            <Stack direction="row" spacing={1}>
-              <TextField label="Older than days" type="number" value={cleanupOpts.days} onChange={(e) => setCleanupOpts((f) => ({ ...f, days: e.target.value }))} />
-              <FormControlLabel control={<Checkbox checked={!!cleanupOpts.dry} onChange={(e) => setCleanupOpts((f) => ({ ...f, dry: e.target.checked }))} />} label="Dry run" />
-              <Button onClick={doCleanup} startIcon={<CleanupIcon />}>Run</Button>
-            </Stack>
-            {cleanupResult && (
-              <Paper variant="outlined" sx={{ p: 2 }}>
-                <pre style={{ margin: 0, fontFamily: "monospace", fontSize: 12 }}>{JSON.stringify(cleanupResult, null, 2)}</pre>
-              </Paper>
-            )}
-          </Stack>
-        </DialogContent>
-        <DialogActions><Button onClick={() => setOpenCleanup(false)}>Close</Button></DialogActions>
-      </Dialog>
-    </Stack>
-  );
 }
 
 /* ---------- small tables (reused) ---------- */
@@ -627,28 +1145,116 @@ function ObjectivesTable({ slaId, onEdit, onDelete }) {
   const { objectivesBySla, listObjectives } = useMakingSLA();
   useEffect(() => { if (slaId) listObjectives(slaId); }, [slaId, listObjectives]);
   const rows = objectivesBySla[slaId] || [];
-  return (
-    <Paper variant="outlined" sx={{ borderRadius: 2 }}>
-      <Table size="small">
-        <TableHead><TableRow><TableCell>Objective</TableCell><TableCell>Target (min)</TableCell><TableCell>Breach thresholds</TableCell><TableCell>Status</TableCell><TableCell align="right" sx={{ width: 120 }}>Actions</TableCell></TableRow></TableHead>
-        <TableBody>
+ // At the top of the file
+
+// ...inside your component
+return (
+  <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+    <div className="border-b border-gray-100 bg-gray-50 px-4 py-2">
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+        Objectives
+      </p>
+    </div>
+
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-xs">
+        <thead>
+          <tr className="border-b border-gray-100 bg-gray-50 text-left text-[11px] font-semibold text-gray-500">
+            <th className="px-4 py-2">Objective</th>
+            <th className="px-4 py-2">Target (min)</th>
+            <th className="px-4 py-2">Breach thresholds</th>
+            <th className="px-4 py-2">Status</th>
+            <th className="px-4 py-2 text-right w-32">Actions</th>
+          </tr>
+        </thead>
+
+        <tbody className="divide-y divide-gray-100">
           {rows.map((o) => (
-            <TableRow key={o.objective_id} hover>
-              <TableCell>{o.objective}</TableCell>
-              <TableCell>{o.target_minutes}</TableCell>
-              <TableCell><Stack direction="row" spacing={0.5} flexWrap="wrap">{Object.entries(o.breach_grades || {}).map(([k, v]) => <Chip key={k} size="small" label={`${k}:${v}`} />)}</Stack></TableCell>
-              <TableCell><Chip size="small" color={o.active ? "success" : "default"} label={o.active ? "ACTIVE" : "INACTIVE"} /></TableCell>
-              <TableCell align="right">
-                <IconButton size="small" onClick={() => onEdit(o)}><EditIcon fontSize="small" /></IconButton>
-                <IconButton size="small" color="error" onClick={() => onDelete(o.objective_id)}><DeleteIcon fontSize="small" /></IconButton>
-              </TableCell>
-            </TableRow>
+            <tr
+              key={o.objective_id}
+              className="hover:bg-gray-50 transition-colors"
+            >
+              {/* Objective */}
+              <td className="px-4 py-2 text-gray-900">
+                <div className="flex flex-col">
+                  <span className="text-xs font-medium">{o.objective}</span>
+                </div>
+              </td>
+
+              {/* Target */}
+              <td className="px-4 py-2 text-gray-700">
+                {o.target_minutes ?? "—"}
+              </td>
+
+              {/* Breach thresholds */}
+              <td className="px-4 py-2">
+                <div className="flex flex-wrap gap-1">
+                  {Object.entries(o.breach_grades || {}).map(([k, v]) => (
+                    <span
+                      key={k}
+                      className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-700"
+                    >
+                      {k}:{v}
+                    </span>
+                  ))}
+                  {(!o.breach_grades ||
+                    Object.keys(o.breach_grades || {}).length === 0) && (
+                    <span className="text-[11px] text-gray-400">—</span>
+                  )}
+                </div>
+              </td>
+
+              {/* Status */}
+              <td className="px-4 py-2">
+                <span
+                  className={
+                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold " +
+                    (o.active
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-gray-100 text-gray-600")
+                  }
+                >
+                  {o.active ? "ACTIVE" : "INACTIVE"}
+                </span>
+              </td>
+
+              {/* Actions */}
+              <td className="px-4 py-2 text-right">
+                <div className="inline-flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => onEdit(o)}
+                    className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white p-1.5 text-gray-600 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDelete(o.objective_id)}
+                    className="inline-flex items-center justify-center rounded-full bg-red-50 p-1.5 text-red-600 hover:bg-red-100"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </td>
+            </tr>
           ))}
-          {rows.length === 0 && (<TableRow><TableCell colSpan={5}><Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No objectives yet.</Typography></TableCell></TableRow>)}
-        </TableBody>
-      </Table>
-    </Paper>
-  );
+
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={5} className="px-4 py-4">
+                <div className="rounded-lg bg-gray-50 px-3 py-2 text-[11px] text-gray-500">
+                  No objectives yet.
+                </div>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+);
+
 }
 
 function CreditRulesTable({ slaId, onEdit, onDelete }) {
@@ -656,26 +1262,105 @@ function CreditRulesTable({ slaId, onEdit, onDelete }) {
   useEffect(() => { if (slaId) listCreditRules(slaId); }, [slaId, listCreditRules]);
   const rows = creditRulesBySla[slaId] || [];
   return (
-    <Paper variant="outlined" sx={{ borderRadius: 2 }}>
-      <Table size="small">
-        <TableHead><TableRow><TableCell>Objective</TableCell><TableCell>Grade</TableCell><TableCell>Credit</TableCell><TableCell>Caps</TableCell><TableCell>Status</TableCell><TableCell align="right" sx={{ width: 120 }}>Actions</TableCell></TableRow></TableHead>
-        <TableBody>
-          {rows.map((r) => (
-            <TableRow key={r.rule_id} hover>
-              <TableCell>{r.objective}</TableCell>
-              <TableCell>{r.grade}</TableCell>
-              <TableCell>{r.credit_value} {r.credit_unit}</TableCell>
-              <TableCell>{(r.cap_per_period ?? "—")} / {(r.period_days ?? "—")}d</TableCell>
-              <TableCell><Chip size="small" color={r.active ? "success" : "default"} label={r.active ? "ACTIVE" : "INACTIVE"} /></TableCell>
-              <TableCell align="right">
-                <IconButton size="small" onClick={() => onEdit(r)}><EditIcon fontSize="small" /></IconButton>
-                <IconButton size="small" color="error" onClick={() => onDelete(r.rule_id)}><DeleteIcon fontSize="small" /></IconButton>
-              </TableCell>
-            </TableRow>
-          ))}
-          {rows.length === 0 && (<TableRow><TableCell colSpan={6}><Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No credit rules yet.</Typography></TableCell></TableRow>)}
-        </TableBody>
-      </Table>
-    </Paper>
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <div className="border-b border-gray-100 bg-gray-50 px-4 py-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Credit Rules
+        </p>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-xs">
+          <thead>
+            <tr className="border-b border-gray-100 bg-gray-50 text-left text-[11px] font-semibold text-gray-500">
+              <th className="px-4 py-2">Objective</th>
+              <th className="px-4 py-2">Grade</th>
+              <th className="px-4 py-2">Credit</th>
+              <th className="px-4 py-2">Caps</th>
+              <th className="px-4 py-2">Status</th>
+              <th className="w-32 px-4 py-2 text-right">Actions</th>
+            </tr>
+          </thead>
+
+          <tbody className="divide-y divide-gray-100">
+            {rows.map((r) => (
+              <tr
+                key={r.rule_id}
+                className="hover:bg-gray-50 transition-colors"
+              >
+                {/* Objective */}
+                <td className="px-4 py-2 text-gray-900">
+                  <span className="text-xs font-medium">{r.objective}</span>
+                </td>
+
+                {/* Grade */}
+                <td className="px-4 py-2 text-gray-700">
+                  {r.grade ?? "—"}
+                </td>
+
+                {/* Credit */}
+                <td className="px-4 py-2 text-gray-700">
+                  {r.credit_value}{" "}
+                  <span className="uppercase text-[10px] text-gray-500">
+                    {r.credit_unit}
+                  </span>
+                </td>
+
+                {/* Caps */}
+                <td className="px-4 py-2 text-gray-700">
+                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-700">
+                    {(r.cap_per_period ?? "—")} / {(r.period_days ?? "—")}d
+                  </span>
+                </td>
+
+                {/* Status */}
+                <td className="px-4 py-2">
+                  <span
+                    className={
+                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold " +
+                      (r.active
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-gray-100 text-gray-600")
+                    }
+                  >
+                    {r.active ? "ACTIVE" : "INACTIVE"}
+                  </span>
+                </td>
+
+                {/* Actions */}
+                <td className="px-4 py-2 text-right">
+                  <div className="inline-flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onEdit(r)}
+                      className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white p-1.5 text-gray-600 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDelete(r.rule_id)}
+                      className="inline-flex items-center justify-center rounded-full bg-red-50 p-1.5 text-red-600 hover:bg-red-100"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-4 py-4">
+                  <div className="rounded-lg bg-gray-50 px-3 py-2 text-[11px] text-gray-500">
+                    No credit rules yet.
+                  </div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

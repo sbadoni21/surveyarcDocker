@@ -865,6 +865,8 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db)):
 
 # ---------------------------- UPDATE / DELETE ----------------------------
 
+# ---------------------------- UPDATE / DELETE ----------------------------
+
 @router.patch("/{ticket_id}", response_model=TicketOut)
 def update_ticket(ticket_id: str, payload: TicketUpdate, db: Session = Depends(get_db)):
     """
@@ -878,16 +880,19 @@ def update_ticket(ticket_id: str, payload: TicketUpdate, db: Session = Depends(g
     old_team_id = t.team_id
     old_agent_id = t.agent_id
     old_status = t.status
-    old_sla_id = t.sla_id  # <<< ADD
-
+    old_sla_id = t.sla_id
 
     data = payload.model_dump(exclude_unset=True, exclude={"tags"})
     for k, v in data.items():
         setattr(t, k, v)
+
+    # SLA re-assignment
     if t.sla_id and t.sla_id != old_sla_id and t.sla_status:
         sla_obj = db.get(SLA, t.sla_id)
         if sla_obj:
             on_sla_assigned(db, t, sla_obj, t.sla_status)
+
+    # Tags
     if payload.tags is not None:
         if not payload.tags:
             t.tags = []
@@ -897,13 +902,18 @@ def update_ticket(ticket_id: str, payload: TicketUpdate, db: Session = Depends(g
 
     _ensure_sla_status_if_needed(db, t)
 
-    # SLA behavior on status changes
+    # 🔴 HERE is the important part
     if t.sla_id and t.sla_status and payload.status is not None and payload.status != old_status:
+        # pause while waiting
         if payload.status in (TicketStatus.pending, TicketStatus.on_hold):
             sla_service.pause_sla(db, t, SLADimension.resolution, reason="status_changed")
+
+        # resume when back to working
         elif payload.status in (TicketStatus.open, TicketStatus.new):
             sla_service.resume_sla(db, t, SLADimension.resolution)
-        elif payload.status == TicketStatus.resolved:
+
+        # ✅ treat resolved *and closed* as SLA-resolution complete
+        elif payload.status in (TicketStatus.resolved, TicketStatus.closed):
             sla_service.mark_resolved(db, t)
 
     db.commit()
@@ -922,7 +932,6 @@ def update_ticket(ticket_id: str, payload: TicketUpdate, db: Session = Depends(g
     RedisTicketService.invalidate_org_lists_and_counts(t.org_id)
 
     return dto
-
 
 @router.delete("/{ticket_id}", status_code=204)
 def delete_ticket(ticket_id: str, db: Session = Depends(get_db)):

@@ -24,9 +24,7 @@ const ExportSurveyButton = ({ surveyName, responses, questions }) => {
     setExporting(true);
 
     try {
-      // Debug: Log the raw data
-      console.log('Raw responses:', responses);
-      console.log('First response structure:', responses[0]);
+
       
       // Transform responses to match expected format
       const transformedResponses = responses.map(response => {

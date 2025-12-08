@@ -3,24 +3,20 @@
 import { usePathname, useRouter } from 'next/navigation'
 import { useMemo, useEffect } from 'react'
 import { useUser } from '@/providers/postGresPorviders/UserProvider'
-
 import BusinessCalendarsProvider from "@/providers/BusinessCalendarsProvider";
-import { OrganisationProvider } from "@/providers/postGresPorviders/organisationProvider";
-import { ProjectProvider } from "@/providers/postGresPorviders/projectProvider";
 import { SupportGroupProvider } from "@/providers/postGresPorviders/SupportGroupProvider";
 import { SupportTeamProvider } from "@/providers/postGresPorviders/SupportTeamProvider";
 import { TagProvider } from "@/providers/postGresPorviders/TagProvider";
-import { ThemeProvider } from "@/providers/postGresPorviders/themeProvider";
 import { TicketCategoryProvider } from "@/providers/postGresPorviders/TicketCategoryProvider";
 import { TicketTaxonomyProvider } from "@/providers/postGresPorviders/TicketTaxonomyProvider";
 import { TicketProvider } from "@/providers/ticketsProvider";
 
 const ALL_TABS = [
+  { name: 'Dashboard',            path: 'dashboard',            roles: ['owner', 'admin'] },
   { name: 'Tickets',            path: 'tickets',            roles: ['owner', 'admin'] },
   { name: 'Business Calendars', path: 'business-calendars', roles: ['owner', 'admin', 'manager'] },
   { name: 'Category Management',path: 'category-management',roles: ['owner', 'admin', 'manager'] },
   { name: 'My Group Tickets',   path: 'my-group-tickets',   roles: [ 'admin', 'manager'] },
-  { name: 'Routing',            path: 'routing',            roles: ['owner', 'admin', 'manager'] },
   { name: 'SLA',                path: 'sla',                roles: ['owner', 'admin'] },
   { name: 'Support Groups',     path: 'support-groups',     roles: ['owner', 'admin'] },
   { name: 'Tags',               path: 'tags',               roles: ['owner', 'admin', 'manager'] },

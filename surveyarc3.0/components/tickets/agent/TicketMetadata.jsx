@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuestion } from "@/providers/questionPProvider";
+import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import { Clock, AlertTriangle, CheckCircle, Pause, MessageSquare } from "lucide-react";
 
 function MetaField({ label, value, variant = "default" }) {
@@ -13,7 +14,7 @@ function MetaField({ label, value, variant = "default" }) {
   };
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1 min-w-0">
       <div className="text-xs text-gray-500">{label}</div>
       <div className={`text-sm font-medium truncate ${variantStyles[variant]}`}>
         {value || "—"}
@@ -162,7 +163,6 @@ function QuestionAnswer({ question, answer }) {
   const getDisplayValue = () => {
     if (answer === null || answer === undefined) return "—";
     
-    // Handle different question types
     switch (question?.type) {
       case "rating":
       case "number":
@@ -194,17 +194,27 @@ function QuestionAnswer({ question, answer }) {
   );
 }
 
+// 🔹 helper to format enum-ish priority/severity safely
+const formatEnumValue = (value) => {
+  if (!value) return "—";
+  return String(value).toUpperCase();
+};
+
 export default function TicketMetadata({ ticket }) {
   const [questions, setQuestions] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  
+  const [qaLoading, setQaLoading] = useState(false);
+  const [qaError, setQaError] = useState(null);
+
+  const [requesterUser, setRequesterUser] = useState(null);
+  const [assigneeUser, setAssigneeUser] = useState(null);
+  const [userLoading, setUserLoading] = useState(false);
+
   const { getBulkQuestions } = useQuestion();
-  
+  const { getUsersByIds } = useUser();
+
   const slaStatus = ticket?.sla_status || ticket?.slaStatus;
   const hasSLA = !!(ticket?.sla_id || ticket?.slaId);
   
-  // ✅ FIX: submittedAnswers can be at multiple locations
   const submittedAnswers = 
     ticket?.submittedAnswers || 
     ticket?.meta?.submittedAnswers || 
@@ -216,23 +226,69 @@ export default function TicketMetadata({ ticket }) {
   const totalPaused = getTotalPausedTime(slaStatus);
   const dueAt = slaStatus?.resolution_due_at || slaStatus?.resolutionDueAt;
 
-  // Fetch questions when component mounts or submittedAnswers change
+  const requesterId = ticket?.requesterId || ticket?.requester_id;
+  const assigneeId  = ticket?.assigneeId  || ticket?.assignee_id;
+
+  // 🔹 PRIORITY & SEVERITY: prefer ticket values if not null
+  const priorityRaw =
+    ticket?.priority ??
+    ticket?.priorityId ??
+    slaStatus?.meta?.basis_priority ??
+    null;
+
+  const severityRaw =
+    ticket?.severity ??
+    ticket?.severityId ??
+    slaStatus?.meta?.basis_severity ??
+    null;
+
+  // Load requester + assignee user objects
+  useEffect(() => {
+    const loadUsers = async () => {
+      const ids = [requesterId, assigneeId].filter(Boolean);
+      if (!ids.length) {
+        setRequesterUser(null);
+        setAssigneeUser(null);
+        return;
+      }
+
+      try {
+        setUserLoading(true);
+        const users = await getUsersByIds(ids);
+        const byId = {};
+        for (const u of users || []) {
+          const key = u.uid || u.id || u.userId;
+          if (key) byId[key] = u;
+        }
+
+        setRequesterUser(byId[requesterId] || null);
+        setAssigneeUser(byId[assigneeId] || null);
+      } catch (e) {
+        console.error("TicketMetadata: loadUsers failed", e);
+        setRequesterUser(null);
+        setAssigneeUser(null);
+      } finally {
+        setUserLoading(false);
+      }
+    };
+
+    loadUsers();
+  }, [requesterId, assigneeId, getUsersByIds]);
+
+  // Fetch questions for survey answers
   useEffect(() => {
     const fetchQuestions = async () => {
       const questionIds = Object.keys(submittedAnswers);
-      
       if (questionIds.length === 0) {
         setQuestions([]);
         return;
       }
 
-      setLoading(true);
-      setError(null);
+      setQaLoading(true);
+      setQaError(null);
       
       try {
         const fetchedQuestions = await getBulkQuestions(questionIds);
-        
-        // ✅ FIX: Ensure we always set an array
         if (Array.isArray(fetchedQuestions)) {
           setQuestions(fetchedQuestions);
         } else {
@@ -241,17 +297,16 @@ export default function TicketMetadata({ ticket }) {
         }
       } catch (err) {
         console.error("Error fetching questions:", err);
-        setError(err.message);
-        setQuestions([]); // ✅ Reset to empty array on error
+        setQaError(err.message);
+        setQuestions([]);
       } finally {
-        setLoading(false);
+        setQaLoading(false);
       }
     };
 
     fetchQuestions();
   }, [JSON.stringify(submittedAnswers), getBulkQuestions]);
 
-  // ✅ FIX: Add safety check before reduce
   const questionsMap = Array.isArray(questions) 
     ? questions.reduce((acc, q) => {
         acc[q.questionId || q.question_id] = q;
@@ -261,17 +316,46 @@ export default function TicketMetadata({ ticket }) {
 
   const hasAnswers = Object.keys(submittedAnswers).length > 0;
 
+  const formatUser = (u, fallbackId) => {
+    if (!u) return fallbackId || "—";
+    return (
+      <>
+        <span className="block truncate">
+          {u.fullName || u.name || u.displayName || u.email || fallbackId}
+        </span>
+        {u.email && (
+          <span className="block text-[11px] text-gray-400 truncate">
+            {u.email}
+          </span>
+        )}
+      </>
+    );
+  };
+
   return (
     <>
       {/* Metadata Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-4 border-b">
-        {/* Row 1 */}
-        <MetaField label="Requester" value={ticket.requesterId} />
-        <MetaField label="Group" value={ticket.groupId} />
-        <MetaField label="Assignee" value={ticket.assigneeId} />
+        {/* Row 1: people */}
+        <MetaField
+          label={userLoading ? "Requester (loading…)" : "Requester"}
+          value={formatUser(requesterUser, requesterId)}
+        />
+        <MetaField label="Group" value={ticket.groupId || ticket.group_id} />
+        <MetaField
+          label={userLoading ? "Assignee (loading…)" : "Assignee"}
+          value={formatUser(assigneeUser, assigneeId)}
+        />
 
-        {/* Row 2 */}
-        <MetaField label="Severity" value={(ticket.severity || "").toUpperCase()} />
+        {/* Row 2: priority / severity + SLA */}
+        <MetaField
+          label="Priority"
+          value={formatEnumValue(priorityRaw)}
+        />
+        <MetaField
+          label="Severity"
+          value={formatEnumValue(severityRaw)}
+        />
         
         {hasSLA ? (
           <>
@@ -289,8 +373,8 @@ export default function TicketMetadata({ ticket }) {
               label="Time Remaining" 
               value={timeRemaining}
               variant={
-                timeRemaining.includes("overdue") ? "danger" : 
-                timeRemaining.includes("paused") ? "warning" : 
+                typeof timeRemaining === "string" && timeRemaining.includes("overdue") ? "danger" : 
+                typeof timeRemaining === "string" && timeRemaining.includes("paused") ? "warning" : 
                 "default"
               }
             />
@@ -332,10 +416,10 @@ export default function TicketMetadata({ ticket }) {
             <h3 className="text-lg font-semibold text-gray-800">Survey Responses</h3>
           </div>
 
-          {loading ? (
+          {qaLoading ? (
             <div className="text-sm text-gray-500 italic">Loading questions...</div>
-          ) : error ? (
-            <div className="text-sm text-red-600">Error: {error}</div>
+          ) : qaError ? (
+            <div className="text-sm text-red-600">Error: {qaError}</div>
           ) : (
             <div className="space-y-3">
               {Object.entries(submittedAnswers).map(([questionId, answer]) => (
@@ -350,20 +434,29 @@ export default function TicketMetadata({ ticket }) {
         </div>
       )}
 
-      {/* Debug Section - Only in development */}
-      {process.env.NODE_ENV === 'development' && (
+      {process.env.NODE_ENV === "development" && (
         <details className="p-4 border-b">
           <summary className="cursor-pointer text-sm text-gray-600 font-medium">
             Debug Info (Dev Only)
           </summary>
           <pre className="mt-2 text-xs bg-gray-100 p-3 rounded overflow-auto max-h-96">
-            {JSON.stringify({ 
-              submittedAnswers,
-              questions, 
-              questionsIsArray: Array.isArray(questions),
-              questionsType: typeof questions,
-              ticketKeys: Object.keys(ticket || {})
-            }, null, 2)}
+            {JSON.stringify(
+              { 
+                submittedAnswers,
+                questions, 
+                questionsIsArray: Array.isArray(questions),
+                questionsType: typeof questions,
+                ticketKeys: Object.keys(ticket || {}),
+                requesterId,
+                assigneeId,
+                requesterUser,
+                assigneeUser,
+                priorityRaw,
+                severityRaw,
+              },
+              null,
+              2
+            )}
           </pre>
         </details>
       )}

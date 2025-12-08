@@ -107,6 +107,7 @@ def list_accounts_apex(limit: int = Query(50, ge=1, le=500)):
         return SalesforceListResponse(total=len(items), items=items)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/accounts/{account_id}", response_model=SalesforceAccountWithContacts)
 def get_account_with_contacts(account_id: str):
     try:
@@ -208,6 +209,40 @@ def delete_contact(contact_id: str):
         SalesforceService.delete_contact(contact_id)
         # 204 No Content
         return
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+@router.get(
+    "/accounts/{account_id}/contacts",
+    response_model=SalesforceContactList,
+)
+def list_contacts_under_account(account_id: str):
+    """
+    Return only the contacts that belong to a given Salesforce Account.
+    Uses Apex REST: /services/apexrest/surveyarc/accounts/{account_id}
+    """
+    try:
+        data = SalesforceService.get_account_with_contacts(account_id)
+        if not data:
+            raise HTTPException(status_code=404, detail="Account not found")
+
+        contacts = data.get("contacts", []) or []
+
+        items: List[SalesforceContact] = []
+        for c in contacts:
+            items.append(
+                SalesforceContact(
+                    id=c.get("id"),
+                    firstName=c.get("firstName"),
+                    lastName=c.get("lastName"),
+                    email=c.get("email"),
+                    accountName=None,  # already filtered by account
+                    raw=c,
+                )
+            )
+
+        return SalesforceContactList(total=len(items), items=items)
     except HTTPException:
         raise
     except Exception as e:

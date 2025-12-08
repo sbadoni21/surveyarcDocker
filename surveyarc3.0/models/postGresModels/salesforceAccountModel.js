@@ -33,6 +33,7 @@ const SalesforceAccountModel = {
     });
     return json(res);
   },
+  
 };
 
 export default SalesforceAccountModel;

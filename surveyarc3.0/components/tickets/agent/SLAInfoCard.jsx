@@ -3,7 +3,13 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Shield, Target, AlertTriangle, DollarSign, Info, Clock, Pause, CheckCircle, History
+  Shield,
+  AlertTriangle,
+  Info,
+  Clock,
+  Pause,
+  CheckCircle,
+  History,
 } from "lucide-react";
 import SlaMakingModel from "@/models/postGresModels/slaMakingModel";
 import { usePathname } from "next/navigation";
@@ -38,6 +44,63 @@ function Chip({ children, className = "" }) {
   );
 }
 
+// ---------------------- Normalize SLA Status Shape ----------------------
+
+/**
+ * Backend returns camelCase:
+ * - firstResponseStartedAt, firstResponseDueAt, breachedFirstResponse, ...
+ * This function normalizes into snake_case the card expects:
+ * - first_response_started_at, first_response_due_at, breached_first_response, ...
+ */
+const normalizeStatus = (raw) => {
+  if (!raw || typeof raw !== "object") return raw;
+
+  // If already normalized, return as-is
+  if (
+    "first_response_started_at" in raw ||
+    "resolution_started_at" in raw ||
+    "first_response_due_at" in raw ||
+    "resolution_due_at" in raw
+  ) {
+    return raw;
+  }
+
+  return {
+    // IDs
+    sla_id: raw.slaId,
+    ticket_id: raw.ticketId,
+
+    // first response
+    first_response_started_at: raw.firstResponseStartedAt,
+    first_response_due_at: raw.firstResponseDueAt,
+    first_response_completed_at: raw.firstResponseCompletedAt,
+    first_response_paused: raw.firstResponsePaused,
+    first_response_paused_at: raw.firstResponsePausedAt,
+    breached_first_response: raw.breachedFirstResponse,
+    total_paused_first_response_minutes: raw.totalPausedFirstResponseMinutes,
+    last_resume_first_response: raw.lastResumeFirstResponse,
+
+    // resolution
+    resolution_started_at: raw.resolutionStartedAt,
+    resolution_due_at: raw.resolutionDueAt,
+    resolution_completed_at: raw.resolutionCompletedAt,
+    resolution_paused: raw.resolutionPaused,
+    resolution_paused_at: raw.resolutionPausedAt,
+    breached_resolution: raw.breachedResolution,
+    total_paused_resolution_minutes: raw.totalPausedResolutionMinutes,
+    last_resume_resolution: raw.lastResumeResolution,
+
+    // pause / global
+    paused: raw.paused,
+    pause_reason: raw.pauseReason,
+
+    // other
+    updated_at: raw.updatedAt,
+    calendar_id: raw.calendarId,
+    meta: raw.meta,
+  };
+};
+
 // ------------------------------ Progress Bar ------------------------------
 
 function SLAProgressBar({ percent = 0, breached = false, label }) {
@@ -50,7 +113,10 @@ function SLAProgressBar({ percent = 0, breached = false, label }) {
       </div>
       <div className="h-2.5 w-full rounded bg-gray-100 overflow-hidden">
         <div
-          className={`h-2.5 ${barColour(pct, breached)} transition-all duration-500`}
+          className={`h-2.5 ${barColour(
+            pct,
+            breached
+          )} transition-all duration-500`}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -64,65 +130,87 @@ function SLAProgressBar({ percent = 0, breached = false, label }) {
  * SLAInfoCard
  * Props:
  *  - slaId: string
- *  - ticket: object (may include ticket.sla_status)
+ *  - ticket: object (may include ticket.sla_status or ticket.slaStatus)
  *  - dimension: "resolution" | "first_response"
  *  - className?: string
+ *
+ * This version:
+ *  - NO objectives
+ *  - NO penalties
+ *  - Uses only first/response + resolution due times and breach flags
  */
-export default function SLAInfoCard({ slaId, ticket, dimension = "resolution", className = "" }) {
+export default function SLAInfoCard({
+  slaId,
+  ticket,
+  dimension = "resolution",
+  className = "",
+}) {
   const [loading, setLoading] = useState(true);
   const [sla, setSla] = useState(null);
-  const [objectives, setObjectives] = useState([]);
-  const [creditRules, setCreditRules] = useState([]);
-  const [status, setStatus] = useState(ticket?.sla_status || ticket?.slaStatus || null);
+  const [status, setStatus] = useState(
+    ticket?.sla_status || ticket?.slaStatus || null
+  );
   const path = usePathname();
-  const orgId = path.split("/")[3]; // /[locale]/postgres-org/[organizations]/...
+  const orgId = path.split("/")[3]; // /[locale]/postgres-org/[orgId]/...
 
   // Pause history state
   const [history, setHistory] = useState([]);
   const [historyScope, setHistoryScope] = useState(dimension); // "resolution" | "first_response" | "all"
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  // ---------- Load SLA & parts ----------
+  // ---------- Load SLA ----------
   useEffect(() => {
     let mounted = true;
     (async () => {
-      if (!slaId) { setLoading(false); return; }
+      if (!slaId) {
+        setLoading(false);
+        return;
+      }
       try {
         setLoading(true);
-        const [s, objs, rules] = await Promise.all([
-          SLAModel.get(orgId,slaId),
-          SlaMakingModel.listObjectives(orgId,slaId),
-          SlaMakingModel.listCreditRules(orgId,slaId),
-        ]);
+        const s = await SLAModel.get(orgId, slaId);
         if (!mounted) return;
         setSla(s || null);
-        setObjectives(Array.isArray(objs) ? objs : []);
-        setCreditRules(Array.isArray(rules) ? rules : []);
       } catch (e) {
         console.error("[SLAInfoCard] load SLA failed:", e);
       } finally {
         mounted && setLoading(false);
       }
     })();
-    return () => { mounted = false; };
-  }, [slaId]);
+    return () => {
+      mounted = false;
+    };
+  }, [slaId, orgId]);
 
-  // ---------- Load status if not present on ticket ----------
+  // ---------- Initialize status from ticket (if present) ----------
+  useEffect(() => {
+    const provided = ticket?.sla_status || ticket?.slaStatus;
+    if (!provided) return;
+
+    const normalized = normalizeStatus(provided);
+    setStatus(normalized);
+  }, [ticket?.sla_status, ticket?.slaStatus]);
+
+  // ---------- Load status from backend if not on ticket ----------
   useEffect(() => {
     let mounted = true;
     const provided = ticket?.sla_status || ticket?.slaStatus;
-    if (provided) { setStatus(provided); return; }
     const tid = ticket?.ticket_id || ticket?.ticketId;
-    if (!tid) return;
+    if (!tid || provided || !SlaMakingModel.getTicketStatus) return;
+
     (async () => {
       try {
-        const row = await SlaMakingModel.getTicketStatus?.(tid);
-        if (mounted) setStatus(row || null);
+        const row = await SlaMakingModel.getTicketStatus(tid);
+        if (!mounted) return;
+        setStatus(row ? normalizeStatus(row) : null);
       } catch (e) {
         console.warn("[SLAInfoCard] status fetch failed", e);
       }
     })();
-    return () => { mounted = false; };
+
+    return () => {
+      mounted = false;
+    };
   }, [ticket?.ticket_id, ticket?.ticketId, ticket?.sla_status, ticket?.slaStatus]);
 
   // ---------- Load pause history ----------
@@ -132,7 +220,9 @@ export default function SLAInfoCard({ slaId, ticket, dimension = "resolution", c
     setHistoryLoading(true);
     try {
       const dimParam = scope === "all" ? undefined : scope;
-      const rows = await SlaMakingModel.getTicketPauseHistory(tid, { dimension: dimParam });
+      const rows = await SlaMakingModel.getTicketPauseHistory(tid, {
+        dimension: dimParam,
+      });
       setHistory(Array.isArray(rows) ? rows : []);
     } catch (e) {
       console.warn("[SLAInfoCard] pause history fetch failed", e);
@@ -152,13 +242,16 @@ export default function SLAInfoCard({ slaId, ticket, dimension = "resolution", c
   useEffect(() => {
     const tid = ticket?.ticket_id || ticket?.ticketId;
     if (!tid || !SlaMakingModel.getTicketStatus) return;
+    if (!status) return;
 
     const dim = dimension === "first_response" ? "first_response" : "resolution";
+
     const completed = Boolean(status?.[`${dim}_completed_at`]);
     const paused = Boolean(status?.[`${dim}_paused`]);
-    const breached = dimension === "first_response"
-      ? Boolean(status?.breached_first_response)
-      : Boolean(status?.breached_resolution);
+    const breached =
+      dim === "first_response"
+        ? Boolean(status?.breached_first_response)
+        : Boolean(status?.breached_resolution);
 
     const shouldPoll = !completed && !paused && !breached;
 
@@ -166,19 +259,35 @@ export default function SLAInfoCard({ slaId, ticket, dimension = "resolution", c
       pollRef.current = setInterval(async () => {
         try {
           const row = await SlaMakingModel.getTicketStatus(tid);
-          if (row) setStatus(row);
-        } catch {}
+          if (row) setStatus(normalizeStatus(row));
+        } catch {
+          // ignore
+        }
       }, 60_000);
     }
+
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
-  }, [ticket?.ticket_id, ticket?.ticketId, dimension, status?.breached_first_response, status?.breached_resolution, status?.first_response_completed_at, status?.resolution_completed_at, status?.first_response_paused, status?.resolution_paused]);
+  }, [
+    ticket?.ticket_id,
+    ticket?.ticketId,
+    dimension,
+    status?.breached_first_response,
+    status?.breached_resolution,
+    status?.first_response_completed_at,
+    status?.resolution_completed_at,
+    status?.first_response_paused,
+    status?.resolution_paused,
+    status,
+  ]);
 
-  // ---------- Matching logic ----------
+  // ---------- Simple SLA match check based on rules (priority, severity, etc.) ----------
   const ticketCtx = useMemo(() => {
-    const tagIds = (ticket?.tags || []).map(t => t.tag_id || t.tagId).filter(Boolean);
+    const tagIds = (ticket?.tags || [])
+      .map((t) => t.tag_id || t.tagId)
+      .filter(Boolean);
     return {
       priority: ticket?.priority,
       severity: ticket?.severity,
@@ -191,61 +300,59 @@ export default function SLAInfoCard({ slaId, ticket, dimension = "resolution", c
 
   const matchesRuleBlock = (rulesObj) => {
     if (!rulesObj || typeof rulesObj !== "object") return true;
-    const oneOf = (a, v) => Array.isArray(a) ? a.includes(v) : true;
+    const oneOf = (a, v) => (Array.isArray(a) ? a.includes(v) : true);
     const anyOverlap = (need, have) =>
-      Array.isArray(need) && Array.isArray(have) ? need.some(x => have.includes(x)) : true;
+      Array.isArray(need) && Array.isArray(have)
+        ? need.some((x) => have.includes(x))
+        : true;
 
-    if (rulesObj.priority_in && !oneOf(rulesObj.priority_in, ticketCtx.priority)) return false;
-    if (rulesObj.severity_in && !oneOf(rulesObj.severity_in, ticketCtx.severity)) return false;
-    if (rulesObj.group_id_in && !oneOf(rulesObj.group_id_in, ticketCtx.group_id)) return false;
-    if (rulesObj.team_id_in && !oneOf(rulesObj.team_id_in, ticketCtx.team_id)) return false;
-    if (rulesObj.product_id_in && !oneOf(rulesObj.product_id_in, ticketCtx.product_id)) return false;
-    if (rulesObj.tag_any && !anyOverlap(rulesObj.tag_any, ticketCtx.tags)) return false;
+    if (rulesObj.priority_in && !oneOf(rulesObj.priority_in, ticketCtx.priority))
+      return false;
+    if (rulesObj.severity_in && !oneOf(rulesObj.severity_in, ticketCtx.severity))
+      return false;
+    if (rulesObj.group_id_in && !oneOf(rulesObj.group_id_in, ticketCtx.group_id))
+      return false;
+    if (rulesObj.team_id_in && !oneOf(rulesObj.team_id_in, ticketCtx.team_id))
+      return false;
+    if (
+      rulesObj.product_id_in &&
+      !oneOf(rulesObj.product_id_in, ticketCtx.product_id)
+    )
+      return false;
+    if (rulesObj.tag_any && !anyOverlap(rulesObj.tag_any, ticketCtx.tags))
+      return false;
 
     return true;
   };
 
-  const slaApplies = useMemo(() => matchesRuleBlock(sla?.rules), [sla, ticketCtx]);
+  const slaApplies = useMemo(
+    () => (sla ? matchesRuleBlock(sla.rules) : true),
+    [sla, ticketCtx]
+  );
 
-  const objective = useMemo(() => {
-    if (!slaApplies) return null;
-    const candidates = (objectives || []).filter(o => o.objective === (dimension || "resolution") && o.active !== false);
-    const matched = candidates.find(o => matchesRuleBlock(o.match));
-    return matched || candidates[0] || null;
-  }, [objectives, dimension, slaApplies, ticketCtx]);
-
-  const rulesForDimension = useMemo(() => {
-    if (!slaApplies) return [];
-    return (creditRules || []).filter(r => r.objective === (dimension || "resolution") && r.active !== false);
-  }, [creditRules, dimension, slaApplies]);
-
-  // ---------- Derive display values ----------
+  // ---------- Derive display values from status ----------
   const dim = dimension === "first_response" ? "first_response" : "resolution";
 
-  const startedAt   = status?.[`${dim}_started_at`]   || null;
-  const dueAt       = status?.[`${dim}_due_at`]       || null; // authoritative end from SLA
-  const completedAt = status?.[`${dim}_completed_at`] || null;
+  const startedAt = status?.[`${dim}_started_at`] ?? null;
+  const dueAt = status?.[`${dim}_due_at`] ?? null; // main due time
+  const completedAt = status?.[`${dim}_completed_at`] ?? null;
 
-  const pausedFlag  = status?.[`${dim}_paused`] === true;
-  const pausedAt    = status?.[`${dim}_paused_at`] || null;
-  const lastResume  = status?.[`last_resume_${dim}`] || null;
+  const pausedFlag = status?.[`${dim}_paused`] === true;
+  const pausedAt = status?.[`${dim}_paused_at`] ?? null;
+  const lastResume = status?.[`last_resume_${dim}`] ?? null;
 
-  const breached    = dim === "first_response"
-    ? !!status?.breached_first_response
-    : !!status?.breached_resolution;
+  const breached =
+    dim === "first_response"
+      ? !!status?.breached_first_response
+      : !!status?.breached_resolution;
 
-  const pausedBanner = status?.paused === true; // legacy/global
+  const pausedBanner = status?.paused === true; // global paused flag
+  const graceMinutes = sla?.grace_minutes ?? 0;
 
-  const targetMinutes   = objective?.target_minutes ?? null;  // informational
-  const graceMinutes    = sla?.grace_minutes ?? 0;
-
-  // Progress uses due_at + grace as the end of the window
+  // Progress uses startedAt → (dueAt + grace) as window
   const baseDue = (() => {
     if (dueAt) return new Date(dueAt);
-    if (!startedAt || targetMinutes == null) return null;
-    const d = new Date(startedAt);
-    d.setMinutes(d.getMinutes() + targetMinutes);
-    return d;
+    return null;
   })();
 
   const targetEnd = (() => {
@@ -262,36 +369,36 @@ export default function SLAInfoCard({ slaId, ticket, dimension = "resolution", c
   })();
 
   const started = startedAt ? new Date(startedAt) : null;
-  const totalWindowMs = (started && targetEnd) ? Math.max(1, targetEnd - started) : null;
-  const rawElapsedMs  = (started) ? (referenceTime - started) : null;
-  const elapsedMs     = (totalWindowMs != null && rawElapsedMs != null)
-    ? Math.max(0, Math.min(totalWindowMs, rawElapsedMs))
-    : null;
+  const totalWindowMs =
+    started && targetEnd ? Math.max(1, targetEnd - started) : null;
+  const rawElapsedMs = started ? referenceTime - started : null;
+  const elapsedMs =
+    totalWindowMs != null && rawElapsedMs != null
+      ? Math.max(0, Math.min(totalWindowMs, rawElapsedMs))
+      : null;
 
-  const totalWindowMinutes = (totalWindowMs != null) ? Math.round(totalWindowMs / 60000) : null;
-  const effectiveElapsed   = (elapsedMs != null) ? Math.floor(elapsedMs / 60000) : null;
+  const totalWindowMinutes =
+    totalWindowMs != null ? Math.round(totalWindowMs / 60000) : null;
+  const effectiveElapsed =
+    elapsedMs != null ? Math.floor(elapsedMs / 60000) : null;
 
-  const remainingMinutes = (started && targetEnd && referenceTime)
-    ? Math.max(0, Math.ceil((targetEnd - referenceTime) / 60000))
-    : null;
+  const remainingMinutes =
+    started && targetEnd && referenceTime
+      ? Math.max(0, Math.ceil((targetEnd - referenceTime) / 60000))
+      : null;
 
-  const progressPct = (totalWindowMs != null && elapsedMs != null)
-    ? clampPct((elapsedMs / totalWindowMs) * 100)
-    : null;
+  const progressPct =
+    totalWindowMs != null && elapsedMs != null
+      ? clampPct((elapsedMs / totalWindowMs) * 100)
+      : null;
 
   const eta = (() => {
-    if (dueAt) return null;
     if (!targetEnd) return null;
-    return targetEnd;
+    // if dueAt is already an exact field from backend, we treat that as authoritative
+    if (!dueAt) return targetEnd;
+    // dueAt exists, so UI just shows dueAt; we use targetEnd only for window
+    return null;
   })();
-
-  const penaltyText = (rule) => {
-    if (!rule) return "";
-    if (rule.credit_unit === "percent_fee") return `${rule.credit_value}% of fee`;
-    if (rule.credit_unit === "fixed_usd") return `$${rule.credit_value}`;
-    if (rule.credit_unit === "service_days") return `${rule.credit_value} service days`;
-    return `${rule.credit_value}`;
-  };
 
   // ------------------------------- Render ---------------------------------
 
@@ -334,69 +441,18 @@ export default function SLAInfoCard({ slaId, ticket, dimension = "resolution", c
       </div>
 
       {sla.description && (
-        <div className="text-xs text-gray-600 leading-relaxed">{sla.description}</div>
+        <div className="text-xs text-gray-600 leading-relaxed">
+          {sla.description}
+        </div>
       )}
 
       {!slaApplies && (
         <div className="p-2 text-xs rounded bg-yellow-50 border border-yellow-200 text-yellow-700 flex items-center gap-2">
           <Info className="w-4 h-4" />
-          This SLA policy does not match this ticket’s attributes (rules filter it out).
+          This SLA policy does not match this ticket’s attributes (rules filter it
+          out).
         </div>
       )}
-
-      {/* Objective (informational) */}
-      <div className="border rounded-md p-3">
-        <div className="flex items-center gap-2 mb-1">
-          <Target className="w-4 h-4 text-gray-700" />
-          <div className="text-sm font-medium text-gray-800">
-            {dimension === "first_response" ? "First Response" : "Resolution"} Objective
-          </div>
-        </div>
-
-        {!objective ? (
-          <div className="text-xs text-gray-500">
-            No active objective found for this dimension{slaApplies ? "" : " (SLA not applicable)"}.
-          </div>
-        ) : (
-          <>
-            <div className="text-xs text-gray-700 flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span><span className="font-medium">Target (mins):</span> {fmtMinutes(targetMinutes)}</span>
-              {graceMinutes ? (
-                <span className="text-gray-600">(+ grace {fmtMinutes(graceMinutes)})</span>
-              ) : null}
-              {totalWindowMinutes != null && (
-                <span>
-                  <span className="font-medium">Window (start → due+grace):</span>{" "}
-                  {fmtMinutes(totalWindowMinutes)}
-                </span>
-              )}
-            </div>
-
-            {objective.breach_grades && Object.keys(objective.breach_grades).length > 0 && (
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                {objective.breach_grades.minor != null && (
-                  <div className="text-[11px] text-gray-700 flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
-                    Minor: {fmtMinutes(objective.breach_grades.minor)} overdue
-                  </div>
-                )}
-                {objective.breach_grades.major != null && (
-                  <div className="text-[11px] text-gray-700 flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-orange-500"></span>
-                    Major: {fmtMinutes(objective.breach_grades.major)} overdue
-                  </div>
-                )}
-                {objective.breach_grades.critical != null && (
-                  <div className="text-[11px] text-gray-700 flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-red-600"></span>
-                    Critical: {fmtMinutes(objective.breach_grades.critical)} overdue
-                  </div>
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </div>
 
       {/* Live-timer */}
       {status ? (
@@ -436,11 +492,12 @@ export default function SLAInfoCard({ slaId, ticket, dimension = "resolution", c
               </Chip>
             )}
 
-            {typeof effectiveElapsed === "number" && totalWindowMinutes != null && (
-              <Chip className="bg-gray-100 text-gray-700">
-                {effectiveElapsed}m elapsed / {totalWindowMinutes}m window
-              </Chip>
-            )}
+            {typeof effectiveElapsed === "number" &&
+              totalWindowMinutes != null && (
+                <Chip className="bg-gray-100 text-gray-700">
+                  {effectiveElapsed}m elapsed / {totalWindowMinutes}m window
+                </Chip>
+              )}
           </div>
 
           {/* Progress bar */}
@@ -454,18 +511,36 @@ export default function SLAInfoCard({ slaId, ticket, dimension = "resolution", c
 
           {/* Timestamps & counters */}
           <div className="mt-3 text-xs text-gray-800 grid grid-cols-2 gap-2">
-            <div><span className="font-medium">Started:</span> {fmtDT(startedAt)}</div>
+            <div>
+              <span className="font-medium">Started:</span> {fmtDT(startedAt)}
+            </div>
             <div>
               <span className="font-medium">Due:</span>{" "}
-              {dueAt ? fmtDT(dueAt) : (eta ? `${eta.toLocaleString()} (est.)` : "—")}
+              {dueAt
+                ? fmtDT(dueAt)
+                : eta
+                ? `${eta.toLocaleString()} (est.)`
+                : "—"}
             </div>
-            <div><span className="font-medium">Completed:</span> {fmtDT(completedAt)}</div>
-            <div><span className="font-medium">Remaining:</span> {fmtMinutes(remainingMinutes)}</div>
+            <div>
+              <span className="font-medium">Completed:</span>{" "}
+              {fmtDT(completedAt)}
+            </div>
+            <div>
+              <span className="font-medium">Remaining:</span>{" "}
+              {fmtMinutes(remainingMinutes)}
+            </div>
 
             {pausedFlag && (
               <>
-                <div><span className="font-medium">Paused At:</span> {fmtDT(pausedAt)}</div>
-                <div><span className="font-medium">Last Resume:</span> {fmtDT(lastResume)}</div>
+                <div>
+                  <span className="font-medium">Paused At:</span>{" "}
+                  {fmtDT(pausedAt)}
+                </div>
+                <div>
+                  <span className="font-medium">Last Resume:</span>{" "}
+                  {fmtDT(lastResume)}
+                </div>
               </>
             )}
           </div>
@@ -482,7 +557,9 @@ export default function SLAInfoCard({ slaId, ticket, dimension = "resolution", c
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-2">
             <History className="w-4 h-4 text-gray-700" />
-            <div className="text-sm font-medium text-gray-800">SLA Pause History</div>
+            <div className="text-sm font-medium text-gray-800">
+              SLA Pause History
+            </div>
           </div>
 
           {/* Scope filter */}
@@ -493,8 +570,14 @@ export default function SLAInfoCard({ slaId, ticket, dimension = "resolution", c
               value={historyScope}
               onChange={(e) => setHistoryScope(e.target.value)}
             >
-              <option value={dimension}>{dimension === "first_response" ? "First Response" : "Resolution"}</option>
-              <option value={dimension === "first_response" ? "resolution" : "first_response"}>
+              <option value={dimension}>
+                {dimension === "first_response" ? "First Response" : "Resolution"}
+              </option>
+              <option
+                value={
+                  dimension === "first_response" ? "resolution" : "first_response"
+                }
+              >
                 {dimension === "first_response" ? "Resolution" : "First Response"}
               </option>
               <option value="all">All</option>
@@ -509,12 +592,25 @@ export default function SLAInfoCard({ slaId, ticket, dimension = "resolution", c
         ) : (
           <div className="divide-y">
             {history.map((h) => (
-              <div key={h.pause_id} className="py-2 text-xs text-gray-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+              <div
+                key={h.pause_id}
+                className="py-2 text-xs text-gray-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
+              >
                 <div className="flex items-center gap-2">
-                  <Chip className={h.action === "pause" ? "bg-yellow-50 text-yellow-800 border-yellow-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}>
+                  <Chip
+                    className={
+                      h.action === "pause"
+                        ? "bg-yellow-50 text-yellow-800 border-yellow-200"
+                        : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    }
+                  >
                     {h.action === "pause" ? "Pause" : "Resume"}
                   </Chip>
-                  <Chip className="bg-gray-50 text-gray-700">{h.dimension === "first_response" ? "First Response" : "Resolution"}</Chip>
+                  <Chip className="bg-gray-50 text-gray-700">
+                    {h.dimension === "first_response"
+                      ? "First Response"
+                      : "Resolution"}
+                  </Chip>
                   <span className="text-gray-600">{fmtDT(h.action_at)}</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -539,7 +635,9 @@ export default function SLAInfoCard({ slaId, ticket, dimension = "resolution", c
                     </Chip>
                   )}
                   {h.actor_id && (
-                    <Chip className="bg-gray-50 text-gray-600">by {h.actor_id}</Chip>
+                    <Chip className="bg-gray-50 text-gray-600">
+                      by {h.actor_id}
+                    </Chip>
                   )}
                 </div>
               </div>
@@ -547,42 +645,6 @@ export default function SLAInfoCard({ slaId, ticket, dimension = "resolution", c
           </div>
         )}
       </div>
-
-      {/* Penalties */}
-      {rulesForDimension.length > 0 ? (
-        <div className="border rounded-md p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <DollarSign className="w-4 h-4 text-gray-700" />
-            <div className="text-sm font-medium text-gray-800">Penalty Schedule</div>
-          </div>
-          <div className="space-y-1">
-            {rulesForDimension.map((r) => (
-              <div key={r.rule_id} className="text-[11px] text-gray-700 flex items-center gap-2">
-                <span
-                  className={`px-1.5 py-0.5 rounded text-white ${
-                    r.grade === "critical" ? "bg-red-600"
-                    : r.grade === "major" ? "bg-orange-500"
-                    : "bg-yellow-500"
-                  }`}
-                >
-                  {r.grade}
-                </span>
-                <span>{penaltyText(r)}</span>
-                {r.cap_per_period && r.period_days && (
-                  <span className="text-gray-500">
-                    (cap {r.cap_per_period} per {r.period_days} days)
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="p-2 text-xs rounded bg-gray-50 border text-gray-600 flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 text-gray-500" />
-          No penalty rules configured for this dimension.
-        </div>
-      )}
     </div>
   );
 }

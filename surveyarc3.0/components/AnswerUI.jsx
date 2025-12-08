@@ -1983,7 +1983,7 @@ case QUESTION_TYPES.FORCED_EXPOSURE: {
         </div>
       );
     }
-    case QUESTION_TYPES.SMILEY: {
+    case QUESTION_TYPES.SMILEY_RATING: {
       const faces =
         Number(question.config?.faces ?? config.faces) || 5;
 
@@ -4235,35 +4235,107 @@ case QUESTION_TYPES.SLIDER: {
       )}
     </div>
   );
-}case QUESTION_TYPES.BAYES_ACQ: {
+}
+
+case QUESTION_TYPES.BAYES_ACQ: {
   const opts = config.items ?? [];
   const setSize = config.choiceSetSize ?? 3;
   const totalRounds = config.rounds ?? 5;
 
-  const [round, setRound] = useState(1);
-  const [selectedSet, setSelectedSet] = useState([]);
+  // Parse existing responses to determine current round
+  const responses = Array.isArray(value) ? value : [];
+  const currentRound = responses.length + 1;
+  const isComplete = currentRound > totalRounds;
 
-  // simple random selection for now (backend can later choose smarter sets)
-  const getAdaptiveSet = () => {
-    if (!opts.length) return [];
-    const shuffled = [...opts].sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, Math.min(setSize, shuffled.length));
+  // Track which items have been shown and their frequency
+  const getItemStats = () => {
+    const stats = {};
+    opts.forEach(item => {
+      stats[item.id] = {
+        shown: 0,
+        selected: 0,
+        item: item
+      };
+    });
+
+    responses.forEach(r => {
+      // Count selections
+      if (stats[r.selected]) {
+        stats[r.selected].selected++;
+      }
+      // Count all shown items in this round's set (if stored)
+      if (r.shownItems && Array.isArray(r.shownItems)) {
+        r.shownItems.forEach(itemId => {
+          if (stats[itemId]) {
+            stats[itemId].shown++;
+          }
+        });
+      }
+    });
+
+    return stats;
   };
 
+  // Intelligent set selection based on previous responses
+  const getAdaptiveSet = () => {
+    if (!opts.length) return [];
+    if (opts.length <= setSize) return opts;
+
+    const stats = getItemStats();
+    
+    // For first round, random selection
+    if (responses.length === 0) {
+      const shuffled = [...opts].sort(() => 0.5 - Math.random());
+      return shuffled.slice(0, setSize);
+    }
+
+    // For subsequent rounds, balance exploration and exploitation
+    // Prioritize items that:
+    // 1. Haven't been shown much (exploration)
+    // 2. Were selected before (exploitation)
+    // 3. Are similar to previously selected items (if we had similarity data)
+    
+    const scored = opts.map(item => {
+      const itemStats = stats[item.id];
+      const explorationScore = 1 / (itemStats.shown + 1); // Favor less-shown items
+      const exploitationScore = itemStats.selected * 2; // Boost previously selected
+      const randomness = Math.random() * 0.3; // Add some randomness
+      
+      return {
+        item,
+        score: explorationScore + exploitationScore + randomness
+      };
+    });
+
+    // Sort by score and take top items
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, setSize).map(s => s.item);
+  };
+
+  // Memoize the current set to prevent recalculation
+  const [currentSet, setCurrentSet] = useState(() => getAdaptiveSet());
+
+  // Only regenerate set when we actually need a new round
   useEffect(() => {
-    setSelectedSet(getAdaptiveSet());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [round, opts.length, setSize]);
+    if (!isComplete && responses.length === currentRound - 1) {
+      setCurrentSet(getAdaptiveSet());
+    }
+  }, [responses.length]);
 
   const handleSelect = (itemId) => {
-    const prev = Array.isArray(value) ? value : [];
-    const newValue = [...prev, { round, selected: itemId }];
+    if (isComplete) return;
 
+    const newResponse = {
+      round: currentRound,
+      selected: itemId,
+      shownItems: currentSet.map(item => item.id), // Store what was shown
+      timestamp: Date.now()
+    };
+
+    const newValue = [...responses, newResponse];
     onChange(newValue);
-
-    if (round < totalRounds) {
-      setRound(round + 1);
-    }
+    
+    // Don't manually increment round - it's calculated from responses.length
   };
 
   if (!opts.length) {
@@ -4275,11 +4347,28 @@ case QUESTION_TYPES.SLIDER: {
     );
   }
 
-  const answeredCount = Array.isArray(value) ? value.length : 0;
-  const progress = Math.min(
-    100,
-    Math.round((answeredCount / totalRounds) * 100)
-  );
+  const progress = Math.min(100, Math.round((responses.length / totalRounds) * 100));
+
+  // Show completion message
+  if (isComplete) {
+    return (
+      <div className="space-y-4">
+        <div className="p-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+          <div className="text-sm font-medium text-green-800 dark:text-green-300">
+            ✓ Complete
+          </div>
+          <div className="text-xs text-green-600 dark:text-green-400 mt-1">
+            Thank you for completing all {totalRounds} rounds!
+          </div>
+        </div>
+        
+        {/* Optional: Show summary */}
+        <div className="text-xs text-gray-500 dark:text-gray-400">
+          Your selections: {responses.map(r => r.selected).join(", ")}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -4287,28 +4376,33 @@ case QUESTION_TYPES.SLIDER: {
       <div className="space-y-1">
         <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
           <span>
-            Round {Math.min(round, totalRounds)} of {totalRounds}
+            Round {currentRound} of {totalRounds}
           </span>
           <span>{progress}% complete</span>
         </div>
         <div className="w-full h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
           <div
-            className="h-full bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] transition-all"
+            className="h-full bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] transition-all duration-300"
             style={{ width: `${progress}%` }}
           />
         </div>
       </div>
 
+      {/* Instruction text */}
+      <p className="text-sm text-gray-600 dark:text-gray-300">
+        Select your preferred option:
+      </p>
+
       {/* Option cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {selectedSet.map((item) => (
+        {currentSet.map((item) => (
           <button
             key={item.id}
             type="button"
             onClick={() => handleSelect(item.id)}
-            className="p-4 rounded-xl border border-[color:var(--secondary-light)] dark:border-[color:var(--secondary-dark)] bg-[color:var(--bg-light)] dark:bg-[color:var(--bg-dark)] text-left hover:shadow-md hover:bg-[color:var(--primary-light)]/10 dark:hover:bg-[color:var(--primary-dark)]/20 transition-all"
+            className="p-4 rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-left hover:border-[color:var(--primary-light)] dark:hover:border-[color:var(--primary-dark)] hover:shadow-lg hover:scale-[1.02] transition-all duration-200 active:scale-[0.98]"
           >
-            <div className="font-medium text-sm text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
+            <div className="font-medium text-sm text-gray-900 dark:text-gray-100">
               {item.label}
             </div>
             {item.description && (
@@ -4320,18 +4414,25 @@ case QUESTION_TYPES.SLIDER: {
         ))}
       </div>
 
-      {/* Debug / explanation for analysts (optional) */}
-      {Array.isArray(value) && value.length > 0 && (
-        <div className="mt-2 text-[10px] text-gray-400 dark:text-gray-500">
-          Responses so far:{" "}
-          {value.map((r) => `${r.round}:${r.selected}`).join(", ")}
-        </div>
+      {/* Debug info (can be removed in production) */}
+      {responses.length > 0 && (
+        <details className="text-[10px] text-gray-400 dark:text-gray-500">
+          <summary className="cursor-pointer hover:text-gray-600 dark:hover:text-gray-300">
+            Debug: Response history
+          </summary>
+          <div className="mt-2 space-y-1 font-mono">
+            {responses.map((r, i) => (
+              <div key={i}>
+                Round {r.round}: selected {r.selected} from [{r.shownItems?.join(", ")}]
+              </div>
+            ))}
+          </div>
+        </details>
       )}
     </div>
   );
 }
-
-    case QUESTION_TYPES.TURF_PRO: {
+    case QUESTION_TYPES.TURF: {
       const opts = config.options ?? [];
       const scale = config.responseScale ?? {
         "1": { label: "Not Interested", reachValue: 0 },
@@ -4446,7 +4547,8 @@ case QUESTION_TYPES.SLIDER: {
           </a>
         </div>
       );
-case QUESTION_TYPES.WEIGHTED_MULTI: {
+
+      case QUESTION_TYPES.WEIGHTED_MULTI: {
   // Normalize options to object structure
   const rawOpts = config.options || [];
   const options = rawOpts.map((o, idx) =>

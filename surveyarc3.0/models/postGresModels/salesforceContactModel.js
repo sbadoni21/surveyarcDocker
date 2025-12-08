@@ -1,5 +1,6 @@
 // models/postGresModels/salesforceContactModel.js
 const BASE = "/api/post-gres-apis/salesforce/contacts";
+const BASE2 = "/api/post-gres-apis/salesforce/";
 
 const json = async (res) => {
   if (!res.ok) {
@@ -80,6 +81,37 @@ const SalesforceContactModel = {
     const c = await json(res);
     return toCamel(c);
   },
+async contactsByAccount(accountId) {
+  console.log("[SalesforceContactModel] contactsByAccount -> accountId:", accountId);
+
+  // NOTE: BASE2 already ends with /salesforce/
+  const res = await fetch(`${BASE2}accounts/${accountId}/contacts`, {
+    cache: "no-store",
+  });
+
+  const data = await json(res);
+  console.log("[SalesforceContactModel] RAW data from Next API:", data);
+
+  // Support all possible shapes:
+  // 1) { contacts: [...] }
+  // 2) { items: [...] }
+  // 3) [ ... ]
+  let items = [];
+
+  if (Array.isArray(data?.contacts)) {
+    items = data.contacts;
+  } else if (Array.isArray(data?.items)) {
+    items = data.items;
+  } else if (Array.isArray(data)) {
+    items = data;
+  }
+
+  console.log("[SalesforceContactModel] Normalized items:", items);
+
+  return items.map(toCamel);
+},
+
+
 
   /**
    * Delete a contact in Salesforce via backend

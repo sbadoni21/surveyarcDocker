@@ -21,6 +21,8 @@ import { useSurvey } from "@/providers/surveyPProvider";
 import { usePathname } from "next/navigation";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import { useQuestion } from "@/providers/questionPProvider";
+import { useSalesforceContacts } from "@/providers/postGresPorviders/SalesforceContactProvider";
+import { useSalesforceAccounts } from "@/providers/postGresPorviders/SalesforceAccountProvider";
 
 const CampaignPage = () => {
   const [activeTab, setActiveTab] = useState("overview");
@@ -59,6 +61,7 @@ const CampaignPage = () => {
   
   const { organisation } = useOrganisation();
   const [surveyQuestions, setSurveyQuestions] = useState([]);
+const { accounts, list: listAccounts } = useSalesforceAccounts();
 
   const { 
     surveys, 
@@ -226,11 +229,11 @@ const handleLoadSurveyQuestions = useCallback(
     <div className="space-y-6">
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-blue-500">
+        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-blue-500 dark:bg-gray-900">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600 font-medium">Total Campaigns</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">{campaigns.length}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-300 font-medium">Total Campaigns</p>
+              <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{campaigns.length}</p>
             </div>
             <div className="text-4xl">📋</div>
           </div>
@@ -566,22 +569,23 @@ const handleLoadSurveyQuestions = useCallback(
           )}
         </div>
       </div>
-      <CampaignCreateModal
-        isOpen={showCreateModal}
-        userId={uid}
-        orgId={orgId}
-        onClose={() => setShowCreateModal(false)}
-        onCreate={create}
-        lists={lists}
-        contacts={contacts}
-          surveyQuestions={surveyQuestions}                   // 👈 NEW
-  onLoadSurveyQuestions={handleLoadSurveyQuestions}   // 👈 NEW
-
-        surveys={surveys}
-        onLoadLists={handleLoadLists}
-        onLoadContacts={handleLoadContacts}
-        onLoadSurveys={handleLoadSurveys}
-      />
+  <CampaignCreateModal
+  isOpen={showCreateModal}
+  accounts={accounts}  // ✅ This is now passed correctly
+  userId={uid}
+  orgId={orgId}
+  onClose={() => setShowCreateModal(false)}
+  onCreate={create}
+  lists={lists}
+  contacts={contacts}
+  surveyQuestions={surveyQuestions}
+  onLoadSurveyQuestions={handleLoadSurveyQuestions}
+  surveys={surveys}
+  onLoadLists={handleLoadLists}
+  onLoadContacts={handleLoadContacts}
+  onLoadSurveys={handleLoadSurveys}
+  onLoadAccounts={listAccounts}  // ✅ Add this too
+/>
     </div>
   );
 
@@ -599,7 +603,7 @@ const handleLoadSurveyQuestions = useCallback(
     return (
       <div className="space-y-6">
         {/* Campaign Header */}
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-white rounded-lg shadow p-6 dark:bg-gray-900">
           <div className="flex items-start justify-between mb-6">
             <div>
               <h2 className="text-2xl font-bold text-gray-900">{selectedCampaign.campaignName}</h2>
@@ -669,7 +673,7 @@ const handleLoadSurveyQuestions = useCallback(
         )}
 
         {/* Timeline */}
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-white rounded-lg shadow p-6 dark:bg-gray-900">
           <h3 className="text-lg font-semibold mb-4">Campaign Timeline</h3>
           <div className="space-y-4">
             <div className="flex items-center gap-4">
@@ -715,21 +719,21 @@ const handleLoadSurveyQuestions = useCallback(
     );
   }
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 ">
       {/* Header */}
-      <div className="bg-white border-b">
+      <div className="bg-white border-b dark:bg-gray-900 ">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="py-6">
-            <h1 className="text-3xl font-bold text-gray-900">Campaign Dashboard</h1>
-            <p className="text-gray-600 mt-1">Manage and monitor your survey campaigns</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Campaign Dashboard</h1>
+            <p className="text-gray-600 mt-1 dark:text-gray-300">Manage and monitor your survey campaigns</p>
           </div>
         </div>
       </div>
 
       {/* Navigation Tabs */}
-      <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-8">
+      <div className="bg-white border-b dark:bg-gray-900">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 ">
+          <div className="flex space-x-8 ">
             {[
               { id: "overview", label: "Overview", icon: "📊" },
               { id: "campaigns", label: "Campaigns", icon: "📋" },
@@ -741,11 +745,11 @@ const handleLoadSurveyQuestions = useCallback(
                 onClick={() => setActiveTab(tab.id)}
                 className={`py-4 px-2 border-b-2 font-medium text-sm transition-colors ${
                   activeTab === tab.id
-                    ? "border-blue-500 text-blue-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    ? "border-blue-500 text-blue-600 dark:text-yellow-400"
+                    : "border-transparent text-gray-500 hover:text-gray-700 dark:text-white hover:border-gray-300"
                 }`}
               >
-                <span className="mr-2">{tab.icon}</span>
+                <span className="mr-2 ">{tab.icon}</span>
                 {tab.label}
               </button>
             ))}

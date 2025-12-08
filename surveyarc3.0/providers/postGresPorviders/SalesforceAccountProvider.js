@@ -13,6 +13,7 @@ export const SalesforceAccountProvider = ({ children }) => {
     setLoading(true);
     try {
       const { items } = await SalesforceAccountModel.list(params);
+      console.log(items)
       setAccounts(items);
       return items;
     } finally {

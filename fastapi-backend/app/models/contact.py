@@ -29,6 +29,8 @@ class Contact(Base):
 
     # primary name
     name              = Column(String, default="")
+    salesforce_id = Column(String(255), nullable=True, index=True, comment="Salesforce Contact ID for syncing")
+
 
     # universal identity
     contact_type      = Column(Enum(ContactType), default=ContactType.other)

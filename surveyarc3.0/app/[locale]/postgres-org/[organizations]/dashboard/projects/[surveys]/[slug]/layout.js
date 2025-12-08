@@ -10,6 +10,8 @@ import { CampaignProvider } from '@/providers/postGresPorviders/campaignProvider
 import { TagProvider } from "@/providers/postGresPorviders/TagProvider";
 import { TicketTaxonomyProvider } from "@/providers/postGresPorviders/TicketTaxonomyProvider";
 import { TicketCategoryProvider } from "@/providers/postGresPorviders/TicketCategoryProvider";
+import { SalesforceAccountProvider } from '@/providers/postGresPorviders/SalesforceAccountProvider';
+import { SalesforceContactProvider } from '@/providers/postGresPorviders/SalesforceContactProvider';
 
 export default function Layout({ children }) {
   return (
@@ -26,10 +28,14 @@ export default function Layout({ children }) {
   <RuleProvider>
     <ResponseProvider>
       <CampaignProvider>
+        <SalesforceAccountProvider>
+          <SalesforceContactProvider>
     {/* Main Content */}
     <main className="">
       {children}
     </main>
+    </SalesforceContactProvider>
+    </SalesforceAccountProvider>
           </CampaignProvider>
 
     </ResponseProvider>
