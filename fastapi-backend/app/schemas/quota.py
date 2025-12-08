@@ -6,12 +6,13 @@ from datetime import datetime
 
 class QuotaCellCreate(BaseModel):
     label: str
-    cap: int = Field(ge=0)
-    condition: dict
+    cap: int = Field(..., ge=0)
+    condition: dict = Field(default_factory=dict)
     is_enabled: bool = True
+    target_option_id: Optional[str] = None
 
 class QuotaCreate(BaseModel):
-    org_id: str                # accept string; we'll coerce later
+    org_id: str                # accept string; we'll coerce later if needed
     survey_id: str
     question_id: Optional[str] = None
     name: str
@@ -20,9 +21,9 @@ class QuotaCreate(BaseModel):
     quota_type: Optional[str] = "hard"
     stop_condition: Optional[str] = "greater"
     when_met: Optional[str] = "close_survey"
-    action_payload: Optional[dict] = {}
-    metadata: Optional[dict] = {}
-    cells: List[QuotaCellCreate] = []
+    action_payload: Optional[dict] = Field(default_factory=dict)
+    metadata: Optional[dict] = Field(default_factory=dict)
+    cells: List[QuotaCellCreate] = Field(default_factory=list)
 
 class QuotaCell(BaseModel):
     id: UUID
@@ -37,8 +38,8 @@ class QuotaCell(BaseModel):
 
 class Quota(BaseModel):
     id: UUID
-    org_id: UUID
-    survey_id: UUID
+    org_id: str
+    survey_id: str
     name: str
     description: Optional[str]
     is_enabled: bool
@@ -53,7 +54,7 @@ class QuotaWithCells(Quota):
 
 class QuotaEvaluateRequest(BaseModel):
     respondent_id: Optional[UUID]
-    facts: dict
+    facts: dict = Field(default_factory=dict)
 
 class QuotaEvaluateResult(BaseModel):
     matched_cells: List[UUID]
@@ -66,4 +67,4 @@ class QuotaIncrementRequest(BaseModel):
     respondent_id: Optional[UUID]
     matched_cell_id: UUID
     reason: str = "complete"
-    metadata: Optional[dict] = {}
+    metadata: Optional[dict] = Field(default_factory=dict)
