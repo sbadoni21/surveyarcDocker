@@ -1,9 +1,11 @@
+# app/routes/quota.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..utils.jsonlogic_local import jsonLogic
 from ..db import get_db
 from ..models.quota import SurveyQuota, SurveyQuotaCell, SurveyQuotaEvent
-# import Pydantic schemas (types) you declared
+
+# Avoid name collision by aliasing service imports
 from ..schemas.quota import (
     QuotaCreate,
     QuotaCell,
@@ -13,20 +15,34 @@ from ..schemas.quota import (
     QuotaEvaluateResult,
     QuotaIncrementRequest,
 )
-# import crud functions (adjust path if your crud is somewhere else)
-from ..services.quota import create_quota,fetch_quota_with_cells, list_quotas_by_survey, evaluate_quota
+
+# import services but avoid function name shadowing
+from ..services import quota as quota_service  # expects services/quota.py
+# or if you have functions in app/services/quota.py you can do:
+# from ..services.quota import create_quota as create_quota_service, fetch_quota_with_cells as fetch_quota_with_cells_service, ...
 
 router = APIRouter(prefix="/quotas", tags=["quotas"])
 
 
 @router.post("", response_model=QuotaWithCells)
-async def create_quota(payload: QuotaCreate, db: AsyncSession = Depends(get_db)):
+async def create_quota_endpoint(payload: QuotaCreate, db: AsyncSession = Depends(get_db)):
     """
     Create a new quota and its cells.
+    Uses quota_service.create_quota to do DB work (avoid name collision).
     """
-    row = await create_quota(db, payload)
+    try:
+        # Call the service function (aliased) that actually creates rows
+        row = await quota_service.create_quota(db, payload)
+    except HTTPException:
+        # re-raise HTTPExceptions so FastAPI returns them as-is
+        raise
+    except Exception as e:
+        # log and return a friendly 500 during development; you can also raise HTTPException
+        # (in production you might not want to expose raw exception text)
+        raise HTTPException(status_code=500, detail=f"Failed to create quota: {e}")
+
     # fetch fresh
-    rc = await fetch_quota_with_cells(db, row.id)
+    rc = await quota_service.fetch_quota_with_cells(db, row.id)
     quota = rc["quota"]
     cells = rc["cells"]
 
@@ -73,7 +89,7 @@ async def list_by_survey(survey_id: str, db: AsyncSession = Depends(get_db)):
     ids = [r.id for r in ids_res.fetchall()]
     out = []
     for qid in ids:
-        rc = await fetch_quota_with_cells(db, qid)
+        rc = await quota_service.fetch_quota_with_cells(db, qid)
         quota = rc["quota"]
         cells = rc["cells"]
         cell_models = []
@@ -111,8 +127,8 @@ async def list_by_survey(survey_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{quota_id}/evaluate", response_model=QuotaEvaluateResult)
-async def evaluate_quota(quota_id: str, payload: QuotaEvaluateRequest, db: AsyncSession = Depends(get_db)):
-    rc = await evaluate_quota(db, quota_id, payload.facts)
+async def evaluate_quota_endpoint(quota_id: str, payload: QuotaEvaluateRequest, db: AsyncSession = Depends(get_db)):
+    rc = await quota_service.evaluate_quota(db, quota_id, payload.facts)
     if not rc:
         raise HTTPException(status_code=404, detail="Quota not found")
     quota_row, cells = rc
@@ -152,33 +168,4 @@ async def evaluate_quota(quota_id: str, payload: QuotaEvaluateRequest, db: Async
 
 @router.post("/{quota_id}/increment")
 async def increment(quota_id: str, payload: QuotaIncrementRequest, db: AsyncSession = Depends(get_db)):
-    # We need the survey_id from the quota
-    qres = await db.execute("SELECT survey_id FROM survey_quotas WHERE id = :qid", {"qid": quota_id})
-    qrow = qres.first()
-    if not qrow:
-        raise HTTPException(status_code=404, detail="Quota not found")
-    survey_id = qrow.survey_id
-
-    # find quota_id for the cell (payload gives matched_cell_id)
-    cres = await db.execute("SELECT quota_id FROM survey_quota_cells WHERE id = :cid", {"cid": str(payload.matched_cell_id)})
-    crow = cres.first()
-    if not crow:
-        raise HTTPException(status_code=404, detail="Cell not found")
-    cell_quota_id = crow.quota_id
-
-    # call stored function (quota_cell_increment_safe)
-    res = await db.execute(
-        "SELECT * FROM quota_cell_increment_safe(:cell_id, :quota_id, :survey_id, :respondent_id, :reason, :meta)",
-        {
-            "cell_id": str(payload.matched_cell_id),
-            "quota_id": str(cell_quota_id),
-            "survey_id": str(survey_id),
-            "respondent_id": str(payload.respondent_id) if payload.respondent_id else None,
-            "reason": payload.reason,
-            "meta": payload.metadata or {},
-        },
-    )
-    row = res.first()
-    if not row:
-        raise HTTPException(status_code=400, detail="Increment failed")
-    return {"ok": row.ok, "new_count": row.new_count, "cap": row.cap}
+    return await quota_service.increment_quota(db, quota_id, payload)
