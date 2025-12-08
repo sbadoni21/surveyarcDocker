@@ -4,12 +4,14 @@ from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
 
+
 class QuotaCellCreate(BaseModel):
     label: str
     cap: int = Field(..., ge=0)
     condition: dict = Field(default_factory=dict)
     is_enabled: bool = True
     target_option_id: Optional[str] = None
+
 
 class QuotaCreate(BaseModel):
     org_id: str
@@ -25,6 +27,7 @@ class QuotaCreate(BaseModel):
     metadata: Optional[dict] = Field(default_factory=dict)
     cells: List[QuotaCellCreate] = Field(default_factory=list)
 
+
 class QuotaCell(BaseModel):
     id: UUID
     quota_id: UUID
@@ -35,6 +38,7 @@ class QuotaCell(BaseModel):
     is_enabled: bool
     created_at: datetime
     updated_at: Optional[datetime]
+
 
 class Quota(BaseModel):
     id: UUID
@@ -49,12 +53,18 @@ class Quota(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime]
 
+    class Config:
+        orm_mode = True
+
+
 class QuotaWithCells(Quota):
     cells: List[QuotaCell]
+
 
 class QuotaEvaluateRequest(BaseModel):
     respondent_id: Optional[UUID]
     facts: dict = Field(default_factory=dict)
+
 
 class QuotaEvaluateResult(BaseModel):
     matched_cells: List[UUID]
@@ -62,6 +72,7 @@ class QuotaEvaluateResult(BaseModel):
     reason: Optional[str]
     action: Optional[str]
     action_payload: Optional[dict]
+
 
 class QuotaIncrementRequest(BaseModel):
     respondent_id: Optional[UUID]
