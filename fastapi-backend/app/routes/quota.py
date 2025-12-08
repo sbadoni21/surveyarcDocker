@@ -16,7 +16,7 @@ from ..schemas.quota import (
 # import crud functions (adjust path if your crud is somewhere else)
 from ..services.quota import create_quota,fetch_quota_with_cells, list_quotas_by_survey, evaluate_quota
 
-router = APIRouter(prefix="/api/quotas", tags=["quotas"])
+router = APIRouter(prefix="/quotas", tags=["quotas"])
 
 
 @router.post("", response_model=QuotaWithCells)
