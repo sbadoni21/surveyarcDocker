@@ -17,14 +17,18 @@ class QuotaCreate(BaseModel):
     org_id: str
     survey_id: str
     question_id: Optional[str] = None
+
     name: str
     description: Optional[str] = ""
+
     is_enabled: Optional[bool] = True
     quota_type: Optional[str] = "hard"
     stop_condition: Optional[str] = "greater"
     when_met: Optional[str] = "close_survey"
+
     action_payload: Optional[dict] = Field(default_factory=dict)
     metadata: Optional[dict] = Field(default_factory=dict)
+
     cells: List[QuotaCellCreate] = Field(default_factory=list)
 
 
@@ -36,20 +40,30 @@ class QuotaCell(BaseModel):
     count: int
     condition: dict
     is_enabled: bool
+    target_option_id: Optional[str]
     created_at: datetime
     updated_at: Optional[datetime]
+
+    class Config:
+        orm_mode = True
 
 
 class Quota(BaseModel):
     id: UUID
     org_id: str
     survey_id: str
+    question_id: Optional[str]
+
     name: str
     description: Optional[str]
     is_enabled: bool
+    quota_type: str
     stop_condition: str
     when_met: str
+
     action_payload: Optional[dict]
+    metadata: Optional[dict]
+
     created_at: datetime
     updated_at: Optional[datetime]
 

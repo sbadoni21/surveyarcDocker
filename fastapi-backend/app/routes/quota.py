@@ -1,21 +1,21 @@
 # app/routes/quota_routes.py
-from uuid import UUID
 from typing import List
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..db import get_db
-from ..schemas.quota import (
+from app.db import get_db
+from app.schemas.quota import (
     QuotaCreate,
     QuotaWithCells,
+    Quota,
+    QuotaCell,
     QuotaEvaluateRequest,
     QuotaEvaluateResult,
     QuotaIncrementRequest,
-    Quota,
-    QuotaCell,
 )
-from ..services.quota import (
+from app.services.quota import (
     create_quota,
     fetch_quota_with_cells,
     list_quotas_by_survey,
@@ -26,31 +26,29 @@ from ..services.quota import (
 router = APIRouter(prefix="/quotas", tags=["quotas"])
 
 
+# ---------- CREATE ----------
 @router.post("", response_model=QuotaWithCells)
 def create_quota_endpoint(
     payload: QuotaCreate,
     db: Session = Depends(get_db),
 ):
-    quota_row = create_quota(db, payload)
-    rc = fetch_quota_with_cells(db, quota_row.id)
-    if not rc:
-        raise HTTPException(
-            status_code=500, detail="Failed to load quota after creation"
-        )
-
-    quota = rc["quota"]
-    cells = rc["cells"]
+    quota = create_quota(db, payload)
+    if not quota:
+        raise HTTPException(status_code=500, detail="Failed to create quota")
 
     return QuotaWithCells(
         id=quota.id,
         org_id=quota.org_id,
         survey_id=quota.survey_id,
+        question_id=quota.question_id,
         name=quota.name,
         description=quota.description,
         is_enabled=quota.is_enabled,
+        quota_type=quota.quota_type,
         stop_condition=quota.stop_condition,
         when_met=quota.when_met,
         action_payload=quota.action_payload,
+        metadata=quota.quota_metadata,
         created_at=quota.created_at,
         updated_at=quota.updated_at,
         cells=[
@@ -62,36 +60,38 @@ def create_quota_endpoint(
                 count=c.count,
                 condition=c.condition,
                 is_enabled=c.is_enabled,
+                target_option_id=c.target_option_id,
                 created_at=c.created_at,
                 updated_at=c.updated_at,
             )
-            for c in cells
+            for c in (quota.cells or [])
         ],
     )
 
 
+# ---------- GET SINGLE QUOTA ----------
 @router.get("/{quota_id}", response_model=QuotaWithCells)
-def get_quota(
+def get_quota_endpoint(
     quota_id: UUID,
     db: Session = Depends(get_db),
 ):
-    rc = fetch_quota_with_cells(db, quota_id)
-    if not rc:
+    quota = fetch_quota_with_cells(db, quota_id)
+    if not quota:
         raise HTTPException(status_code=404, detail="Quota not found")
-
-    quota = rc["quota"]
-    cells = rc["cells"]
 
     return QuotaWithCells(
         id=quota.id,
         org_id=quota.org_id,
         survey_id=quota.survey_id,
+        question_id=quota.question_id,
         name=quota.name,
         description=quota.description,
         is_enabled=quota.is_enabled,
+        quota_type=quota.quota_type,
         stop_condition=quota.stop_condition,
         when_met=quota.when_met,
         action_payload=quota.action_payload,
+        metadata=quota.quota_metadata,
         created_at=quota.created_at,
         updated_at=quota.updated_at,
         cells=[
@@ -103,104 +103,100 @@ def get_quota(
                 count=c.count,
                 condition=c.condition,
                 is_enabled=c.is_enabled,
+                target_option_id=c.target_option_id,
                 created_at=c.created_at,
                 updated_at=c.updated_at,
             )
-            for c in cells
+            for c in (quota.cells or [])
         ],
     )
 
 
+# ---------- LIST BY SURVEY ----------
 @router.get("/by-survey/{survey_id}", response_model=List[QuotaWithCells])
-def list_quotas_for_survey(
+def list_quotas_for_survey_endpoint(
     survey_id: str,
     db: Session = Depends(get_db),
 ):
-    rows = list_quotas_by_survey(db, survey_id)
+    quotas = list_quotas_by_survey(db, survey_id)
     out: List[QuotaWithCells] = []
 
-    for rc in rows:
-        quota = rc["quota"]
-        cells = rc["cells"]
+    for quota in quotas:
         out.append(
             QuotaWithCells(
                 id=quota.id,
                 org_id=quota.org_id,
                 survey_id=quota.survey_id,
+                question_id=quota.question_id,
                 name=quota.name,
                 description=quota.description,
                 is_enabled=quota.is_enabled,
+                quota_type=quota.quota_type,
                 stop_condition=quota.stop_condition,
                 when_met=quota.when_met,
                 action_payload=quota.action_payload,
+                metadata=quota.quota_metadata,
                 created_at=quota.created_at,
                 updated_at=quota.updated_at,
                 cells=[
-                  QuotaCell(
-                      id=c.id,
-                      quota_id=c.quota_id,
-                      label=c.label,
-                      cap=c.cap,
-                      count=c.count,
-                      condition=c.condition,
-                      is_enabled=c.is_enabled,
-                      created_at=c.created_at,
-                      updated_at=c.updated_at,
-                  )
-                  for c in cells
+                    QuotaCell(
+                        id=c.id,
+                        quota_id=c.quota_id,
+                        label=c.label,
+                        cap=c.cap,
+                        count=c.count,
+                        condition=c.condition,
+                        is_enabled=c.is_enabled,
+                        target_option_id=c.target_option_id,
+                        created_at=c.created_at,
+                        updated_at=c.updated_at,
+                    )
+                    for c in (quota.cells or [])
                 ],
             )
         )
+
     return out
 
 
+# ---------- EVALUATE ----------
 @router.post("/{quota_id}/evaluate", response_model=QuotaEvaluateResult)
 def evaluate_quota_endpoint(
     quota_id: UUID,
-    body: QuotaEvaluateRequest,
+    payload: QuotaEvaluateRequest,
     db: Session = Depends(get_db),
 ):
-    res = evaluate_quota(db, quota_id, body.facts)
-    if not res:
-        raise HTTPException(status_code=404, detail="Quota not found")
+    quota, cells = evaluate_quota(db, quota_id, payload.facts)
 
-    quota, cells = res
-
-    # 🔴 NOTE: This is placeholder logic!
-    # You should implement real match logic based on `facts` + `condition`.
-    matched_cells_ids = [c.id for c in cells if c.is_enabled]
-
-    blocked = False
-    reason = None
-    action = None
-    action_payload = quota.action_payload or {}
+    # For now: simply say "not blocked" but return all matched cell ids
+    matched_ids = [c.id for c in cells if c.is_enabled]
 
     return QuotaEvaluateResult(
-        matched_cells=matched_cells_ids,
-        blocked=blocked,
-        reason=reason,
-        action=action,
-        action_payload=action_payload,
+        matched_cells=matched_ids,
+        blocked=False,
+        reason=None,
+        action=None,
+        action_payload=None,
     )
 
 
+# ---------- INCREMENT ----------
 @router.post("/{quota_id}/increment")
-def increment_quota_cell_endpoint(
+def increment_quota_endpoint(
     quota_id: UUID,
-    body: QuotaIncrementRequest,
+    payload: QuotaIncrementRequest,
     db: Session = Depends(get_db),
 ):
     row = increment_cell_safe(
         db=db,
-        cell_id=body.matched_cell_id,
+        cell_id=payload.matched_cell_id,
         quota_id=quota_id,
-        survey_id="",  # fill if you want or fetch from quota
-        respondent_id=body.respondent_id,
-        reason=body.reason,
-        metadata=body.metadata,
+        survey_id="",
+        respondent_id=payload.respondent_id,
+        reason=payload.reason,
+        metadata=payload.metadata or {},
     )
     if not row:
-        raise HTTPException(
-            status_code=500, detail="Failed to increment quota cell"
-        )
+        raise HTTPException(status_code=500, detail="Increment failed")
+
     return {"ok": True, "result": dict(row)}

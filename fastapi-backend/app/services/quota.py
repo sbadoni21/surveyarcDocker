@@ -1,92 +1,64 @@
 # app/services/quota.py
-import json
 import logging
-from typing import Any, List, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
-from sqlalchemy import text
-from sqlalchemy.orm import Session
 from fastapi import HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+
+from app.models.quota import SurveyQuota, SurveyQuotaCell
 
 logger = logging.getLogger(__name__)
 
 
-def create_quota(db: Session, payload: Any):
+def create_quota(db: Session, payload: Any) -> SurveyQuota:
     """
     Insert quota + cells using sync Session.
-    Expects payload to be a Pydantic model (QuotaCreate) or dict-like.
-    Returns the inserted quota row (RowMapping).
+    payload: Pydantic QuotaCreate or dict-like.
+    Returns persisted SurveyQuota instance.
     """
     org_id = getattr(payload, "org_id", None)
     survey_id = getattr(payload, "survey_id", None)
     name = getattr(payload, "name", None)
 
     if not org_id:
-        raise HTTPException(status_code=422, detail="org_id is required")
+      raise HTTPException(status_code=422, detail="org_id is required")
     if not survey_id:
-        raise HTTPException(status_code=422, detail="survey_id is required")
+      raise HTTPException(status_code=422, detail="survey_id is required")
     if not name:
-        raise HTTPException(status_code=422, detail="name is required")
+      raise HTTPException(status_code=422, detail="name is required")
 
-    insert_sql = text(
-        """
-        INSERT INTO survey_quotas
-          (org_id, survey_id, name, description, is_enabled, stop_condition, when_met, action_payload)
-        VALUES (:org_id, :survey_id, :name, :description, :is_enabled, :stop_condition, :when_met, :action_payload)
-        RETURNING id, org_id, survey_id, name, description, is_enabled,
-                  stop_condition, when_met, action_payload, created_at, updated_at
-        """
-    )
+    question_id = getattr(payload, "question_id", None)
+    quota_type = getattr(payload, "quota_type", "hard")
+    is_enabled = bool(getattr(payload, "is_enabled", True))
+    stop_condition = getattr(payload, "stop_condition", "greater")
+    when_met = getattr(payload, "when_met", "close_survey")
+    description = getattr(payload, "description", "") or ""
 
-    action_payload_obj = getattr(payload, "action_payload", {}) or {}
-    try:
-        action_payload_json = json.dumps(action_payload_obj)
-    except Exception as e:
-        raise HTTPException(
-            status_code=422,
-            detail=f"action_payload is not JSON-serializable: {e}",
-        )
+    action_payload = getattr(payload, "action_payload", {}) or {}
+    metadata = getattr(payload, "metadata", {}) or {}
+    cells_list = getattr(payload, "cells", None) or []
+
+    if not isinstance(cells_list, (list, tuple)):
+        raise HTTPException(status_code=422, detail="cells must be a list")
 
     try:
-        res = db.execute(
-            insert_sql,
-            {
-                "org_id": org_id,
-                "survey_id": survey_id,
-                "name": name,
-                "description": getattr(payload, "description", "") or "",
-                "is_enabled": bool(getattr(payload, "is_enabled", True)),
-                "stop_condition": getattr(
-                    payload, "stop_condition", "greater"
-                ),
-                "when_met": getattr(payload, "when_met", "close_survey"),
-                "action_payload": action_payload_json,
-            },
+        quota = SurveyQuota(
+            org_id=org_id,
+            survey_id=survey_id,
+            question_id=question_id,
+            name=name,
+            description=description,
+            is_enabled=is_enabled,
+            quota_type=quota_type,
+            stop_condition=stop_condition,
+            when_met=when_met,
+            action_payload=action_payload,
+            quota_metadata=metadata,
         )
-
-        quota_row = res.first()
-        if not quota_row:
-            db.rollback()
-            raise HTTPException(
-                status_code=500, detail="Quota insert returned no row"
-            )
-
-        quota_id = quota_row.id
-
-        # Insert cells
-        cells_list = getattr(payload, "cells", None) or []
-        if not isinstance(cells_list, (list, tuple)):
-            db.rollback()
-            raise HTTPException(
-                status_code=422, detail="cells must be a list"
-            )
-
-        insert_cell_sql = text(
-            """
-            INSERT INTO survey_quota_cells (quota_id, label, cap, condition, is_enabled)
-            VALUES (:qid, :label, :cap, :cond, :enabled)
-            """
-        )
+        db.add(quota)
+        db.flush()  # get quota.id
 
         for c in cells_list:
             if isinstance(c, dict):
@@ -94,11 +66,13 @@ def create_quota(db: Session, payload: Any):
                 cap = c.get("cap", 0)
                 cond_obj = c.get("condition", {}) or {}
                 enabled = bool(c.get("is_enabled", True))
+                target_option_id = c.get("target_option_id")
             else:
                 label = getattr(c, "label", None)
                 cap = getattr(c, "cap", 0)
                 cond_obj = getattr(c, "condition", {}) or {}
                 enabled = bool(getattr(c, "is_enabled", True))
+                target_option_id = getattr(c, "target_option_id", None)
 
             if not label:
                 db.rollback()
@@ -107,28 +81,20 @@ def create_quota(db: Session, payload: Any):
                     detail="Each cell must have a label",
                 )
 
-            try:
-                cond_json = json.dumps(cond_obj)
-            except Exception as e:
-                db.rollback()
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Cell condition is not JSON-serializable: {e}",
-                )
-
-            db.execute(
-                insert_cell_sql,
-                {
-                    "qid": str(quota_id),
-                    "label": label,
-                    "cap": int(cap or 0),
-                    "cond": cond_json,
-                    "enabled": enabled,
-                },
+            cell = SurveyQuotaCell(
+                quota_id=quota.id,
+                label=label,
+                cap=int(cap or 0),
+                count=0,
+                condition=cond_obj,
+                is_enabled=enabled,
+                target_option_id=target_option_id,
             )
+            db.add(cell)
 
         db.commit()
-        return quota_row
+        db.refresh(quota)
+        return quota
 
     except HTTPException:
         try:
@@ -136,83 +102,44 @@ def create_quota(db: Session, payload: Any):
         except Exception:
             logger.exception("rollback failed after HTTPException")
         raise
-
     except Exception as e:
         try:
             db.rollback()
         except Exception:
             logger.exception("rollback failed after unexpected exception")
         logger.exception("create_quota failed")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to create quota: {e}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to create quota: {e}")
 
 
-def fetch_quota_with_cells(db: Session, quota_id: UUID):
-    """
-    Return {"quota": RowMapping, "cells": [RowMapping,...]} or None
-    """
-    q = db.execute(
-        text(
-            """
-            SELECT id, org_id, survey_id, name, description, is_enabled,
-                   stop_condition, when_met, action_payload, created_at, updated_at
-            FROM survey_quotas
-            WHERE id = :qid
-            """
-        ),
-        {"qid": str(quota_id)},
+def fetch_quota_with_cells(db: Session, quota_id: UUID) -> Optional[SurveyQuota]:
+    quota = (
+        db.query(SurveyQuota)
+        .filter(SurveyQuota.id == quota_id)
+        .first()
     )
-    quota = q.first()
+    return quota
+
+
+def list_quotas_by_survey(db: Session, survey_id: str) -> List[SurveyQuota]:
+    return (
+        db.query(SurveyQuota)
+        .filter(SurveyQuota.survey_id == survey_id)
+        .order_by(SurveyQuota.created_at.asc())
+        .all()
+    )
+
+
+def evaluate_quota(
+    db: Session, quota_id: UUID, facts: Dict
+) -> Tuple[SurveyQuota, List[SurveyQuotaCell]]:
+    """
+    For now: just returns quota + cells. You can plug your own matching logic.
+    """
+    quota = fetch_quota_with_cells(db, quota_id)
     if not quota:
-        return None
+        raise HTTPException(status_code=404, detail="Quota not found")
 
-    cells_res = db.execute(
-        text(
-            """
-            SELECT id, quota_id, label, cap, count, condition, is_enabled,
-                   created_at, updated_at
-            FROM survey_quota_cells
-            WHERE quota_id = :qid
-            ORDER BY created_at ASC
-            """
-        ),
-        {"qid": str(quota_id)},
-    )
-    cells = cells_res.fetchall()
-    return {"quota": quota, "cells": cells}
-
-
-def list_quotas_by_survey(db: Session, survey_id: str):
-    ids_res = db.execute(
-        text(
-            """
-            SELECT id
-            FROM survey_quotas
-            WHERE survey_id = :sid
-            ORDER BY created_at ASC
-            """
-        ),
-        {"sid": survey_id},
-    )
-    ids = [r.id for r in ids_res.fetchall()]
-    out: List[Dict] = []
-    for qid in ids:
-        rc = fetch_quota_with_cells(db, qid)
-        if rc:
-            out.append(rc)
-    return out
-
-
-def evaluate_quota(db: Session, quota_id: UUID, facts: dict):
-    """
-    Stub logic – right now just loads quota + cells.
-    You can plug real evaluation logic here.
-    """
-    rc = fetch_quota_with_cells(db, quota_id)
-    if not rc:
-        return None
-    return rc["quota"], rc["cells"]
+    return quota, list(quota.cells or [])
 
 
 def increment_cell_safe(
@@ -226,11 +153,14 @@ def increment_cell_safe(
 ):
     """
     Call DB function quota_cell_increment_safe — returns its row result.
+
+    You must have this Postgres function defined separately.
     """
     res = db.execute(
         text(
             """
-            SELECT * FROM quota_cell_increment_safe(
+            SELECT *
+            FROM quota_cell_increment_safe(
               :cell_id,
               :quota_id,
               :survey_id,
