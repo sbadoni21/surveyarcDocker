@@ -1,11 +1,11 @@
 # app/routes/quota.py
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..utils.jsonlogic_local import jsonLogic
 from ..db import get_db
-from ..models.quota import SurveyQuota, SurveyQuotaCell, SurveyQuotaEvent
 
-# Avoid name collision by aliasing service imports
+# Pydantic schemas
 from ..schemas.quota import (
     QuotaCreate,
     QuotaCell,
@@ -16,37 +16,34 @@ from ..schemas.quota import (
     QuotaIncrementRequest,
 )
 
-# import services but avoid function name shadowing
-from ..services import quota as quota_service  # expects services/quota.py
-# or if you have functions in app/services/quota.py you can do:
-# from ..services.quota import create_quota as create_quota_service, fetch_quota_with_cells as fetch_quota_with_cells_service, ...
+# Import service functions explicitly (avoid package import shortcuts)
+from ..services.quota import (
+    create_quota as create_quota_service,
+    fetch_quota_with_cells as fetch_quota_with_cells_service,
+    list_quotas_by_survey as list_quotas_by_survey_service,
+    evaluate_quota as evaluate_quota_service,
+    increment_cell_safe as increment_cell_safe_service,
+)
 
+logger = logging.getLogger("quota_routes")
 router = APIRouter(prefix="/quotas", tags=["quotas"])
 
 
 @router.post("", response_model=QuotaWithCells)
 async def create_quota_endpoint(payload: QuotaCreate, db: AsyncSession = Depends(get_db)):
-    """
-    Create a new quota and its cells.
-    Uses quota_service.create_quota to do DB work (avoid name collision).
-    """
     try:
-        # Call the service function (aliased) that actually creates rows
-        row = await quota_service.create_quota(db, payload)
+        row = await create_quota_service(db, payload)
     except HTTPException:
-        # re-raise HTTPExceptions so FastAPI returns them as-is
         raise
     except Exception as e:
-        # log and return a friendly 500 during development; you can also raise HTTPException
-        # (in production you might not want to expose raw exception text)
+        logger.exception("Failed creating quota")
+        # expose a helpful 500 during dev — change in prod if needed
         raise HTTPException(status_code=500, detail=f"Failed to create quota: {e}")
 
-    # fetch fresh
-    rc = await quota_service.fetch_quota_with_cells(db, row.id)
+    rc = await fetch_quota_with_cells_service(db, row.id)
     quota = rc["quota"]
     cells = rc["cells"]
 
-    # convert to Pydantic response shape
     cell_models = []
     for c in cells:
         cell_models.append(
@@ -81,7 +78,7 @@ async def create_quota_endpoint(payload: QuotaCreate, db: AsyncSession = Depends
 
 
 @router.get("/by-survey/{survey_id}", response_model=list[QuotaWithCells])
-async def list_by_survey(survey_id: str, db: AsyncSession = Depends(get_db)):
+async def list_by_survey_endpoint(survey_id: str, db: AsyncSession = Depends(get_db)):
     ids_res = await db.execute(
         "SELECT id FROM survey_quotas WHERE survey_id = :sid AND is_enabled = TRUE ORDER BY created_at ASC",
         {"sid": survey_id},
@@ -89,7 +86,7 @@ async def list_by_survey(survey_id: str, db: AsyncSession = Depends(get_db)):
     ids = [r.id for r in ids_res.fetchall()]
     out = []
     for qid in ids:
-        rc = await quota_service.fetch_quota_with_cells(db, qid)
+        rc = await fetch_quota_with_cells_service(db, qid)
         quota = rc["quota"]
         cells = rc["cells"]
         cell_models = []
@@ -128,7 +125,7 @@ async def list_by_survey(survey_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/{quota_id}/evaluate", response_model=QuotaEvaluateResult)
 async def evaluate_quota_endpoint(quota_id: str, payload: QuotaEvaluateRequest, db: AsyncSession = Depends(get_db)):
-    rc = await quota_service.evaluate_quota(db, quota_id, payload.facts)
+    rc = await evaluate_quota_service(db, quota_id, payload.facts)
     if not rc:
         raise HTTPException(status_code=404, detail="Quota not found")
     quota_row, cells = rc
@@ -139,22 +136,19 @@ async def evaluate_quota_endpoint(quota_id: str, payload: QuotaEvaluateRequest, 
         if not c.is_enabled:
             continue
         try:
-            # evaluate JSONLogic condition
             if jsonLogic(c.condition, payload.facts):
                 matched.append(c.id)
-                # check capacity depending on stop_condition
                 if quota_row.stop_condition == "greater":
                     if c.count >= c.cap:
                         blocked = True
                         reason = f"Cell '{c.label}' full"
                         break
-                else:  # equal
+                else:
                     if c.count == c.cap:
                         blocked = True
                         reason = f"Cell '{c.label}' full"
                         break
         except Exception:
-            # invalid rule -> skip this cell
             continue
     action = quota_row.when_met if blocked else None
     return QuotaEvaluateResult(
@@ -167,5 +161,13 @@ async def evaluate_quota_endpoint(quota_id: str, payload: QuotaEvaluateRequest, 
 
 
 @router.post("/{quota_id}/increment")
-async def increment(quota_id: str, payload: QuotaIncrementRequest, db: AsyncSession = Depends(get_db)):
-    return await quota_service.increment_quota(db, quota_id, payload)
+async def increment_endpoint(quota_id: str, payload: QuotaIncrementRequest, db: AsyncSession = Depends(get_db)):
+    # wrap service call to produce clear errors and logging
+    try:
+        res = await increment_cell_safe_service(db, quota_id, payload)
+        return res
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Increment failed")
+        raise HTTPException(status_code=500, detail=str(e))
