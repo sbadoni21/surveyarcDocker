@@ -11,14 +11,17 @@ class QuotaCellCreate(BaseModel):
     is_enabled: bool = True
 
 class QuotaCreate(BaseModel):
-    org_id: UUID
-    survey_id: UUID
+    org_id: str                # accept string; we'll coerce later
+    survey_id: str
+    question_id: Optional[str] = None
     name: str
-    description: Optional[str] = None
-    is_enabled: bool = True
-    stop_condition: str = "greater"
-    when_met: str = "close_survey"
-    action_payload: Optional[dict] = None
+    description: Optional[str] = ""
+    is_enabled: Optional[bool] = True
+    quota_type: Optional[str] = "hard"
+    stop_condition: Optional[str] = "greater"
+    when_met: Optional[str] = "close_survey"
+    action_payload: Optional[dict] = {}
+    metadata: Optional[dict] = {}
     cells: List[QuotaCellCreate] = []
 
 class QuotaCell(BaseModel):

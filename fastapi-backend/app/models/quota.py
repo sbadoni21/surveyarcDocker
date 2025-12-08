@@ -8,8 +8,8 @@ from ..db import Base
 class SurveyQuota(Base):
     __tablename__ = "survey_quotas"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    org_id = Column(UUID(as_uuid=True), nullable=False)
-    survey_id = Column(UUID(as_uuid=True), nullable=False)
+    org_id = Column(Text, nullable=False)       # changed from UUID to Text
+    survey_id = Column(Text, nullable=False)    
     name = Column(Text, nullable=False)
     description = Column(Text)
     is_enabled = Column(Boolean, default=True, nullable=False)
