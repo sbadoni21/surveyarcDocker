@@ -1,9 +1,8 @@
-// providers/postGresPorviders/GroupProvider.jsx
 "use client";
 
 import React, { createContext, useContext, useState, useCallback } from "react";
 import GroupModel from "@/models/postGresModels/groupModel";
-import { useUser } from "@/providers/postGresPorviders/UserProvider"; // 👈 import your user provider
+import { useUser } from "@/providers/postGresPorviders/UserProvider";
 
 const GroupContext = createContext();
 
@@ -12,7 +11,6 @@ export const GroupProvider = ({ children }) => {
   const [membersCache, setMembersCache] = useState({}); // keyed by groupId
   const [loading, setLoading] = useState(false);
 
-  // 👇 adjust depending on how your UserProvider looks
   const { user } = useUser?.() || {};
   const currentUserId = user?.uid || user?.user_id || user?.id;
 
@@ -39,7 +37,6 @@ export const GroupProvider = ({ children }) => {
       throw new Error("No current user id found for group creation");
     }
 
-    // auto-inject user_id into data
     const created = await GroupModel.create({
       ...data,
       user_id: currentUserId,
@@ -127,6 +124,41 @@ export const GroupProvider = ({ children }) => {
     }));
   };
 
+  // ✅ NEW: Bulk member operations
+  const bulkAddMembers = async (groupId, userUids, role = "member") => {
+    if (!currentUserId) {
+      throw new Error("No current user id found for bulk adding members");
+    }
+
+    const result = await GroupModel.bulkAddMembers(
+      groupId,
+      userUids,
+      currentUserId,
+      role
+    );
+
+    // Refresh members cache for this group
+    await loadMembers(groupId);
+    
+    return result;
+  };
+
+  const bulkRemoveMembers = async (groupId, userUids) => {
+    if (!currentUserId) {
+      throw new Error("No current user id found for bulk removing members");
+    }
+
+    await GroupModel.bulkRemoveMembers(groupId, userUids, currentUserId);
+
+    // Update cache by filtering out removed members
+    setMembersCache((prev) => ({
+      ...prev,
+      [groupId]: prev[groupId]?.filter(
+        (m) => !userUids.includes(m.user_uid)
+      ),
+    }));
+  };
+
   return (
     <GroupContext.Provider
       value={{
@@ -140,6 +172,8 @@ export const GroupProvider = ({ children }) => {
         addMember,
         updateMember,
         removeMember,
+        bulkAddMembers,      // ✅ Export new functions
+        bulkRemoveMembers,   // ✅ Export new functions
         membersCache,
       }}
     >

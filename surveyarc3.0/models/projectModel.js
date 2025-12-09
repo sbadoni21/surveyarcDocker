@@ -185,6 +185,45 @@ const projectModel = {
     const res = await fetch(url.toString(), { method: "DELETE", cache: "no-store" });
     return await toJson(res);
   },
+   
+  async bulkAddMembers(projectId, userUids, role = "contributor") {
+    const res = await fetch(
+      `${BASE}/${encodeURIComponent(projectId)}/members/bulk`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_uids: userUids,
+          role: role,
+        }),
+        cache: "no-store",
+      }
+    );
+
+    return parseJson(res);
+  },
+
+  /**
+   * Bulk remove multiple members from a project
+   * @param {string} projectId - Project ID
+   * @param {string[]} userUids - Array of user UIDs to remove
+   * @returns {Promise<{removed: number, details: Array}>}
+   */
+  async bulkRemoveMembers(projectId, userUids) {
+    const res = await fetch(
+      `${BASE}/${encodeURIComponent(projectId)}/members/bulk-remove`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_uids: userUids,
+        }),
+        cache: "no-store",
+      }
+    );
+
+    return parseJson(res);
+  },
 
   // ===== MILESTONES =====
   async listMilestones(orgId, projectId) {

@@ -1,8 +1,7 @@
 "use client";
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
 import { getCookie } from "cookies-next";
 import projectModel from "@/models/postGresModels/projectModel";
-
 const ProjectContext = createContext(undefined);
 
 export const ProjectProvider = ({ children }) => {
@@ -81,6 +80,56 @@ export const ProjectProvider = ({ children }) => {
     await projectModel.removeMember(orgId, projectId, memberUid);
     await getProjectById(projectId);
   };
+   const bulkAddMembers = useCallback(async (projectId, userUids, role = "contributor") => {
+    if (!userUids || userUids.length === 0) {
+      throw new Error("No user IDs provided");
+    }
+
+    try {
+      const result = await projectModel.bulkAddMembers(projectId, userUids, role);
+      
+      // Optionally refresh the project to get updated members list
+      const updated = await projectModel.get(projectId);
+      
+      // Update local state if you're caching projects
+      setProjects((prev) =>
+        prev.map((p) => (p.projectId === projectId ? updated : p))
+      );
+
+      return result;
+    } catch (error) {
+      console.error("[ProjectProvider] bulkAddMembers error:", error);
+      throw error;
+    }
+  }, []);
+
+  /**
+   * Bulk remove members from a project
+   * @param {string} projectId - Project ID
+   * @param {string[]} userUids - Array of user UIDs to remove
+   */
+  const bulkRemoveMembers = useCallback(async (projectId, userUids) => {
+    if (!userUids || userUids.length === 0) {
+      throw new Error("No user IDs provided");
+    }
+
+    try {
+      const result = await projectModel.bulkRemoveMembers(projectId, userUids);
+      
+      // Optionally refresh the project
+      const updated = await projectModel.get(projectId);
+      
+      // Update local state
+      setProjects((prev) =>
+        prev.map((p) => (p.projectId === projectId ? updated : p))
+      );
+
+      return result;
+    } catch (error) {
+      console.error("[ProjectProvider] bulkRemoveMembers error:", error);
+      throw error;
+    }
+  }, []);
 
   // ===== SURVEYS =====
   const addSurveyId = async (projectId, surveyId) => {
@@ -176,6 +225,7 @@ export const ProjectProvider = ({ children }) => {
     <ProjectContext.Provider
       value={{
         // state
+        bulkAddMembers, bulkRemoveMembers,
         projects, selectedProject, setSelectedProject,
         // loads
         fetchProjects, getAllProjects, getProjectById,

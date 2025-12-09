@@ -12,6 +12,7 @@ import { MemberManagementDialog } from "./projects/MemberManagementDialog";
 import { TimelineDialog } from "./projects/TimelineDialog";
 import { Toast } from "@/utils/Toast";
 import { descendingComparator, getComparator, getId, getRole   } from "@/utils/projectUtils";
+import { useGroups } from "@/providers/postGresPorviders/GroupProvider";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -32,6 +33,7 @@ export default function ProjectsList({ orgId, projects = [], deleteProject, onEd
     patchTags,
     addAttachment,
     setStatus,
+    getAllProjects,
     getTimeline,
     recomputeProgress,
     bulkProjects,
@@ -39,6 +41,7 @@ export default function ProjectsList({ orgId, projects = [], deleteProject, onEd
     addFavorite,
     removeFavorite,
   } = useProject();
+  const { groups, loadGroups, loadMembers, membersCache } = useGroups();
 
   // State
   const [order, setOrder] = useState("desc");
@@ -79,6 +82,7 @@ export default function ProjectsList({ orgId, projects = [], deleteProject, onEd
     [user]
   );
 
+
   const canManageProject = useCallback(
     (project) => {
       if (isOwner) return true;
@@ -99,7 +103,11 @@ export default function ProjectsList({ orgId, projects = [], deleteProject, onEd
     () => (Array.isArray(organisation?.team_members) ? organisation.team_members : []),
     [organisation]
   );
-
+useEffect(() => {
+    if (memberOpen && orgId) {
+      loadGroups(orgId);
+    }
+  }, [memberOpen, orgId, loadGroups]);
   const unassignedCandidates = useMemo(() => {
     if (!activeProject) return orgTeamMembers;
     const assigned = new Set((activeProject.members || []).map((m) => getId(m)));
@@ -249,7 +257,51 @@ export default function ProjectsList({ orgId, projects = [], deleteProject, onEd
     },
     [orderBy, order]
   );
+ // ✅ Add bulk member handler
+  const handleBulkAddMembers = useCallback(
+    async (memberUids, role = "contributor") => {
+      const projectId = activeProject?.projectId || activeProjectId;
+      if (!projectId || !memberUids || memberUids.length === 0) {
+        return openToast("No members to add", "warning");
+      }
 
+      setBusy(true);
+      try {
+        // Add members one by one (or implement a bulk endpoint on your backend)
+        const promises = memberUids.map((uid) =>
+          addMember(projectId, {
+            uid,
+            email: "", // Will be filled from user profile
+            role: role || "contributor",
+          })
+        );
+
+        await Promise.all(promises);
+
+        // Refresh project data
+        const updated = await getProjectById(projectId);
+        setActiveProject(updated);
+        applyProjectPatch(projectId, { members: updated.members });
+
+        openToast(
+          `Successfully added ${memberUids.length} member(s)!`,
+          "success"
+        );
+      } catch (e) {
+        openToast(String(e?.message || e), "error");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [
+      activeProject,
+      activeProjectId,
+      addMember,
+      getProjectById,
+      applyProjectPatch,
+      openToast,
+    ]
+  );
   const handleAddTag = useCallback(
     async (projectId, tag) => {
       const t = (tag || "").trim();
@@ -335,6 +387,7 @@ export default function ProjectsList({ orgId, projects = [], deleteProject, onEd
       <ProjectsTable
         rows={rows}
         order={order}
+        
         orderBy={orderBy}
         onRequestSort={handleRequestSort}
         selectedIds={selectedIds}
@@ -394,7 +447,7 @@ export default function ProjectsList({ orgId, projects = [], deleteProject, onEd
         </div>
       )}
 
-      <MemberManagementDialog
+     <MemberManagementDialog
         open={memberOpen}
         onClose={closeMembers}
         project={activeProject}
@@ -405,7 +458,7 @@ export default function ProjectsList({ orgId, projects = [], deleteProject, onEd
           setBusy(true);
           try {
             await addMember(activeProjectId, { uid, email, role });
-            const updated = await getProjectById(activeProjectId);
+            const updated = await getAllProjects();
             setActiveProject(updated);
             applyProjectPatch(activeProjectId, { members: updated.members });
             openToast("Member assigned successfully!", "success");
@@ -419,7 +472,7 @@ export default function ProjectsList({ orgId, projects = [], deleteProject, onEd
           setBusy(true);
           try {
             await removeMember(activeProjectId, uid);
-            const updated = await getProjectById(activeProjectId);
+            const updated = await getAllProjects();
             setActiveProject(updated);
             applyProjectPatch(activeProjectId, { members: updated.members });
             openToast("Member removed successfully!", "success");
@@ -429,8 +482,13 @@ export default function ProjectsList({ orgId, projects = [], deleteProject, onEd
             setBusy(false);
           }
         }}
+        onBulkAddMembers={handleBulkAddMembers}  // ✅ Pass bulk handler
         busy={busy}
+        groups={groups}
+        onLoadGroupMembers={loadMembers}
+        groupMembersCache={membersCache}
       />
+
 
       <TimelineDialog
         open={timelineOpen}

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 from uuid import uuid4
-
+from ..core.redis_client import RedisClient, serialize_for_redis, deserialize_from_redis
 from ..db import get_db
 from ..models.project import Project
 from ..schemas.project import (
@@ -13,6 +13,9 @@ from ..schemas.project import (
     SearchQuery, BulkAction
 )
 from ..services.redis_project_service import RedisProjectService
+from ..models.user import User
+from ..dependencies.redis import get_redis_optional
+from ..policies.auth import get_current_user
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -751,3 +754,118 @@ async def favorite_list(org_id: str, user_id: str, db: Session = Depends(get_db)
         if p:
             items.append(p)
     return {"count": len(items), "items": items}
+# Add this endpoint to your projects route file (e.g., routes/project.py)
+
+from pydantic import BaseModel
+from typing import List
+
+class BulkAddMembersRequest(BaseModel):
+    """Request schema for bulk adding members to a project"""
+    user_uids: List[str]
+    role: str = "contributor"  # Default role for all members
+
+class BulkAddMembersResponse(BaseModel):
+    """Response schema for bulk add operation"""
+    added: int
+    skipped: int
+    details: List[dict]
+
+@router.post("/{project_id}/members/bulk", response_model=BulkAddMembersResponse)
+async def bulk_add_members(
+    project_id: str,
+    payload: BulkAddMembersRequest,
+    db: Session = Depends(get_db),
+    redis: RedisClient = Depends(get_redis_optional),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Bulk add multiple members to a project.
+    More efficient than adding members one by one.
+    """
+    
+    # 1) Get project
+    project = db.query(Project).filter(Project.project_id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # 2) Permission check - must be owner/admin/editor
+    user_role = current_user.get("role")
+    if user_role not in ("owner", "admin", "editor"):
+        # Check if user is project member with appropriate role
+        project_members = project.members or []
+        user_uid = current_user.get("uid")
+        user_member = next(
+            (m for m in project_members if m.get("uid") == user_uid),
+            None
+        )
+        
+        if not user_member or user_member.get("role") not in ("owner", "admin", "editor"):
+            raise HTTPException(
+                status_code=403,
+                detail="Insufficient permissions to add members"
+            )
+    
+    # 3) Get existing member UIDs
+    existing_members = {m.get("uid") for m in (project.members or [])}
+    
+    # 4) Process each UID
+    added = 0
+    skipped = 0
+    details = []
+    
+    for uid in payload.user_uids:
+        if uid in existing_members:
+            skipped += 1
+            details.append({
+                "uid": uid,
+                "status": "skipped",
+                "reason": "already_member"
+            })
+            continue
+        
+        # Verify user exists
+        user = db.query(User).filter(User.uid == uid).first()
+        if not user:
+            skipped += 1
+            details.append({
+                "uid": uid,
+                "status": "skipped",
+                "reason": "user_not_found"
+            })
+            continue
+        
+        # Add member
+        new_member = {
+            "uid": uid,
+            "email": user.email,
+            "role": payload.role,
+            "joined_at": datetime.utcnow().isoformat()
+        }
+        
+        if not project.members:
+            project.members = []
+        
+        project.members.append(new_member)
+        added += 1
+        details.append({
+            "uid": uid,
+            "status": "added",
+            "role": payload.role
+        })
+    
+    # 5) Save changes
+    if added > 0:
+        project.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(project)
+        
+        # Invalidate cache
+        if redis:
+            redis.delete(f"project:{project_id}")
+            redis.delete(f"org_projects:{project.org_id}")
+    
+    return BulkAddMembersResponse(
+        added=added,
+        skipped=skipped,
+        details=details
+    )
