@@ -103,7 +103,7 @@ class SalesforceService:
         path_acc = APEX_ACCOUNTS_PATH.rstrip("/")
         url_acc = f"{instance_url}{path_acc}/{account_id}"
         print(f"Fetching account from URL: {url_acc}")
-
+        print(f"Using access token: {access_token[:10]}...")
         # 🔹 This is currently coming back as a *string* with JSON
         raw = cls.call_salesforce("GET", url_acc, access_token)
         print(f"Fetched account data (raw): {raw!r}")

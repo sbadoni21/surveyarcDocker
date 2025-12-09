@@ -1,6 +1,7 @@
 "use client";
 import Sidebar from "@/components/frontend/Sidebar";
 import BusinessCalendarsProvider from "@/providers/BusinessCalendarsProvider";
+import { GroupProvider } from "@/providers/postGresPorviders/GroupProvider";
 import { OrganisationProvider } from "@/providers/postGresPorviders/organisationProvider";
 import { ProjectProvider } from "@/providers/postGresPorviders/projectProvider";
 import { QuotaProvider } from "@/providers/postGresPorviders/quotaProvider";
@@ -24,7 +25,7 @@ export default function Layout({ children }) {
           <OrganisationProvider>
             <UserProvider>
               <ThemeProvider>
-                  
+                  <GroupProvider>
                           <ProjectProvider>
                             <SurveyProvider>
                             <QuotaProvider>
@@ -46,7 +47,7 @@ export default function Layout({ children }) {
                             </QuotaProvider>
                             </SurveyProvider>
                           </ProjectProvider>
-            
+            </GroupProvider>
               </ThemeProvider>
             </UserProvider>
           </OrganisationProvider>

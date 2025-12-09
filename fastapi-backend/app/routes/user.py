@@ -1,12 +1,14 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException,Body
 from sqlalchemy.orm import Session
 from ..db import get_db
 from ..models.user import User
-from ..schemas.user import UserCreate, UserUpdate, UserOut
+from ..schemas.user import UserCreate, UserUpdate, UserOut,AdminCreateUserRequest
 from typing import List
 from sqlalchemy.sql import func
 import json
+from ..core.firebase_admin import admin_auth
+from ..policies.auth import get_current_user  # you already use this elsewhere
 
 # Import Redis dependencies
 from ..dependencies.redis import get_redis_optional
@@ -428,3 +430,155 @@ def get_user_by_email(
         redis.set(f"user_email:{email}", user.uid, ex=3600)
     
     return get_user(user.uid, db, redis)
+@router.post("/admin-create", response_model=UserOut)
+def admin_create_user(
+    payload: AdminCreateUserRequest = Body(...),
+    db: Session = Depends(get_db),
+    redis: RedisClient = Depends(get_redis_optional),
+    current_user: dict = Depends(get_current_user),  # Auth required
+):
+    """
+    Admin-only endpoint to create a new user:
+    - Creates Firebase Auth user (email+password)
+    - Creates Postgres User row with org_ids + role
+    
+    IMPORTANT: Current user must have 'owner' or 'admin' role
+    """
+
+    # 1) Only owner / admin can use this
+    user_role = current_user.get("role")
+    if user_role not in ("owner", "admin"):
+        raise HTTPException(
+            status_code=403, 
+            detail=f"Not allowed. Your role: {user_role}. Required: owner or admin"
+        )
+
+    email = payload.email
+    display_name = payload.display_name.strip()
+    role = payload.role
+    org_id = payload.org_id
+
+    # 2) Check duplicates in DB
+    existing_user = db.query(User).filter(User.email == email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="User with this email already exists")
+
+    # 3) Create user in Firebase (Auth)
+    try:
+        fb_user = admin_auth.create_user(
+            email=email,
+            password=payload.password,
+            display_name=display_name,
+            disabled=False,
+        )
+        uid = fb_user.uid
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create Firebase user: {e}")
+
+    # 4) Create user in Postgres
+    user = User(
+        uid=uid,
+        email=email,
+        display_name=display_name,
+        role=role,
+        org_ids=[org_id],
+        status=payload.status,
+        meta_data=payload.meta_data or {},
+        joined_at=datetime.utcnow(),
+        last_login_at=None,
+        updated_at=datetime.utcnow(),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    # 5) Cache in Redis
+    try:
+        if redis and redis.ping():
+            user_data = {
+                "uid": user.uid,
+                "email": user.email,
+                "display_name": user.display_name,
+                "role": user.role,
+                "org_ids": user.org_ids or [],
+                "status": user.status,
+                "meta_data": user.meta_data or {},
+                "joined_at": user.joined_at.isoformat() if user.joined_at else None,
+                "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+                "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+            }
+            redis.safe_set(f"user:{user.uid}", json.dumps(user_data), ex=3600)
+            redis.safe_set(f"user_email:{user.email}", user.uid, ex=3600)
+            redis.safe_delete(f"org_users:{org_id}")
+    except Exception as e:
+        print(f"[/users/admin-create] redis error (ignored): {e}")
+
+    return UserOut.from_orm(user)
+
+# In routes/user.py - Add this endpoint
+
+@router.post("/batch", response_model=List[UserOut])
+def get_users_by_ids(
+    user_ids: List[str] = Body(..., embed=True),
+    db: Session = Depends(get_db),
+    redis: RedisClient = Depends(get_redis_optional)
+):
+    """
+    Get multiple users by their UIDs in a single request.
+    Supports Redis caching with batch operations.
+    """
+    if not user_ids:
+        return []
+    
+    result_users = []
+    uncached_ids = []
+    
+    # Try to get cached users first
+    if redis:
+        for uid in user_ids:
+            cached = redis.get(f"user:{uid}")
+            if cached:
+                try:
+                    if isinstance(cached, bytes):
+                        cached = cached.decode("utf-8")
+                    user_data = deserialize_from_redis(cached)
+                    if isinstance(user_data, dict):
+                        # Convert datetime strings
+                        for dt_key in ("joined_at", "last_login_at", "updated_at"):
+                            if user_data.get(dt_key):
+                                user_data[dt_key] = datetime.fromisoformat(user_data[dt_key])
+                        result_users.append(UserOut(**user_data))
+                    else:
+                        uncached_ids.append(uid)
+                except Exception as e:
+                    print(f"[get_users_by_ids] cache decode failed for {uid}: {e}")
+                    uncached_ids.append(uid)
+            else:
+                uncached_ids.append(uid)
+    else:
+        uncached_ids = user_ids
+    
+    # Query database for uncached users
+    if uncached_ids:
+        db_users = db.query(User).filter(User.uid.in_(uncached_ids)).all()
+        
+        # Cache the fetched users
+        for user in db_users:
+            result_users.append(UserOut.from_orm(user))
+            
+            if redis:
+                user_data = {
+                    "uid": user.uid,
+                    "email": user.email,
+                    "display_name": user.display_name,
+                    "role": user.role,
+                    "org_ids": user.org_ids or [],
+                    "status": user.status,
+                    "meta_data": user.meta_data or {},
+                    "joined_at": user.joined_at.isoformat() if user.joined_at else None,
+                    "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+                    "updated_at": user.updated_at.isoformat() if user.updated_at else None
+                }
+                redis.set(f"user:{user.uid}", serialize_for_redis(user_data), ex=3600)
+    
+    return result_users

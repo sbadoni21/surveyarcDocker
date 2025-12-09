@@ -1,181 +1,196 @@
-// providers/postGresPorviders/UserProvider.js
-'use client';
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { auth, onAuthStateChanged } from '@/firebase/firebase';
-import UserModel from '@/models/postGresModels/userModel';
+// providers/postGresPorviders/UserProvider.jsx
+"use client";
+
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+} from "react";
+import { getCookie, deleteCookie } from "cookies-next";
+import UserModel from "@/models/postGresModels/userModel"; // <-- Postgres UserModel
 
 const UserContext = createContext();
 
 export const UserProvider = ({ children }) => {
-  const [user, setUser] = useState(null); 
-  const [uid, setUid] = useState(null);   
+  const [user, setUser] = useState(null);
+  const [uid, setUid] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [isRegistering, setIsRegistering] = useState(false); // Registration state
+  const [error, setError] = useState(null);
 
-  const getUser = async (targetUid) => {
-    try {
-      const doc = await UserModel.get(targetUid);
-      setUser(doc || null);
-      return doc;
-    } catch (err) {
-      console.error('getUser failed:', err);
-      setUser(null);
-      return null;
-    }
-  };
-
-  const loginUser = async (targetUid) => {
-    try {
-      const loginResult = await UserModel.login(targetUid);
-      return loginResult;
-    } catch (err) {
-      console.error('loginUser failed:', err);
-      return null;
-    }
-  };
-
-  const setCurrentUser = (userData) => {
-    setUser(userData);
-  };
-  const getUsersByIds = async (ids = []) => {
-    if (!Array.isArray(ids) || ids.length === 0) return [];
-    try {
-      // If your UserModel has a batch method, prefer it:
-      if (typeof UserModel.listByIds === "function") {
-        return await UserModel.listByIds(ids);
-      }
-      // Fallback: fetch one-by-one
-      const results = await Promise.all(
-        ids.map(async (id) => {
-          try {
-            return await UserModel.get(id);
-          } catch (e) {
-            console.error("UserModel.get failed for", id, e);
-            return null;
-          }
-        })
-      );
-      return results.filter(Boolean);
-    } catch (e) {
-      console.error("getUsersByIds failed:", e);
-      return [];
-    }
-  };
-
-  const getUsersByOrg = async (orgId) => {
-    try {
-      return await UserModel.listByOrg(orgId);
-    } catch (e) {
-      console.error('listByOrg failed:', e);
-      return [];
-    }
-  };
-
-  const getActiveUsersByOrg = async (orgId) => {
-    try {
-      return await UserModel.listActiveByOrg(orgId);
-    } catch (e) {
-      console.error('listActiveByOrg failed:', e);
-      return [];
-    }
-  };
-
-  const createUser = async (data) => {
-    try {
-      setIsRegistering(true); // Set registration flag
-      
-      const created = await UserModel.create(data);
-      
-      setUser(created);
-      setIsRegistering(false); // Clear registration flag
-      
-      return created;
-    } catch (e) {
-      setIsRegistering(false); // Clear registration flag on error
-      throw e;
-    }
-  };
-
-  const updateUser = async (targetUid, data) => {
-    try {
-      const updated = await UserModel.update(targetUid, data);
-      if (user?.uid === targetUid) setUser(updated);
-      return updated;
-    } catch (e) {
-      console.error('updateUser failed:', e);
-      throw e;
-    }
-  };
-
-  const deleteUser = async (targetUid) => {
-    try {
-      await UserModel.delete(targetUid);
-      if (user?.uid === targetUid) setUser(null);
-    } catch (e) {
-      console.error('deleteUser failed:', e);
-      throw e;
-    }
-  };
-
-  const logoutUser = async (targetUid) => {
-    try {
-      await UserModel.logout(targetUid);
-    } catch (e) {
-      console.error('logout failed:', e);
-    }
-  };
-
-  useEffect(() => {
-    const pathname = window.location.pathname;
-    const isRegistrationRoute = pathname.includes('/register') || pathname.includes('/postgres-register');
-
-    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
-      try {
-        if (authUser) {
-          setUid(authUser.uid);
-          
-          // Skip auto-fetch on registration routes
-          if (!isRegistrationRoute) {
-            const userData = await getUser(authUser.uid);
-            
-            if (userData) {
-              await loginUser(authUser.uid);
-            } else {
-              console.log('User not found in backend, may need registration');
-            }
-          } else {
-            console.log('On registration route - skipping auto-fetch');
-          }
-        } else {
-          // ... rest of sign-out logic
-        }
-      } catch (error) {
-        console.error('Auth state change error:', error);
+  // ------------------ CORE LOADER ------------------
+  const getUser = useCallback(
+    async (uidToLoad) => {
+      if (!uidToLoad) {
+        console.log("[UserProvider] getUser called with empty uid");
         setUser(null);
+        setUid(null);
+        setLoading(false);
+        return null;
+      }
+
+      try {
+        setLoading(true);
+        console.log("[UserProvider] Fetching user from Postgres:", uidToLoad);
+        const u = await UserModel.get(String(uidToLoad));
+        console.log("[UserProvider] Loaded user:", u);
+        setUser(u || null);
+        setUid(u?.uid || null);
+        setError(null);
+        return u;
+      } catch (err) {
+        console.error("[UserProvider] getUser error:", err);
+        setUser(null);
+        setUid(null);
+        setError(err);
+        return null;
       } finally {
         setLoading(false);
       }
-    });
+    },
+    []
+  );
 
-    return () => unsubscribe();
-  }, [uid]);
+  // ------------------ BOOTSTRAP FROM COOKIE ------------------
+  useEffect(() => {
+    const cookieUid = getCookie("currentUserId");
+    if (!cookieUid) {
+      console.log("[UserProvider] No currentUserId cookie, treating as logged out");
+      setLoading(false);
+      return;
+    }
+    getUser(cookieUid);
+  }, [getUser]);
+
+  // ------------------ PUBLIC HELPERS (NAMES PRESERVED) ------------------
+
+  const setCurrentUser = (userData) => {
+    console.log("[UserProvider] setCurrentUser:", userData);
+    setUser(userData || null);
+    setUid(userData?.uid || null);
+  };
+
+  const getUsersByOrg = async (orgId) => {
+    // keep signature same as before; pass through to model
+    return await UserModel.listByOrg(orgId);
+  };
+
+  const getActiveUsersByOrg = async (orgId) => {
+    return await UserModel.listActiveByOrg(orgId);
+  };
+
+  const createUser = async (data) => {
+    // same name, now uses Postgres model
+    const created = await UserModel.create(data);
+    return created;
+  };
+
+  const updateUser = async (userId, data) => {
+    const updated = await UserModel.update(userId, data);
+
+    // If updating current user, also update context
+    if (user && user.uid === userId) {
+      setUser((prev) => ({
+        ...(prev || {}),
+        ...updated,
+        ...data,
+      }));
+    }
+
+    return updated;
+  };
+
+  const deleteUser = async (userId) => {
+    await UserModel.delete(userId);
+
+    // If deleting self, clear context + cookies
+    if (user?.uid === userId) {
+      setUser(null);
+      setUid(null);
+      deleteCookie("currentUserId");
+      deleteCookie("currentOrgId");
+    }
+  };
+
+  const activate = async (userId) => {
+    const res = await UserModel.activate(userId);
+    if (user?.uid === userId) {
+      setUser((prev) => ({
+        ...(prev || {}),
+        status: "active",
+        ...res,
+      }));
+    }
+    return res;
+  };
+
+  const suspend = async (userId) => {
+    const res = await UserModel.suspend(userId);
+    if (user?.uid === userId) {
+      setUser((prev) => ({
+        ...(prev || {}),
+        status: "suspended",
+        ...res,
+      }));
+    }
+    return res;
+  };
+
+  // keep function name "trackLogin" but use Postgres /login endpoint
+  const trackLogin = async (userId) => {
+    const res = await UserModel.login(userId);
+    // Optionally refresh user from backend after login
+    await getUser(userId);
+    return res;
+  };
+
+  // If you already call adminCreateUser somewhere, keep the name:
+  const adminCreateUser = async (data) => {
+    // at the moment same as createUser, but you can later point to /auth/admin-create
+    return await UserModel.adminCreate(data);
+  };
+  const getUsersByIds = useCallback(async (userIds) => {
+    if (!userIds || userIds.length === 0) {
+      return [];
+    }
+    
+    try {
+      const users = await UserModel.getUsersByIds(userIds);
+      return users || [];
+    } catch (err) {
+      console.error("[UserProvider] getUsersByIds error:", err);
+      return [];
+    }
+  }, []);
+  const logout = () => {
+    console.log("[UserProvider] logout called");
+    setUser(null);
+    setUid(null);
+    deleteCookie("currentUserId");
+    deleteCookie("currentOrgId");
+  };
+
   return (
     <UserContext.Provider
       value={{
         user,
         uid,
-        getUsersByIds,
         loading,
-        isRegistering,
+        error,
+        // function names preserved:
         setCurrentUser,
         getUser,
-        loginUser,
-        logoutUser,
         getUsersByOrg,
         getActiveUsersByOrg,
         createUser,
-        updateUser,
+        updateUser,getUsersByIds,
         deleteUser,
+        activate,
+        suspend,
+        trackLogin,
+        adminCreateUser,
+        logout,
       }}
     >
       {children}
@@ -183,10 +198,4 @@ export const UserProvider = ({ children }) => {
   );
 };
 
-export const useUser = () => {
-  const context = useContext(UserContext);
-  if (!context) {
-    throw new Error('useUser must be used within a UserProvider');
-  }
-  return context;
-};
+export const useUser = () => useContext(UserContext);

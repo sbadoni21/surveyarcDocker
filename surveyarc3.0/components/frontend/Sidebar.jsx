@@ -7,7 +7,6 @@ import {
   Settings,
   LogOut,
   Menu,
-  Ticket,
   X,
   Building2,
   Contact2,
@@ -21,23 +20,31 @@ import { useUser } from "@/providers/postGresPorviders/UserProvider";
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user } = useUser(); // Get user from UserProvider - must be at top level
-  
+  const { user } = useUser(); // user from Postgres UserProvider
+
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [activeItem, setActiveItem] = useState("Dashboard");
   const [orgName, setOrgName] = useState("");
   const [orgHoverTitle, setOrgHoverTitle] = useState("");
 
-  // Derive orgId and language from route
+  // ===== Route-derived org + language =====
   const { orgId, language } = useMemo(() => {
     const segs = pathname.split("/").filter(Boolean);
-    const lang = segs[0] || 'en'; // First segment is language
-    const idFromPath = segs.at(2); // Third segment after postgres-org
-    const id = idFromPath || (getCookie("currentOrgId") ? String(getCookie("currentOrgId")) : "");
+    const lang = segs[0] || "en"; // /en/postgres-org/ORGID/...
+    const idFromPath = segs.at(2); // postgres-org / [2] = orgId
+    const id =
+      idFromPath ||
+      (getCookie("currentOrgId") ? String(getCookie("currentOrgId")) : "");
     return { orgId: id, language: lang };
   }, [pathname]);
 
+  // ===== DEBUG: see what user we actually have =====
+  useEffect(() => {
+    console.log("Sidebar user from provider:", user);
+  }, [user]);
+
+  // ===== Fetch org name from Firestore (for header) =====
   useEffect(() => {
     let cancelled = false;
 
@@ -91,66 +98,104 @@ export default function Sidebar() {
     };
   }, [orgId]);
 
-  // Get user role for org-tickets routing
+  // ===== Compute userRole (with per-org override) =====
   const userRole = useMemo(() => {
-    if (!user || !user.role) return 'agent';
-    return user.role.toLowerCase();
-  }, [user]);
+    if (!user) {
+      console.log("Sidebar: no user yet, not showing admin tabs");
+      return null;
+    }
 
-  // owner/admin check for Contacts / Team / Settings
+    // Try org-specific role first if you are storing like meta_data.org_roles[orgId]
+    const orgRoles =
+      user.meta_data?.org_roles ||
+      user.metaData?.org_roles ||
+      user.meta_data?.orgRoles ||
+      user.metaData?.orgRoles ||
+      {};
+
+    const orgSpecificRole =
+      (orgId && (orgRoles[String(orgId)] || orgRoles[orgId])) || null;
+
+    const baseRole = orgSpecificRole || user.role || "agent";
+    const normalized = String(baseRole).toLowerCase();
+
+    console.log("Sidebar: computed userRole", {
+      orgId,
+      baseRole,
+      normalized,
+      orgRoles,
+    });
+
+    return normalized;
+  }, [user, orgId]);
+
   const canSeeAdminSections = useMemo(
-    () => ['owner', 'admin'].includes(userRole),
+    () => !!userRole && ["owner", "admin"].includes(userRole),
     [userRole]
   );
 
-  // Determine first available org-tickets page based on role
   const getOrgTicketsPath = () => {
     const roleMap = {
-      owner: 'business-calendars',
-      admin: 'business-calendars',
-      manager: 'business-calendars',
-      team_lead: 'my-group-tickets',
-      agent: 'agent-tickets',
-      user: 'agent-tickets'
+      owner: "business-calendars",
+      admin: "business-calendars",
+      manager: "business-calendars",
+      team_lead: "my-group-tickets",
+      agent: "agent-tickets",
+      user: "agent-tickets",
     };
-    return `org-tickets/${roleMap[userRole] || 'agent-tickets'}`;
+    return `org-tickets/${roleMap[userRole] || "agent-tickets"}`;
   };
 
-  // Only show Org Tickets if user has a valid role
-  const shouldShowOrgTickets = userRole && ['owner', 'admin', 'manager', 'team_lead', 'agent','user'].includes(userRole);
+  const shouldShowOrgTickets =
+    !!userRole &&
+    ["owner", "admin", "manager", "team_lead", "agent", "user"].includes(
+      userRole
+    );
 
   // =========================
   //      MENU ITEMS LOGIC
   // =========================
 
-  let menuItems;
+  let menuItems = [];
 
-  if (userRole === 'agent') {
-    // 👇 Agent: ONLY Tickets Management
+  if (!userRole) {
+    // While user is loading or no role yet -> keep empty menu, but sidebar still renders safely
+    menuItems = [];
+  } else if (userRole === "agent") {
+    // Agent: Tickets only
     menuItems = shouldShowOrgTickets
-      ? [{ icon: Building2, label: "Tickets Management", path: getOrgTicketsPath() }]
+      ? [
+          {
+            icon: Building2,
+            label: "Tickets Management",
+            path: getOrgTicketsPath(),
+          },
+        ]
       : [];
   } else {
-    // Everyone else (owner/admin/manager/team_lead/user)
+    // owner/admin/manager/team_lead/user
     menuItems = [
       { icon: LayoutDashboard, label: "Dashboard", path: "" },
       { icon: FolderOpen, label: "Survey Management", path: "projects" },
 
       ...(shouldShowOrgTickets
-        ? [{ icon: Building2, label: "Tickets Management", path: getOrgTicketsPath() }]
+        ? [
+            {
+              icon: Building2,
+              label: "Tickets Management",
+              path: getOrgTicketsPath(),
+            },
+          ]
         : []),
 
-      // Contacts Management: owner/admin only
       ...(canSeeAdminSections
         ? [{ icon: Contact2, label: "Contacts Management", path: "contacts" }]
         : []),
 
-      // Team: owner/admin only
       ...(canSeeAdminSections
         ? [{ icon: Users, label: "Team", path: "team" }]
         : []),
 
-      // Settings: owner/admin only
       ...(canSeeAdminSections
         ? [{ icon: Settings, label: "Settings", path: "settings" }]
         : []),
@@ -159,28 +204,23 @@ export default function Sidebar() {
 
   const getActiveItemFromPath = (currentPath) => {
     const parts = currentPath.split("/").filter(Boolean);
-    
-    // Find dashboard index
+
     const dashboardIdx = parts.findIndex((p) => p === "dashboard");
     if (dashboardIdx === -1) return "Dashboard";
-    
-    // If nothing after dashboard, we're on dashboard
+
     if (dashboardIdx === parts.length - 1) return "Dashboard";
-    
-    // Get the segment after dashboard
+
     const segment = parts[dashboardIdx + 1];
-    
-    // Check if we're in org-tickets section
-    if (segment === "org-tickets") return "Tickets Management"; // 🔁 match menu label
-    
-    // Match against menu items
+
+    if (segment === "org-tickets") return "Tickets Management";
+
     const match = menuItems.find((m) => m.path.startsWith(segment));
     return match ? match.label : "Dashboard";
   };
 
   useEffect(() => {
     setActiveItem(getActiveItemFromPath(pathname));
-  }, [pathname]);
+  }, [pathname, userRole]); // also depend on userRole so it recalculates when role appears
 
   const toggleSidebar = () => setIsCollapsed((v) => !v);
   const toggleMobile = () => setIsMobileOpen((v) => !v);
@@ -254,7 +294,7 @@ export default function Sidebar() {
           <nav className="flex-1 px-2 pt-4 pb-2 overflow-y-auto max-h-[calc(100vh-4rem)]">
             <ul className="space-y-1">
               {menuItems.map((item, index) => {
-                const Icon = item.icon;
+                const IconComp = item.icon;
                 const isActive = activeItem === item.label;
                 return (
                   <li key={index} className="relative">
@@ -266,26 +306,33 @@ export default function Sidebar() {
                       onClick={() => handleItemClick(item)}
                       className={`
                         relative z-10 flex w-[90%] mx-auto items-center space-x-3 rounded-lg p-3 pl-5 text-left transition-all duration-200
-                        ${isActive 
-                          ? "bg-[#FFB5733B] text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" 
-                          : "text-[#74727E] dark:text-gray-400 hover:bg-[#FFB5733B] dark:hover:bg-orange-900/30 hover:text-orange-600 dark:hover:text-orange-400"
+                        ${
+                          isActive
+                            ? "bg-[#FFB5733B] text-orange-600 dark:bg-orange-900/30 dark:text-orange-400"
+                            : "text-[#74727E] dark:text-gray-400 hover:bg-[#FFB5733B] dark:hover:bg-orange-900/30 hover:text-orange-600 dark:hover:text-orange-400"
                         }
                         ${isCollapsed ? "justify-center px-2" : ""}
                       `}
                       title={isCollapsed ? item.label : ""}
                     >
-                      <Icon 
-                        size={20} 
-                        className={`flex-shrink-0 ${isActive ? "text-orange-500 dark:text-orange-400" : ""}`} 
+                      <IconComp
+                        size={20}
+                        className={`flex-shrink-0 ${
+                          isActive
+                            ? "text-orange-500 dark:text-orange-400"
+                            : ""
+                        }`}
                       />
                       {!isCollapsed && (
-                        <span className="font-semibold text-sm">{item.label}</span>
+                        <span className="font-semibold text-sm">
+                          {item.label}
+                        </span>
                       )}
                     </button>
                   </li>
                 );
               })}
-              
+
               {/* LOGOUT BUTTON */}
               <li className="pt-2 border-t border-gray-100 dark:border-gray-800 mt-2">
                 <button
@@ -298,7 +345,9 @@ export default function Sidebar() {
                   title={isCollapsed ? "Log out" : ""}
                 >
                   <LogOut size={20} className="flex-shrink-0" />
-                  {!isCollapsed && <span className="font-medium text-sm">Log out</span>}
+                  {!isCollapsed && (
+                    <span className="font-medium text-sm">Log out</span>
+                  )}
                 </button>
               </li>
             </ul>
@@ -306,7 +355,11 @@ export default function Sidebar() {
         </div>
 
         {/* SPACER */}
-        <div className={`hidden lg:block transition-all duration-300 ${isCollapsed ? "w-16" : "w-64"}`} />
+        <div
+          className={`hidden lg:block transition-all duration-300 ${
+            isCollapsed ? "w-16" : "w-64"
+          }`}
+        />
       </div>
     </>
   );

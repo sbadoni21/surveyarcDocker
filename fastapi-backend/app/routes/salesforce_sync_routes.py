@@ -336,7 +336,7 @@ def sync_salesforce_account_as_list(
     """
     
     org_id = current_user.get("org_id")
-    
+    print(f"🔄 Syncing Salesforce Account {request.account_id} as Contact List for org {org_id}")
     # Fetch Salesforce account and contacts
     try:
         account_data = SalesforceService.get_account_with_contacts(request.account_id)

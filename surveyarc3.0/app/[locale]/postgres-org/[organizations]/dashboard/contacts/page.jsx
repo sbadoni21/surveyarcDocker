@@ -23,6 +23,8 @@ import { UploadModal } from "@/components/email-page-components/UploadContacts";
 import ContactsList from "@/components/contacts/ContactsList";
 import { useContacts } from "@/providers/postGresPorviders/contactProvider";
 import ContactListCard from "@/components/contacts/ContactListCard";
+import { useSalesforceAccounts } from "@/providers/postGresPorviders/SalesforceAccountProvider";
+import { useSalesforceSync } from "@/providers/postGresPorviders/SalesforceSyncProvider";
 
 export default function ListsPage() {
   const {
@@ -43,6 +45,17 @@ export default function ListsPage() {
     removeContactsFromList,
     loading,
   } = useContacts();
+  const { accounts, list: listSfAccounts, loading: sfLoading } = useSalesforceAccounts();
+  const {
+    syncing,
+    syncAccountAsNewList,
+    syncAccountIntoExistingList,
+  } = useSalesforceSync();
+
+  const [sfModalOpen, setSfModalOpen] = useState(false);
+  const [sfSelectedAccountId, setSfSelectedAccountId] = useState("");
+  const [sfMode, setSfMode] = useState("new-list"); // "new-list" | "existing-list"
+  const [sfTargetListId, setSfTargetListId] = useState("");
 
   const path = usePathname();
   const orgId = path?.split("/")[3];
@@ -94,6 +107,57 @@ const router = useRouter();
     if (!orgId) return;
     await listLists(orgId);
     await listContacts(orgId);
+  };
+  useEffect(() => {
+    (async () => {
+      try {
+        await listSfAccounts({ limit: 100 });
+      } catch (e) {
+        console.error("Failed to load Salesforce accounts", e);
+      }
+    })();
+  }, [listSfAccounts]);
+  const handleSyncFromSalesforce = async () => {
+    if (!orgId) {
+      alert("Missing orgId");
+      return;
+    }
+    if (!sfSelectedAccountId) {
+      alert("Select a Salesforce account first");
+      return;
+    }
+
+    try {
+      if (sfMode === "new-list") {
+        // ✅ Creates/updates ContactList for that SF account
+        // and syncs contacts into it (backend logic)
+        const result = await syncAccountAsNewList(sfSelectedAccountId, orgId);
+        console.log("SF sync (new list) result:", result);
+        await refresh();
+        alert(`✅ Synced ${result?.sync_summary?.contacts_synced ?? result?.total_synced ?? 0} contacts from Salesforce`);
+      } else if (sfMode === "existing-list") {
+        if (!sfTargetListId) {
+          alert("Select a target list");
+          return;
+        }
+        const result = await syncAccountIntoExistingList({
+          listId: sfTargetListId,
+          accountId: sfSelectedAccountId,
+          orgId,
+        });
+        console.log("SF sync (existing list) result:", result);
+        await refresh();
+        alert(`✅ Added ${result?.added ?? 0} contact(s) from Salesforce`);
+      }
+
+      setSfModalOpen(false);
+      setSfSelectedAccountId("");
+      setSfTargetListId("");
+      setSfMode("new-list");
+    } catch (err) {
+      console.error("Salesforce sync failed:", err);
+      alert("❌ Salesforce sync failed: " + (err.message || "Unknown error"));
+    }
   };
 
 
@@ -644,6 +708,13 @@ const filteredLists = (lists ?? []).filter(list =>
                 <Plus className="w-4 h-4" />
                 Create Empty List
               </button>
+                   <button
+                onClick={() => setSfModalOpen(true)}
+                className="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all shadow-sm hover:shadow-md"
+              >
+                <Share2 className="w-4 h-4" />
+                Sync from Salesforce
+              </button>
             </div>
           </div>
 
@@ -787,21 +858,32 @@ const filteredLists = (lists ?? []).filter(list =>
                 Clear Search
               </button>
             ) : (
-              <div className="flex gap-3 justify-center">
-                <button
-                  onClick={openUploadForNewList}
-                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition inline-flex items-center gap-2"
-                >
-                  <Upload className="w-4 h-4" />
-                  Upload Contacts
-                </button>
-                <button
-                  onClick={() => setIsCreating(true)}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-                >
-                  Create Empty List
-                </button>
-              </div>
+                         <div className="flex gap-3">
+              <button
+                onClick={openUploadForNewList}
+                className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all shadow-sm hover:shadow-md"
+              >
+                <Upload className="w-4 h-4" />
+                Upload Contacts
+              </button>
+
+              <button
+                onClick={() => setIsCreating(true)}
+                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow-md"
+              >
+                <Plus className="w-4 h-4" />
+                Create Empty List
+              </button>
+
+              <button
+                onClick={() => setSfModalOpen(true)}
+                className="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all shadow-sm hover:shadow-md"
+              >
+                <Share2 className="w-4 h-4" />
+                Sync from Salesforce
+              </button>
+            </div>
+
             )}
           </div>
         )}
@@ -814,7 +896,115 @@ const filteredLists = (lists ?? []).filter(list =>
         onClose={() => setContactEditOpen(false)} 
         onSaved={refresh} 
       />
-      
+            {/* Salesforce Sync Modal */}
+      {sfModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white p-6 rounded-lg w-full max-w-xl shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-semibold">Sync Contacts from Salesforce</h3>
+              <button
+                onClick={() => setSfModalOpen(false)}
+                className="text-gray-600 hover:text-gray-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Select SF account */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Salesforce Account
+              </label>
+              <select
+                value={sfSelectedAccountId}
+                onChange={(e) => setSfSelectedAccountId(e.target.value)}
+                className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select an account…</option>
+                {(accounts || []).map((acc) => (
+                  <option key={acc.accountId} value={acc.accountId}>
+                    {acc.name} {acc.type ? `(${acc.type})` : ""}
+                  </option>
+                ))}
+              </select>
+              {sfLoading && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Loading Salesforce accounts…
+                </p>
+              )}
+            </div>
+
+            {/* Mode toggle */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Sync Mode
+              </label>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSfMode("new-list")}
+                  className={`px-3 py-1 rounded border text-sm ${
+                    sfMode === "new-list"
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-gray-700 border-gray-300"
+                  }`}
+                >
+                  Create new list from account
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSfMode("existing-list")}
+                  className={`px-3 py-1 rounded border text-sm ${
+                    sfMode === "existing-list"
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-gray-700 border-gray-300"
+                  }`}
+                >
+                  Add contacts to existing list
+                </button>
+              </div>
+            </div>
+
+            {/* Existing list selector if needed */}
+            {sfMode === "existing-list" && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Target List
+                </label>
+                <select
+                  value={sfTargetListId}
+                  onChange={(e) => setSfTargetListId(e.target.value)}
+                  className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select a list…</option>
+                  {(lists || []).map((l) => (
+                    <option key={l.listId} value={l.listId}>
+                      {l.listName || l.list_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
+              <button
+                onClick={() => setSfModalOpen(false)}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSyncFromSalesforce}
+                disabled={syncing}
+                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-60"
+              >
+                {syncing ? "Syncing..." : "Start Sync"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ContactProfileModal 
         contact={viewContact} 
         isOpen={viewOpen} 

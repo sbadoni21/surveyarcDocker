@@ -3,12 +3,15 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Calendar, CheckCircle, Clock, Copy, Mail, Shield,
-  Users, Trash2, Ban, Undo2, ChevronDown, AlertCircle
+  Users, Trash2, Ban, Undo2, ChevronDown, AlertCircle, UserPlus,
+  Users2
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import { Icon } from "@iconify/react";
+import Link from "next/link";
+import CreateUserModal from "@/components/team/CreateUser";
 
 // ==================== Constants ====================
 const USERS_PER_PAGE = 6;
@@ -18,7 +21,6 @@ const AVATAR_COLORS = [
   "bg-[#2C6DEF]",
   "bg-gradient-to-br from-orange-500 to-red-500"
 ];
-
 
 const ROLE_STYLES = {
   owner:           "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
@@ -39,30 +41,27 @@ const ROLES = [
   { value: "security_admin",  label: "Security Admin" },
   { value: "auditor",         label: "Auditor (Read-only)" },
   { value: "integration",     label: "Integration (Bot)" },
-  // omit "owner" from the dropdown (owner shouldn’t be assignable here)
 ];
-
-
 
 // ==================== Utility Functions ====================
 const normalizeDate = (dateInput) => {
   if (!dateInput) return null;
-  
+
   if (typeof dateInput?.toDate === "function") {
     return dateInput.toDate();
   }
-  
+
   if (dateInput?.seconds) {
     return new Date(dateInput.seconds * 1000);
   }
-  
+
   return new Date(dateInput);
 };
 
 const formatDate = (dateInput) => {
   const date = normalizeDate(dateInput);
   if (!date) return "—";
-  
+
   return date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -102,7 +101,7 @@ const Toast = ({ message, type = "success", onClose }) => {
 // ==================== Status Badge Component ====================
 const StatusTag = ({ status }) => {
   const isActive = (status || "").toLowerCase() === "active";
-  
+
   return isActive ? (
     <span className="flex items-center gap-1 bg-[#DCFCE7] text-[#1B803D] dark:bg-green-900 dark:text-green-200 rounded-2xl px-2 py-1 text-[10px] font-medium">
       <CheckCircle size={12} /> Active
@@ -115,7 +114,7 @@ const StatusTag = ({ status }) => {
 };
 
 // ==================== Invite Section Component ====================
-const InviteSection = ({ inviteLink, isOwner, onCopy, copied }) => {
+const InviteSection = ({ inviteLink, isOwner, onCopy, copied, onOpenCreateModal }) => {
   return (
     <div className="rounded-2xl py-6 px-10 mb-8 bg-[#FCF0E5] dark:bg-[#4F3E32]">
       <div className="flex items-center gap-2 mb-4">
@@ -124,7 +123,7 @@ const InviteSection = ({ inviteLink, isOwner, onCopy, copied }) => {
         </div>
         <p className="text-md font-semibold dark:text-[#CBC9DE]">Invite Team Member</p>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 mb-4">
         <div className="relative flex-1">
           <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8C8A97]" />
           <input
@@ -146,6 +145,18 @@ const InviteSection = ({ inviteLink, isOwner, onCopy, copied }) => {
           {copied ? "Copied!" : "Copy Link"}
         </button>
       </div>
+      
+      {/* Create User Button */}
+      {isOwner && (
+        <button
+          onClick={onOpenCreateModal}
+          className="w-full bg-white dark:bg-[#2A2A2A] text-[#ED7A13] border-2 border-[#ED7A13] px-6 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-[#ED7A13] hover:text-white transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
+        >
+          <UserPlus size={18} />
+          Create New User Account
+        </button>
+      )}
+      
       {!isOwner && (
         <p className="mt-2 text-xs text-[#8C8A97] flex items-center gap-1">
           <Shield size={12} /> Only the organisation owner can invite or edit members.
@@ -181,7 +192,7 @@ const UserCard = ({ member, index, isOwner, ownerUID, busyUid, onChangeRole, onT
               <span className="truncate">{member.email}</span>
               <span className="flex items-center gap-1">
                 <Calendar size={12} />
-                Joined {formatDate(member.joinedAt)}
+                Joined {formatDate(member.joinedAt || member.joined_at)}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -322,7 +333,7 @@ export default function UsersPage() {
   const pathname = usePathname();
   const orgId = pathname.split("/")[3];
   const { organisation, update: updateOrg } = useOrganisation();
-  const { user: currentUser, updateUser, suspend, activate, deleteUser } = useUser();
+  const { user: currentUser, updateUser, deleteUser } = useUser();
 
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
@@ -330,6 +341,7 @@ export default function UsersPage() {
   const [busyUid, setBusyUid] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [toast, setToast] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const inviteLink = `${
     typeof window !== "undefined" ? window.location.origin : ""
@@ -340,7 +352,7 @@ export default function UsersPage() {
     () => !!organisation?.owner_uid && currentUser?.uid === String(organisation.owner_uid),
     [organisation?.owner_uid, currentUser?.uid]
   );
-console.log(organisation)
+
   const ownerUID = organisation?.owner_uid;
 
   const totalPages = Math.ceil(users.length / USERS_PER_PAGE);
@@ -349,7 +361,7 @@ console.log(organisation)
     [users, currentPage]
   );
 
-  // Load users
+  // Load users from organisation.team_members
   useEffect(() => {
     if (organisation?.team_members) {
       setUsers(organisation.team_members);
@@ -388,21 +400,36 @@ console.log(organisation)
     });
   };
 
+  // When a new user is created via CreateUserModal
+  const handleUserCreatedIntoOrg = async (createdUser) => {
+    const mapped = {
+      uid: createdUser.uid,
+      email: createdUser.email,
+      role: createdUser.role,
+      status: createdUser.status || "active",
+      joinedAt: createdUser.joined_at || new Date().toISOString(),
+      orgIds: createdUser.org_ids || [],
+      meta: createdUser.meta_data || {},
+    };
+
+    const next = [...users, mapped];
+    setUsers(next);
+    await persistTeamMembers(next);
+    showToast("User created and added to organisation");
+  };
+
   const handleChangeRole = async (member, nextRole) => {
     if (!isOwner || member.uid === ownerUID) return;
 
     setBusyUid(member.uid);
     try {
-      // Update user record
       await updateUser(member.uid, { role: nextRole });
-      
-      // Update local state
+
       const updatedUsers = users.map((m) =>
         m.uid === member.uid ? { ...m, role: nextRole } : m
       );
       setUsers(updatedUsers);
-      
-      // Persist to database
+
       await persistTeamMembers(updatedUsers);
       showToast(`Role updated to ${capitalizeRole(nextRole)}`);
     } catch (error) {
@@ -418,23 +445,16 @@ console.log(organisation)
 
     const isActive = (member.status || "").toLowerCase() === "active";
     setBusyUid(member.uid);
-    
+
     try {
-      // Call API
-      if (isActive) {
-        await suspend(member.uid);
-      } else {
-        await activate(member.uid);
-      }
-      
-      // Update local state
       const newStatus = isActive ? "suspended" : "active";
+      await updateUser(member.uid, { status: newStatus });
+
       const updatedUsers = users.map((m) =>
         m.uid === member.uid ? { ...m, status: newStatus } : m
       );
       setUsers(updatedUsers);
-      
-      // Persist to database
+
       await persistTeamMembers(updatedUsers);
       showToast(isActive ? "User suspended successfully" : "User activated successfully");
     } catch (error) {
@@ -454,21 +474,14 @@ console.log(organisation)
 
     setBusyUid(member.uid);
     try {
-      // Optional: Fully delete user account (uncomment if needed)
-      // await deleteUser(member.uid);
-      
-      // Remove from team
       const updatedUsers = users.filter((m) => m.uid !== member.uid);
       setUsers(updatedUsers);
-      
-      // Persist to database
+
       await persistTeamMembers(updatedUsers);
       showToast("User removed from organisation");
     } catch (error) {
       console.error("Error removing user:", error);
       showToast("Failed to remove user. Please try again.", "error");
-      
-      // Rollback: Re-add user to local state
       setUsers(users);
     } finally {
       setBusyUid(null);
@@ -480,6 +493,22 @@ console.log(organisation)
       <div className="max-w-7xl mx-auto">
         {/* Toast Notification */}
         {toast && <Toast message={toast.message} type={toast.type} onClose={hideToast} />}
+ <Link
+      href="./team/groups"
+      className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
+    >
+      <Users2 size={16} />
+      <span>Groups</span>
+    </Link>
+
+        {/* Create User Modal */}
+        <CreateUserModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          defaultOrgId={orgId}
+          currentUser={currentUser}
+          onUserCreated={handleUserCreatedIntoOrg}
+        />
 
         {/* Header */}
         <div className="mb-8 space-y-1">
@@ -487,12 +516,13 @@ console.log(organisation)
           <p className="text-xs text-[#5B596A]">Manage your team and invite new members</p>
         </div>
 
-        {/* Invite Section */}
+        {/* Invite Section with Create User Button */}
         <InviteSection
           inviteLink={inviteLink}
           isOwner={isOwner}
           onCopy={copyToClipboard}
           copied={copied}
+          onOpenCreateModal={() => setIsModalOpen(true)}
         />
 
         {/* Users List */}

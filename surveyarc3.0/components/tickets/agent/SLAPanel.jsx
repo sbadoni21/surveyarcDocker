@@ -6,7 +6,6 @@ import SLAModel from "@/models/slaModel";
 import TicketModel from "@/models/ticketModel";
 
 function TimerRow({ data, dimension }) {
-  clgog("SLAPanel TimerRow data:", data, "dimension:", dimension);
   if (!data) {
     return <div className="ml-6 text-xs text-gray-600">No data</div>;
   }

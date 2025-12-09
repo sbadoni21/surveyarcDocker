@@ -42,7 +42,42 @@ class UserModel {
       metadata: {},
     };
   }
+// models/postGresModels/userModel.js - adminCreate method only
 
+/**
+ * Admin-create a new user (via /users/admin-create)
+ * This will:
+ *  - create Firebase Auth user (in FastAPI)
+ *  - create Postgres users row
+ */
+async adminCreate({
+  email,
+  password,
+  displayName,
+  role = "member",
+  orgId,
+  status = "active",
+  metaData = {},
+}) {
+  const body = {
+    email,
+    password,
+    display_name: displayName || "",  // Match FastAPI snake_case
+    role,
+    org_id: String(orgId),            // Match FastAPI snake_case
+    status,
+    meta_data: metaData,              // Match FastAPI snake_case
+  };
+
+  const res = await fetch(`${BASE}/admin-create`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+
+  return parseJson(res);
+}
   async create({ uid, email, displayName, role = "member", initialOrgId }) {
     const ref = this.ref(uid);
     const snap = await getDoc(ref);
