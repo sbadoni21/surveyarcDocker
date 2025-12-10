@@ -11,13 +11,22 @@ import { useRule } from "@/providers/rulePProvider";
 import { useContacts } from "@/providers/postGresPorviders/contactProvider";
 import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
 import { useResponse } from "@/providers/postGresPorviders/responsePProvider";
-import { useTheme } from "@/providers/postGresPorviders/themeProvider"; // <- theme provider
+import { useTheme } from "@/providers/postGresPorviders/themeProvider";
 import TicketModel from "@/models/ticketModel";
-import { Wind } from "lucide-react";
 
 export default function FormPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
+
+  // 🔹 Panel / participant source info
+  const sourceId = searchParams.get("source_id") || null; // participant_sources.id
+  // Try common panel IDs: psid, PID, trans_id...
+  const panelPid =
+    searchParams.get("psid") ||
+    searchParams.get("PID") ||
+    searchParams.get("pid") ||
+    searchParams.get("trans_id") ||
+    null;
 
   const orgId = searchParams.get("org_id");
   const projectId = searchParams.get("projects") || null;
@@ -25,7 +34,7 @@ export default function FormPage() {
   const campaignID = searchParams.get("campaign_id") || null;
   const campaignType = searchParams.get("campaign_type") || null;
   const userKey = searchParams.get("user_id") || null;
-    const contactID = searchParams.get("contact_id") || null;
+  const contactID = searchParams.get("contact_id") || null;
   const ticketID = searchParams.get("ticket_id") || null;
   const [startTime] = useState(() => new Date());
   const prefillQuestionId = searchParams.get("prefill_q") || null;
@@ -39,12 +48,16 @@ export default function FormPage() {
 
   const [questions, setQuestions] = useState([]);
   const [survey, setSurvey] = useState(null);
-  const [theme, setTheme] = useState(null); // <- theme state
+  const [theme, setTheme] = useState(null);
   const [loading, setLoading] = useState(true);
   const [responseId, setResponseId] = useState(null);
   const [isCompleted, setIsCompleted] = useState(false);
   const [blocks, setBlocks] = useState([]);
   const [status, setStatus] = useState("");
+
+  // 🔹 NEW: loaded participant source config (exit pages, url_variables)
+  const [participantSource, setParticipantSource] = useState(null);
+
   const { getAllQuestions } = useQuestion();
   const { getSurvey } = useSurvey();
   const { rules = [], getAllRules } = useRule() || {};
@@ -72,26 +85,24 @@ export default function FormPage() {
       case "full":
         questionOrder = shuffleArray(questionOrder);
         break;
-
-      case "subset":
+      case "subset": {
         const count =
           parseInt(subsetCount) || Math.ceil(questionOrder.length / 2);
         questionOrder = shuffleArray(questionOrder).slice(0, count);
         break;
-
+      }
       case "rotate":
         questionOrder = [...questionOrder.slice(1), questionOrder[0]];
         break;
-
       case "none":
       default:
-        // keep original order
         break;
     }
 
     return { ...block, questionOrder };
   };
 
+  // 🔹 Load survey, questions, rules
   useEffect(() => {
     const init = async () => {
       if (!orgId || !surveyId) return;
@@ -101,7 +112,7 @@ export default function FormPage() {
         completedSurveys = getCookie("SurveyCompleted")
           ? JSON.parse(getCookie("SurveyCompleted"))
           : [];
-      } catch (e) {
+      } catch {
         completedSurveys = [];
       }
 
@@ -123,11 +134,10 @@ export default function FormPage() {
               return null;
             }
 
-              let randomizedBlocks = (surveyDoc.blocks || []).map(
+            let randomizedBlocks = (surveyDoc.blocks || []).map(
               applyBlockRandomization
             );
 
-            // 🔹 If coming from 1-click email (prefill_q), bring that Q first
             randomizedBlocks = reorderBlocksForPrefill(
               randomizedBlocks,
               prefillQuestionId
@@ -135,7 +145,6 @@ export default function FormPage() {
 
             setSurvey(surveyDoc);
             setBlocks(randomizedBlocks);
-
 
             if (surveyDoc?.theme_id) {
               try {
@@ -148,7 +157,6 @@ export default function FormPage() {
             } else {
               setTheme(null);
             }
-            // --- end new
           } catch (err) {
             console.error("Error fetching survey:", err);
             router.push("/404");
@@ -185,6 +193,51 @@ export default function FormPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, surveyId]);
 
+  // 🔹 When coming from a panel: track click/start + load participant source config
+  useEffect(() => {
+    if (!sourceId) return;
+
+    const run = async () => {
+      try {
+        // track click
+        fetch(
+          `/api/post-gres-apis/participant-sources/${encodeURIComponent(
+            sourceId
+          )}/track/click`,
+          { method: "POST" }
+        ).catch((err) =>
+          console.error("Failed to track panel click:", err)
+        );
+
+        // track start
+        fetch(
+          `/api/post-gres-apis/participant-sources/${encodeURIComponent(
+            sourceId
+          )}/track/start`,
+          { method: "POST" }
+        ).catch((err) =>
+          console.error("Failed to track panel start:", err)
+        );
+
+        // load config for exit pages
+        const res = await fetch(
+          `/api/post-gres-apis/participant-sources/${encodeURIComponent(
+            sourceId
+          )}`,
+          { cache: "no-store" }
+        );
+        if (!res.ok) throw new Error("Failed to load participant source");
+        const data = await res.json();
+        setParticipantSource(data);
+      } catch (e) {
+        console.error("Panel bootstrap error:", e);
+      }
+    };
+
+    run();
+  }, [sourceId]);
+
+  // 🔹 reorder blocks after they / questions change
   useEffect(() => {
     if (blocks.length && questions.length) {
       const orderedQuestions = [];
@@ -209,113 +262,211 @@ export default function FormPage() {
 
       setQuestions([...orderedQuestions, ...remaining]);
     }
-  }, [blocks]);
+  }, [blocks, questions.length]);
 
-  // In FormPage.jsx handleSubmit function (around line 283):
+  // 🔹 Helper: build panel redirect URL from participantSource config
+  const buildPanelRedirectUrl = (statusKey) => {
+    if (!participantSource) return null;
+    const exits = participantSource.exit_pages || {};
+    const cfg = exits[statusKey];
+    if (!cfg?.redirect_url) return null;
 
-const handleSubmit = async (answers) => {
-  console.log("🔹 handleSubmit called with", Object.keys(answers).length, "answers");
-  
-  if (!orgId || !surveyId) {
-    alert("Survey not ready. Please try again later.");
-    return;
-  }
+    let url = cfg.redirect_url;
 
-  try {
-    setStatus("Saving response…");
-    const surveyStatus = survey?.status;
-    const endTime = new Date();
-    const totalMs = endTime - startTime;
-    const totalMinutes = Math.floor(totalMs / 60000);
-    const totalSeconds = Math.floor((totalMs % 60000) / 1000);
-    const respondentId = userKey || "anonymous";
+    // Replace known variables from URL & context
+    const urlVars = participantSource.url_variables || [];
 
-    const responseData = {
-      respondent_id: respondentId,
-      status: surveyStatus === "test" ? "test_completed" : "completed",
-      meta_data: {
-        orgId,
-        projectId,
-        surveyId,
-        campaignID,
-        campaignType,
-        platform,
-        startTime: startTime.toISOString(),
-        endTime: endTime.toISOString(),
-        totalTime: `${totalMinutes}m ${totalSeconds}s`,
-      },
-      answers: Object.entries(answers).map(([questionId, answerValue]) => ({
-        questionId,
-        projectId,
-        answer: answerValue,
-      })),
-    };
-    
-    console.log("🔹 About to call saveResponse with:", { orgId, surveyId, answersCount: responseData.answers.length });
-    
-    const savedResponse = await saveResponse(orgId, surveyId, responseData);
-    
-    console.log("🔹 Response saved successfully:", savedResponse);
+    urlVars.forEach((v) => {
+      const name = v.var_name;
+      const val = searchParams.get(name);
+      if (!val) return;
 
-    // ... rest of your code (contacts, tickets, org update) ...
+      const encoded = encodeURIComponent(val);
 
-    if (contactID) {
-      await updateContact(contactID, {
-        surveys: [{
-          surveyId,
-          responseId: savedResponse.response_id,
+      // support patterns like ${psid}, ${PID}, [%PID%], etc.
+      url = url.replace(new RegExp(`\\$\\{${name}\\}`, "g"), encoded);
+      url = url.replace(new RegExp(`\\[${name}\\]`, "gi"), encoded);
+      url = url.replace(new RegExp(`\\[%${name}%\\]`, "gi"), encoded);
+      url = url.replace(new RegExp(`\\[%${name.toUpperCase()}%\\]`, "g"), encoded);
+    });
+
+    // Replace ${gv.survey.path} with current survey URL path if present
+    if (url.includes("${gv.survey.path}")) {
+      const surveyPath =
+        typeof window !== "undefined" ? window.location.pathname : "";
+      url = url.replace(
+        "${gv.survey.path}",
+        encodeURIComponent(surveyPath || `/form?survey_id=${surveyId}`)
+      );
+    }
+
+    return url;
+  };
+
+  // 🔹 handleSubmit with panel logic
+  const handleSubmit = async (answers) => {
+    console.log(
+      "🔹 handleSubmit called with",
+      Object.keys(answers).length,
+      "answers"
+    );
+
+    if (!orgId || !surveyId) {
+      alert("Survey not ready. Please try again later.");
+      return;
+    }
+
+    try {
+      setStatus("Saving response…");
+      const surveyStatus = survey?.status;
+      const endTime = new Date();
+      const totalMs = endTime - startTime;
+      const totalMinutes = Math.floor(totalMs / 60000);
+      const totalSeconds = Math.floor((totalMs % 60000) / 1000);
+      const respondentId = userKey || "anonymous";
+
+      const responseData = {
+        respondent_id: respondentId,
+        status: surveyStatus === "test" ? "test_completed" : "completed",
+
+        // 🔗 panel link
+        source_id: sourceId || undefined,
+
+        meta_data: {
+          orgId,
           projectId,
-        }],
-      });
-    }
-
-    if (ticketID) {
-      try {
-        const ticket = await TicketModel.get(ticketID);
-        const updatedFollowup = {
-          ...(ticket.followup || {}),
-          mode: "survey",
           surveyId,
-          responseId: savedResponse.response_id,
-        };
-        await TicketModel.update(ticketID, {
-          followup: updatedFollowup,
+          campaignID,
+          campaignType,
+          platform,
+          startTime: startTime.toISOString(),
+          endTime: endTime.toISOString(),
+          totalTime: `${totalMinutes}m ${totalSeconds}s`,
+          panel: sourceId
+            ? {
+                source_id: sourceId,
+                pid: panelPid || null,
+                raw_query: Object.fromEntries(searchParams.entries()),
+              }
+            : null,
+        },
+        answers: Object.entries(answers).map(([questionId, answerValue]) => ({
+          questionId,
+          projectId,
+          answer: answerValue,
+        })),
+      };
+
+      console.log("🔹 About to call saveResponse with:", {
+        orgId,
+        surveyId,
+        answersCount: responseData.answers.length,
+      });
+
+      const savedResponse = await saveResponse(orgId, surveyId, responseData);
+
+      console.log("🔹 Response saved successfully:", savedResponse);
+      setResponseId(savedResponse.response_id);
+
+      // Contacts
+      if (contactID) {
+        await updateContact(contactID, {
+          surveys: [
+            {
+              surveyId,
+              responseId: savedResponse.response_id,
+              projectId,
+            },
+          ],
         });
-      } catch (err) {
-        console.error("Failed to update ticket followup with responseId", err);
       }
+
+      // Ticket followup
+      if (ticketID) {
+        try {
+          const ticket = await TicketModel.get(ticketID);
+          const updatedFollowup = {
+            ...(ticket.followup || {}),
+            mode: "survey",
+            surveyId,
+            responseId: savedResponse.response_id,
+          };
+          await TicketModel.update(ticketID, {
+            followup: updatedFollowup,
+          });
+        } catch (err) {
+          console.error(
+            "Failed to update ticket followup with responseId",
+            err
+          );
+        }
+      }
+
+      // Org usage
+      const currentUsage = organisation?.subscription?.currentusage?.response || 0;
+      await update(orgId, {
+        subscription: { currentusage: { response: currentUsage + 1 } },
+        last_activity: new Date().toISOString(),
+      });
+
+      // Mark survey as completed in cookie
+      const completedSurveys = getCookie("SurveyCompleted")
+        ? JSON.parse(getCookie("SurveyCompleted"))
+        : [];
+      const updatedSurveys = Array.from(new Set([...completedSurveys, surveyId]));
+      setCookie("SurveyCompleted", JSON.stringify(updatedSurveys), {
+        path: "/",
+        maxAge: 60 * 60 * 24 * 365,
+      });
+
+      console.log(
+        "🔹 All post-save logic complete. Handling panel / thank-you redirect..."
+      );
+
+      // 🔚 PANEL EXIT LOGIC
+      if (sourceId && surveyStatus !== "test") {
+        try {
+          // Track completion
+          fetch(
+            `/api/post-gres-apis/participant-sources/${encodeURIComponent(
+              sourceId
+            )}/track/complete`,
+            { method: "POST" }
+          ).catch((err) =>
+            console.error("Failed to track panel complete:", err)
+          );
+
+          // For now treat this path as "qualified"
+          const redirectUrl = buildPanelRedirectUrl("qualified");
+
+          if (redirectUrl) {
+            console.log("🔹 Redirecting respondent to panel URL:", redirectUrl);
+            // small pause so tracking / logs can flush
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            if (typeof window !== "undefined") {
+              window.location.href = redirectUrl;
+              return;
+            }
+          } else {
+            console.warn(
+              "⚠️ No panel redirect URL found in participantSource.exit_pages. Falling back to /thank-you"
+            );
+          }
+        } catch (e) {
+          console.error("Panel redirect error:", e);
+        }
+      }
+
+      // 🔁 Fallback / normal flow
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      router.push("/thank-you");
+    } catch (err) {
+      console.error("Submission error:", err);
+      alert(`Something went wrong: ${err.message || err}`);
+      setStatus("");
+      throw err;
     }
-
-    const currentUsage = organisation?.subscription?.currentusage?.response || 0;
-    await update(orgId, {
-      subscription: { currentusage: { response: currentUsage + 1 } },
-      last_activity: new Date().toISOString(),
-    });
-
-    // Mark survey as completed
-    const completedSurveys = getCookie("SurveyCompleted")
-      ? JSON.parse(getCookie("SurveyCompleted"))
-      : [];
-    const updatedSurveys = Array.from(new Set([...completedSurveys, surveyId]));
-    setCookie("SurveyCompleted", JSON.stringify(updatedSurveys), {
-      path: "/",
-      maxAge: 60 * 60 * 24 * 365,
-    });
-
-    console.log("🔹 All post-save logic complete, navigating to thank-you page");
-    
-    // 🔹 WAIT A MOMENT BEFORE NAVIGATION
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    router.push('/thank-you');
-
-  } catch (err) {
-    console.error("Submission error:", err);
-    alert(`Something went wrong: ${err.message || err}`);
-    setStatus("");
-    throw err; // Re-throw so the caller knows it failed
-  }
-};
+  };
 
   const expandBlocksByPageBreaks = (blocks, questions) => {
     const expanded = [];
@@ -350,12 +501,12 @@ const handleSubmit = async (answers) => {
 
     return expanded.length ? expanded : blocks;
   };
+
   const reorderBlocksForPrefill = (blocksArr, targetQuestionId) => {
     if (!targetQuestionId) return blocksArr;
 
     const blocksCopy = [...blocksArr];
 
-    // Find the block that contains this question
     const idx = blocksCopy.findIndex((block) =>
       (block.questionOrder || []).includes(targetQuestionId)
     );
@@ -363,13 +514,8 @@ const handleSubmit = async (answers) => {
 
     const targetBlock = blocksCopy[idx];
 
-    // Ensure this question is first in that block's questionOrder
     let qOrder = targetBlock.questionOrder || [];
-
-    // Remove it from its old place
     qOrder = qOrder.filter((id) => id !== targetQuestionId);
-
-    // Insert at the very beginning (before any PB- markers)
     qOrder = [targetQuestionId, ...qOrder];
 
     const newTargetBlock = {
@@ -377,10 +523,10 @@ const handleSubmit = async (answers) => {
       questionOrder: qOrder,
     };
 
-    // Move that entire block to the front of the survey
     const remaining = blocksCopy.filter((_, i) => i !== idx);
     return [newTargetBlock, ...remaining];
   };
+
   const prefillAnswers = useMemo(() => {
     if (!prefillQuestionId || !prefillAnswer || !questions.length) return {};
 
@@ -391,7 +537,7 @@ const handleSubmit = async (answers) => {
     if (!q) return {};
 
     const qid = q.questionId || q.id;
-    return { [qid]: prefillAnswer }; // 🔹 we store answer as the option id
+    return { [qid]: prefillAnswer };
   }, [prefillQuestionId, prefillAnswer, questions]);
 
   return (
@@ -405,17 +551,14 @@ const handleSubmit = async (answers) => {
           ✅ You have already completed the survey. Thank you!
         </p>
       ) : (
-        <>
-          <SurveyForm
-            questions={questions}
-            blocks={expandBlocksByPageBreaks(blocks, questions)}
-            handleSubmit={handleSubmit}
-            rules={rules}
-            theme={theme} // <- pass theme into SurveyForm
-                        initialAnswers={prefillAnswers}   // 🔹 NEW
-
-          />
-        </>
+        <SurveyForm
+          questions={questions}
+          blocks={expandBlocksByPageBreaks(blocks, questions)}
+          handleSubmit={handleSubmit}
+          rules={rules}
+          theme={theme}
+          initialAnswers={prefillAnswers}
+        />
       )}
     </div>
   );

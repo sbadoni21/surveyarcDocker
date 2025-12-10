@@ -22,6 +22,7 @@ import SurveyResponsesPage from "@/components/SurveyResponsePopup";
 import ThemeManager from "@/components/theme";
 import { Button } from "@mui/material";
 import DummyGeneratorPanel from "@/components/dummydata-generator/DummyGeneratorPanel";
+import PanelManager from "./PanelManager";
 
 export default function Dist() {
   const [selectedType, setSelectedType] = useState(null);
@@ -85,6 +86,7 @@ export default function Dist() {
     if (["campaign"].includes(k)) return "campaign";
     if (["theme"].includes(k)) return "theme";
     if (["responses"].includes(k)) return "responses";
+    if (["panel"].includes(k)) return "panel";
     return "questions";
   }, []);
 
@@ -534,6 +536,7 @@ const handleToggleStatus = async () => {
         {activeTab === "campaign" && <CampaignPage />}
         {activeTab === "responses" && <SurveyResponsesPage survey={survey} />}
         {activeTab === "theme" && <ThemeManager />}
+        {activeTab === "panel" && <PanelManager />}
       </div>
     </div>
   );

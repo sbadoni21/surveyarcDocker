@@ -57,16 +57,17 @@ def create_response(data: ResponseCreate, db: Session = Depends(get_db)):
     answers_data = [a.model_dump() for a in data.answers or []]
 
     row = Response(
-        response_id=rid,
-        org_id=data.org_id,
-        survey_id=data.survey_id,
-        respondent_id=data.respondent_id,
-        status=data.status or "started",
-        meta_data=data.meta_data or {},
-        started_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        answers_blob=answers_data,
-    )
+            response_id=rid,
+            org_id=data.org_id,
+            survey_id=data.survey_id,
+            respondent_id=data.respondent_id,
+            status=data.status or "started",
+            meta_data=data.meta_data or {},
+            source_id=data.source_id,          # <--- HERE
+            started_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+            answers_blob=answers_data,
+        )
 
     db.add(row)
     answers_list = [a.model_dump() for a in data.answers or []]
