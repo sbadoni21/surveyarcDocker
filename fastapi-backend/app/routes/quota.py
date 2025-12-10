@@ -14,6 +14,7 @@ from app.schemas.quota import (
     QuotaEvaluateRequest,
     QuotaEvaluateResult,
     QuotaIncrementRequest,
+    QuotaUpdate,
 )
 from app.services.quota import (
     create_quota,
@@ -21,6 +22,8 @@ from app.services.quota import (
     list_quotas_by_survey,
     evaluate_quota,
     increment_cell_safe,
+    update_quota,
+    delete_quota,
 )
 
 router = APIRouter(prefix="/quotas", tags=["quotas"])
@@ -200,3 +203,60 @@ def increment_quota_endpoint(
         raise HTTPException(status_code=500, detail="Increment failed")
 
     return {"ok": True, "result": dict(row)}
+
+
+# ---------- UPDATE ----------
+@router.put("/{quota_id}", response_model=QuotaWithCells)
+def update_quota_endpoint(
+    quota_id: UUID,
+    payload: QuotaUpdate,
+    db: Session = Depends(get_db),
+):
+    quota = update_quota(db, quota_id, payload)
+    if not quota:
+        raise HTTPException(status_code=404, detail="Quota not found")
+
+    return QuotaWithCells(
+        id=quota.id,
+        org_id=quota.org_id,
+        survey_id=quota.survey_id,
+        question_id=quota.question_id,
+        name=quota.name,
+        description=quota.description,
+        is_enabled=quota.is_enabled,
+        quota_type=quota.quota_type,
+        stop_condition=quota.stop_condition,
+        when_met=quota.when_met,
+        action_payload=quota.action_payload,
+        metadata=quota.quota_metadata,
+        created_at=quota.created_at,
+        updated_at=quota.updated_at,
+        cells=[
+            QuotaCell(
+                id=c.id,
+                quota_id=c.quota_id,
+                label=c.label,
+                cap=c.cap,
+                count=c.count,
+                condition=c.condition,
+                is_enabled=c.is_enabled,
+                target_option_id=c.target_option_id,
+                created_at=c.created_at,
+                updated_at=c.updated_at,
+            )
+            for c in (quota.cells or [])
+        ],
+    )
+
+
+# ---------- DELETE ----------
+@router.delete("/{quota_id}")
+def delete_quota_endpoint(
+    quota_id: UUID,
+    db: Session = Depends(get_db),
+):
+    ok = delete_quota(db, quota_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Quota not found")
+
+    return {"ok": True}

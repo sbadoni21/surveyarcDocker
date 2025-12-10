@@ -8,9 +8,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.models.quota import SurveyQuota, SurveyQuotaCell
+from app.schemas.quota import QuotaUpdate
 
 logger = logging.getLogger(__name__)
 
+
+# ---------- CREATE ----------
 
 def create_quota(db: Session, payload: Any) -> SurveyQuota:
     """
@@ -23,11 +26,11 @@ def create_quota(db: Session, payload: Any) -> SurveyQuota:
     name = getattr(payload, "name", None)
 
     if not org_id:
-      raise HTTPException(status_code=422, detail="org_id is required")
+        raise HTTPException(status_code=422, detail="org_id is required")
     if not survey_id:
-      raise HTTPException(status_code=422, detail="survey_id is required")
+        raise HTTPException(status_code=422, detail="survey_id is required")
     if not name:
-      raise HTTPException(status_code=422, detail="name is required")
+        raise HTTPException(status_code=422, detail="name is required")
 
     question_id = getattr(payload, "question_id", None)
     quota_type = getattr(payload, "quota_type", "hard")
@@ -111,6 +114,8 @@ def create_quota(db: Session, payload: Any) -> SurveyQuota:
         raise HTTPException(status_code=500, detail=f"Failed to create quota: {e}")
 
 
+# ---------- FETCH / LIST ----------
+
 def fetch_quota_with_cells(db: Session, quota_id: UUID) -> Optional[SurveyQuota]:
     quota = (
         db.query(SurveyQuota)
@@ -129,6 +134,8 @@ def list_quotas_by_survey(db: Session, survey_id: str) -> List[SurveyQuota]:
     )
 
 
+# ---------- EVALUATE ----------
+
 def evaluate_quota(
     db: Session, quota_id: UUID, facts: Dict
 ) -> Tuple[SurveyQuota, List[SurveyQuotaCell]]:
@@ -141,6 +148,8 @@ def evaluate_quota(
 
     return quota, list(quota.cells or [])
 
+
+# ---------- INCREMENT ----------
 
 def increment_cell_safe(
     db: Session,
@@ -182,3 +191,85 @@ def increment_cell_safe(
     row = res.first()
     db.commit()
     return row
+
+
+# ---------- UPDATE (full replace) ----------
+
+def update_quota(
+    db: Session,
+    quota_id: UUID,
+    data: QuotaUpdate,
+) -> Optional[SurveyQuota]:
+    """
+    Full replacement update for a quota:
+    - updates scalar fields
+    - replaces all cells with the given payload.cells
+    """
+    quota: Optional[SurveyQuota] = (
+        db.query(SurveyQuota)
+        .filter(SurveyQuota.id == quota_id)
+        .first()
+    )
+    if not quota:
+        return None
+
+    # --- update scalar fields ---
+    quota.org_id = data.org_id
+    quota.survey_id = data.survey_id
+    quota.question_id = data.question_id
+
+    quota.name = data.name
+    quota.description = data.description
+    quota.is_enabled = bool(data.is_enabled)
+    quota.quota_type = data.quota_type or quota.quota_type
+    quota.stop_condition = data.stop_condition or quota.stop_condition
+    quota.when_met = data.when_met or quota.when_met
+
+    quota.action_payload = data.action_payload or {}
+    quota.quota_metadata = data.metadata or {}
+
+    # --- replace cells ---
+    # delete existing cells
+    db.query(SurveyQuotaCell).filter(SurveyQuotaCell.quota_id == quota.id).delete()
+    db.flush()
+
+    new_cells: List[SurveyQuotaCell] = []
+    for cell_data in data.cells:
+        cell = SurveyQuotaCell(
+            quota_id=quota.id,
+            label=cell_data.label,
+            cap=cell_data.cap,
+            count=0,  # reset count on update; adjust if you need to keep old counts
+            condition=cell_data.condition or {},
+            is_enabled=bool(cell_data.is_enabled),
+            target_option_id=cell_data.target_option_id,
+        )
+        db.add(cell)
+        new_cells.append(cell)
+
+    quota.cells = new_cells
+
+    db.commit()
+    db.refresh(quota)
+
+    return quota
+
+
+# ---------- DELETE ----------
+
+def delete_quota(db: Session, quota_id: UUID) -> bool:
+    """
+    Delete a quota and its cells (via cascade).
+    Returns True if deleted, False if not found.
+    """
+    quota: Optional[SurveyQuota] = (
+        db.query(SurveyQuota)
+        .filter(SurveyQuota.id == quota_id)
+        .first()
+    )
+    if not quota:
+        return False
+
+    db.delete(quota)
+    db.commit()
+    return True

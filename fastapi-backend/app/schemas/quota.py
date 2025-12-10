@@ -1,36 +1,50 @@
 # app/schemas/quota.py
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from uuid import UUID
 from datetime import datetime
 
 
+# ---------- CREATE PAYLOAD TYPES ----------
+
 class QuotaCellCreate(BaseModel):
     label: str
     cap: int = Field(..., ge=0)
-    condition: dict = Field(default_factory=dict)
+    condition: Dict[str, Any] = Field(default_factory=dict)
     is_enabled: bool = True
     target_option_id: Optional[str] = None
 
 
 class QuotaCreate(BaseModel):
-    org_id: str
-    survey_id: str
-    question_id: Optional[str] = None
+    # NOTE: frontend sends camelCase (orgId, surveyId, questionId, etc.)
+    org_id: str = Field(..., alias="orgId")
+    survey_id: str = Field(..., alias="surveyId")
+    question_id: Optional[str] = Field(None, alias="questionId")
 
     name: str
     description: Optional[str] = ""
 
-    is_enabled: Optional[bool] = True
-    quota_type: Optional[str] = "hard"
-    stop_condition: Optional[str] = "greater"
-    when_met: Optional[str] = "close_survey"
+    is_enabled: Optional[bool] = Field(True, alias="isEnabled")
+    quota_type: Optional[str] = Field("hard", alias="quotaType")
+    stop_condition: Optional[str] = Field("greater", alias="stopCondition")
+    when_met: Optional[str] = Field("close_survey", alias="whenMet")
 
-    action_payload: Optional[dict] = Field(default_factory=dict)
-    metadata: Optional[dict] = Field(default_factory=dict)
+    action_payload: Optional[Dict[str, Any]] = Field(default_factory=dict, alias="actionPayload")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
     cells: List[QuotaCellCreate] = Field(default_factory=list)
 
+    class Config:
+        allow_population_by_field_name = True
+        populate_by_name = True
+
+
+# Update has same shape as create (full replacement)
+class QuotaUpdate(QuotaCreate):
+    pass
+
+
+# ---------- RESPONSE TYPES ----------
 
 class QuotaCell(BaseModel):
     id: UUID
@@ -38,7 +52,7 @@ class QuotaCell(BaseModel):
     label: str
     cap: int
     count: int
-    condition: dict
+    condition: Dict[str, Any]
     is_enabled: bool
     target_option_id: Optional[str]
     created_at: datetime
@@ -61,8 +75,8 @@ class Quota(BaseModel):
     stop_condition: str
     when_met: str
 
-    action_payload: Optional[dict]
-    metadata: Optional[dict]
+    action_payload: Optional[Dict[str, Any]]
+    metadata: Optional[Dict[str, Any]]
 
     created_at: datetime
     updated_at: Optional[datetime]
@@ -75,9 +89,11 @@ class QuotaWithCells(Quota):
     cells: List[QuotaCell]
 
 
+# ---------- EVALUATE / INCREMENT ----------
+
 class QuotaEvaluateRequest(BaseModel):
     respondent_id: Optional[UUID]
-    facts: dict = Field(default_factory=dict)
+    facts: Dict[str, Any] = Field(default_factory=dict)
 
 
 class QuotaEvaluateResult(BaseModel):
@@ -85,11 +101,11 @@ class QuotaEvaluateResult(BaseModel):
     blocked: bool
     reason: Optional[str]
     action: Optional[str]
-    action_payload: Optional[dict]
+    action_payload: Optional[Dict[str, Any]]
 
 
 class QuotaIncrementRequest(BaseModel):
     respondent_id: Optional[UUID]
     matched_cell_id: UUID
     reason: str = "complete"
-    metadata: Optional[dict] = Field(default_factory=dict)
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
