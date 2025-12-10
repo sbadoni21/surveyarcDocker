@@ -21,6 +21,7 @@ import CampaignPage from "./CampaignPage";
 import SurveyResponsesPage from "@/components/SurveyResponsePopup";
 import ThemeManager from "@/components/theme";
 import { Button } from "@mui/material";
+import DummyGeneratorPanel from "@/components/dummydata-generator/DummyGeneratorPanel";
 
 export default function Dist() {
   const [selectedType, setSelectedType] = useState(null);
@@ -396,6 +397,7 @@ export default function Dist() {
     }
   };
 
+
   const updateConfig = (key, value) => {
     setNewQuestionData((prev) => ({
       ...prev,
@@ -440,6 +442,8 @@ const handleToggleStatus = async () => {
     ? "Change Status to Published"
     : "Change Status to Test"}
 </Button>
+<DummyGeneratorPanel orgId={orgId} projectId={projectId} surveyId={surveyId} />
+
 
 
       <div className="flex-1 overflow-auto bg-[#f5f5f5] dark:bg-[#121214] p-4">

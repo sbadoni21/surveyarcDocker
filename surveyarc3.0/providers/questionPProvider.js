@@ -1,10 +1,10 @@
 "use client";
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { getCookie } from "cookies-next";
 import QuestionModel from "@/models/questionModel";
 
-const QuestionContext = createContext();
+const QuestionContext = createContext(null);
 
 export const QuestionProvider = ({ children }) => {
   const [questions, setQuestions] = useState([]);
@@ -13,23 +13,48 @@ export const QuestionProvider = ({ children }) => {
   const [orgId, setOrgId] = useState(null);
   const [surveyId, setSurveyId] = useState(null);
 
-  const path = usePathname();
-  const parts = (path || "").split("/"); // e.g. /en/postgres-org/{orgId}/dashboard/projects/{projectId}/{surveyId}
-  // Adjust index per your routing: you used 7 earlier; confirm with your actual path.
-  const inferredSurveyId = parts[7] || parts[parts.length - 1];
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // 1) Prefer survey_id from query (?survey_id=...)
+  const surveyIdFromQuery = searchParams?.get("survey_id") || null;
+
+  // 2) Fallback: derive from path
+  // Example: /en/postgres-org/{orgId}/dashboard/projects/{projectId}/{surveyId}
+  let surveyIdFromPath = null;
+  if (pathname) {
+    const parts = pathname.split("/").filter(Boolean); // remove empty
+
+    // If you ever have /surveys/[surveyId]
+    const surveysIdx = parts.indexOf("surveys");
+    if (surveysIdx !== -1 && parts.length > surveysIdx + 1) {
+      surveyIdFromPath = parts[surveysIdx + 1];
+    } else {
+      const last = parts[parts.length - 1];
+      if (last && last !== "form") {
+        surveyIdFromPath = last;
+      }
+    }
+  }
+
+  // 3) Final survey id
+  const resolvedSurveyId = surveyIdFromQuery || surveyIdFromPath || null;
 
   useEffect(() => {
-    const o = getCookie("currentOrgId") || null;
-    setOrgId(o);
-    setSurveyId(inferredSurveyId);
+    const currentOrgId = getCookie("currentOrgId") || null;
+    setOrgId(currentOrgId);
+    setSurveyId(resolvedSurveyId);
 
-    if (o && inferredSurveyId) {
-      getAllQuestions(o, inferredSurveyId);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path]);
+    // Don’t auto-fetch on public /form — FormPage already fetches
+    if (!currentOrgId || !resolvedSurveyId) return;
+    if (pathname && pathname.startsWith("/form")) return;
+
+    getAllQuestions(currentOrgId, resolvedSurveyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, searchParams?.toString()]);
 
   const getAllQuestions = async (_orgId, _surveyId) => {
+    if (!_orgId || !_surveyId) return [];
     const data = await QuestionModel.getAll(_orgId, _surveyId);
     setQuestions(data || []);
     return data;
@@ -40,10 +65,11 @@ export const QuestionProvider = ({ children }) => {
     setSelectedQuestion(q);
     return q;
   };
-const getBulkQuestions = async ( questionIds) => {
-  const q = await QuestionModel.getBulkQuestions( questionIds);
-  return q;
-};
+
+  const getBulkQuestions = async (questionIds) => {
+    const q = await QuestionModel.getBulkQuestions(questionIds);
+    return q;
+  };
 
   const saveQuestion = async (_orgId, _surveyId, data) => {
     const created = await QuestionModel.create(_orgId, _surveyId, data);
@@ -52,8 +78,15 @@ const getBulkQuestions = async ( questionIds) => {
   };
 
   const updateQuestion = async (_orgId, _surveyId, questionId, updateData) => {
-    const updated = await QuestionModel.update(_orgId, _surveyId, questionId, updateData);
-    setQuestions((prev) => prev.map((q) => (q.questionId === questionId ? updated : q)));
+    const updated = await QuestionModel.update(
+      _orgId,
+      _surveyId,
+      questionId,
+      updateData
+    );
+    setQuestions((prev) =>
+      prev.map((q) => (q.questionId === questionId ? updated : q))
+    );
     return updated;
   };
 
@@ -69,8 +102,8 @@ const getBulkQuestions = async ( questionIds) => {
         selectedQuestion,
         getAllQuestions,
         getQuestion,
-        saveQuestion,
         getBulkQuestions,
+        saveQuestion,
         updateQuestion,
         deleteQuestion,
         setSelectedQuestion,

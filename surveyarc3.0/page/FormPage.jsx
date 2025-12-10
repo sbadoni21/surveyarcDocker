@@ -211,123 +211,111 @@ export default function FormPage() {
     }
   }, [blocks]);
 
-  const handleSubmit = async (answers) => {
-    if (!orgId || !surveyId) {
-      alert("Survey not ready. Please try again later.");
-      return;
-    }
+  // In FormPage.jsx handleSubmit function (around line 283):
 
-    try {
-      setStatus("Saving response…");
-      const surveyStatus = survey?.status;
-      const endTime = new Date();
-      const totalMs = endTime - startTime;
-      const totalMinutes = Math.floor(totalMs / 60000);
-      const totalSeconds = Math.floor((totalMs % 60000) / 1000);
-      const respondentId = userKey || "anonymous";
-
-      const responseData = {
-        respondent_id: respondentId,
-        status: surveyStatus === "test" ? "test_completed" : "completed",
-        meta_data: {
-          orgId,
-          projectId,
-          surveyId,
-          campaignID,
-          campaignType,
-          platform,
-          startTime: startTime.toISOString(),
-          endTime: endTime.toISOString(),
-          totalTime: `${totalMinutes}m ${totalSeconds}s`,
-        },
-        answers: Object.entries(answers).map(([questionId, answerValue]) => ({
-          questionId,
-          projectId,
-          answer: answerValue,
-        })),
-      };
-
-      const savedResponse = await saveResponse(orgId, surveyId, responseData);
-
-      if (contactID) {
-        await updateContact(contactID, {
-          surveys: [
-            {
-              surveyId,
-              responseId: savedResponse.response_id,
-              projectId,
-            },
-          ],
-        });
-      }
-if (ticketID) {
-  try {
-    // Fetch latest ticket so we don't drop any existing followup fields
-    const ticket = await TicketModel.get(ticketID);
-
-    const updatedFollowup = {
-      ...(ticket.followup || {}),
-      mode: "survey", // ensure mode is correct
-      surveyId,       // ensure survey is linked
-      responseId: savedResponse.response_id,  // 🔹 store responseId here
-    };
-
-    await TicketModel.update(ticketID, {
-      followup: updatedFollowup,
-    });
-  } catch (err) {
-    console.error("Failed to update ticket followup with responseId", err);
-    // optional: don't block the survey completion on this
+const handleSubmit = async (answers) => {
+  console.log("🔹 handleSubmit called with", Object.keys(answers).length, "answers");
+  
+  if (!orgId || !surveyId) {
+    alert("Survey not ready. Please try again later.");
+    return;
   }
-}
 
-      const currentUsage =
-        organisation?.subscription?.currentusage?.response || 0;
-      await update(orgId, {
-        subscription: { currentusage: { response: currentUsage + 1 } },
-        last_activity: new Date().toISOString(),
-      });
+  try {
+    setStatus("Saving response…");
+    const surveyStatus = survey?.status;
+    const endTime = new Date();
+    const totalMs = endTime - startTime;
+    const totalMinutes = Math.floor(totalMs / 60000);
+    const totalSeconds = Math.floor((totalMs % 60000) / 1000);
+    const respondentId = userKey || "anonymous";
 
-      setStatus("Saving to Salesforce…");
-      // const salesforceRes = await fetch("/api/salesforce/ingest", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({
-      //     orgId,
-      //     surveyId,
-      //     projectId,
-      //     responseId: savedResponse.response_id,
-      //   }),
-      // });
-
-      // if (!salesforceRes.ok) {
-      //   const text = await salesforceRes.text();
-      //   console.warn("Salesforce ingest failed:", text);
-      //   setStatus("Saved locally, Salesforce push failed.");
-      // } else {
-      //   setStatus("Saved to Salesforce.");
-      // }
-
-      // Mark survey as completed
-      const completedSurveys = getCookie("SurveyCompleted")
-        ? JSON.parse(getCookie("SurveyCompleted"))
-        : [];
-      const updatedSurveys = Array.from(
-        new Set([...completedSurveys, surveyId])
-      );
-      setCookie("SurveyCompleted", JSON.stringify(updatedSurveys), {
-        path: "/",
-        maxAge: 60 * 60 * 24 * 365,
-      });
-router.push('/thank-you');
+    const responseData = {
+      respondent_id: respondentId,
+      status: surveyStatus === "test" ? "test_completed" : "completed",
+      meta_data: {
+        orgId,
+        projectId,
+        surveyId,
+        campaignID,
+        campaignType,
+        platform,
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+        totalTime: `${totalMinutes}m ${totalSeconds}s`,
+      },
+      answers: Object.entries(answers).map(([questionId, answerValue]) => ({
+        questionId,
+        projectId,
+        answer: answerValue,
+      })),
+    };
     
+    console.log("🔹 About to call saveResponse with:", { orgId, surveyId, answersCount: responseData.answers.length });
+    
+    const savedResponse = await saveResponse(orgId, surveyId, responseData);
+    
+    console.log("🔹 Response saved successfully:", savedResponse);
 
-    } catch (err) {
-      console.error("Submission error:", err);
-      alert(`Something went wrong: ${err.message || err}`);
-      setStatus("");
+    // ... rest of your code (contacts, tickets, org update) ...
+
+    if (contactID) {
+      await updateContact(contactID, {
+        surveys: [{
+          surveyId,
+          responseId: savedResponse.response_id,
+          projectId,
+        }],
+      });
     }
-  };
+
+    if (ticketID) {
+      try {
+        const ticket = await TicketModel.get(ticketID);
+        const updatedFollowup = {
+          ...(ticket.followup || {}),
+          mode: "survey",
+          surveyId,
+          responseId: savedResponse.response_id,
+        };
+        await TicketModel.update(ticketID, {
+          followup: updatedFollowup,
+        });
+      } catch (err) {
+        console.error("Failed to update ticket followup with responseId", err);
+      }
+    }
+
+    const currentUsage = organisation?.subscription?.currentusage?.response || 0;
+    await update(orgId, {
+      subscription: { currentusage: { response: currentUsage + 1 } },
+      last_activity: new Date().toISOString(),
+    });
+
+    // Mark survey as completed
+    const completedSurveys = getCookie("SurveyCompleted")
+      ? JSON.parse(getCookie("SurveyCompleted"))
+      : [];
+    const updatedSurveys = Array.from(new Set([...completedSurveys, surveyId]));
+    setCookie("SurveyCompleted", JSON.stringify(updatedSurveys), {
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
+    });
+
+    console.log("🔹 All post-save logic complete, navigating to thank-you page");
+    
+    // 🔹 WAIT A MOMENT BEFORE NAVIGATION
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    router.push('/thank-you');
+
+  } catch (err) {
+    console.error("Submission error:", err);
+    alert(`Something went wrong: ${err.message || err}`);
+    setStatus("");
+    throw err; // Re-throw so the caller knows it failed
+  }
+};
 
   const expandBlocksByPageBreaks = (blocks, questions) => {
     const expanded = [];
