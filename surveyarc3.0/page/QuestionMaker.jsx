@@ -23,6 +23,9 @@ import ThemeManager from "@/components/theme";
 import { Button } from "@mui/material";
 import DummyGeneratorPanel from "@/components/dummydata-generator/DummyGeneratorPanel";
 import PanelManager from "./PanelManager";
+import { createSurveyFromTemplate } from "@/utils/createSurveyFromTemplate";
+import { TemplateSelectionPopup } from "@/components/surveys/TemplateSelectionPopup";
+import { useUser } from "@/providers/postGresPorviders/UserProvider";
 
 export default function Dist() {
   const [selectedType, setSelectedType] = useState(null);
@@ -32,6 +35,7 @@ export default function Dist() {
     config: {},
   });
   const [newQuestionSignal, setNewQuestionSignal] = useState(0);
+  const [showTemplatePopup, setShowTemplatePopup] = useState(false);
 
   const [showTypePopup, setShowTypePopup] = useState(false);
   const [activeTab, setActiveTab] = useState("questions");
@@ -40,7 +44,7 @@ export default function Dist() {
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [newBlockName, setNewBlockName] = useState("");
   const [loading, setLoading] = useState(true);
-
+ const{uid} = useUser();
   const pathname = usePathname();
   const parts = (pathname || "").split("/");
   const orgId = parts[3];
@@ -51,8 +55,8 @@ export default function Dist() {
     process.env.NEXT_PUBLIC_DOMAIN || "https://surveyarc-docker.vercel.app";
   const publicSurveyUrl = `${domain}/en/form?org_id=${orgId}&projects=${projectId}&survey_id=${surveyId}`;
 
-  const { getAllQuestions } = useQuestion();
-  const { updateSurvey, getSurvey } = useSurvey();
+  const { getAllQuestions, saveQuestion } = useQuestion();
+  const { updateSurvey, getSurvey, saveSurvey } = useSurvey();
   const [questions, setQuestions] = useState([]);
 
   const [addingQuestion, setAddingQuestion] = useState(false);
@@ -306,7 +310,30 @@ export default function Dist() {
       setAddingQuestion(false);
     }
   };
+  const handleSelectTemplate = async (template) => {
+    if (!template) {
+      // User chose "Start Blank"
+      // Handle blank survey creation
+      return;
+    }
 
+    try {
+   const result = await createSurveyFromTemplate(
+  template,
+  orgId,
+  projectId,
+  uid,                     // <-- just pass uid
+  { create: saveSurvey },
+  { create: saveQuestion }
+);
+
+
+      console.log('Survey created:', result);
+      // Navigate to the new survey or show success message
+    } catch (error) {
+      console.error('Failed to create survey:', error);
+    }
+  };
   const handleUpdateQuestion = async (questionId, updatedQuestion) => {
     if (!questionId) throw new Error("questionId required");
     try {
@@ -445,7 +472,19 @@ const handleToggleStatus = async () => {
     : "Change Status to Test"}
 </Button>
 <DummyGeneratorPanel orgId={orgId} projectId={projectId} surveyId={surveyId} />
+<>
+      <button onClick={() => setShowTemplatePopup(true)}>
+        Create New Survey
+      </button>
 
+      <TemplateSelectionPopup
+        isOpen={showTemplatePopup}
+        onClose={() => setShowTemplatePopup(false)}
+        onSelectTemplate={handleSelectTemplate}
+        orgId={orgId}
+        projectId={projectId}
+      />
+    </>
 
 
       <div className="flex-1 overflow-auto bg-[#f5f5f5] dark:bg-[#121214] p-4">

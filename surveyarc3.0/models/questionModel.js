@@ -37,6 +37,7 @@ const QuestionModel = {
       config: data.config || {},
       logic: data.logic || [],
     };
+    console.log(body)
     const res = await fetch(`${BASE}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
