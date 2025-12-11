@@ -9,3 +9,4 @@ redis
 alembic
 firebase-admin
 python-multipart
+playwright

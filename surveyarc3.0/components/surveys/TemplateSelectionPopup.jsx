@@ -8,7 +8,7 @@ import { createSurveyFromTemplate } from '@/utils/createSurveyFromTemplate';
 
 
 // Template Selection Popup Component
-export const TemplateSelectionPopup = ({ isOpen, onClose, onSelectTemplate, orgId, projectId }) => {
+export const TemplateSelectionPopup = ({ isOpen, onClose, onSelectTemplate, orgId, projectId, name }) => {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
 
   if (!isOpen) return null;
@@ -22,7 +22,7 @@ export const TemplateSelectionPopup = ({ isOpen, onClose, onSelectTemplate, orgI
     if (!selectedTemplate) return;
     
     try {
-      await onSelectTemplate(selectedTemplate);
+      await onSelectTemplate(selectedTemplate,name);
       onClose();
     } catch (error) {
       console.error('Error creating survey from template:', error);

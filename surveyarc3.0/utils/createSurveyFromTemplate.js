@@ -14,7 +14,8 @@ export async function createSurveyFromTemplate(
   projectId,
   createdBy,
   surveyModel,
-  questionModel
+  questionModel,
+  surveyNameForTemplate,
 ) {
   try {
 
@@ -22,8 +23,8 @@ export async function createSurveyFromTemplate(
     const surveyData = {
       orgId,
       projectId,
-      name: template.name,
-      title: template.name,
+      name: surveyNameForTemplate,
+      title: surveyNameForTemplate,
       description: template.description || '',
       status: 'test',
       time: new Date().toISOString(),

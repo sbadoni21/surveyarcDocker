@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { TableSortLabel } from "@mui/material";
 import { useSurvey } from "@/providers/surveyPProvider";
+import { useQuestion } from "@/providers/questionPProvider";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import MenuItem from "@mui/material/MenuItem";
@@ -23,6 +24,10 @@ import {
   Button,
   Menu,
   TablePagination,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 import {
   Edit as EditIcon,
@@ -36,6 +41,8 @@ import { FiPlus } from "react-icons/fi";
 import { Icon } from "@iconify/react";
 import { FaSpinner } from "react-icons/fa";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
+import { TemplateSelectionPopup } from "@/components/surveys/TemplateSelectionPopup";
+import { createSurveyFromTemplate } from "@/utils/createSurveyFromTemplate";
 
 export default function SurveyPage() {
   const [name, setName] = useState("");
@@ -48,8 +55,13 @@ export default function SurveyPage() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(6);
+  
+  // Template-related states
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showTemplatePopup, setShowTemplatePopup] = useState(false);
+  const [surveyNameForTemplate, setSurveyNameForTemplate] = useState("");
 
-  const { user } = useUser();
+  const { user, uid } = useUser();
   const router = useRouter();
   const pathname = usePathname();
   const pathParts = pathname.split("/");
@@ -57,62 +69,61 @@ export default function SurveyPage() {
   const projectId = pathParts[6];
   const [isEditing, setIsEditing] = useState(false);
   const [editSurveyId, setEditSurveyId] = useState(null);
-// In SurveyPage file: remove Firestore imports and usage
-// import { collection, getDocs } from "firebase/firestore";
-// import { db } from "@/firebase/firebase";
 
-const {
-  surveys,
-  getAllSurveys,
-  surveyLoading,
-  saveSurvey,
-  updateSurvey,
-  deleteSurvey: deleteSurveyContext,
-  listResponses,
-  countResponses,
-} = useSurvey();
+  const {
+    surveys,
+    getAllSurveys,
+    surveyLoading,
+    saveSurvey,
+    updateSurvey,
+    deleteSurvey: deleteSurveyContext,
+    listResponses,
+    countResponses,
+  } = useSurvey();
 
-// fetch all surveys for project
-useEffect(() => {
-  if (!orgId || !projectId) return;
-  getAllSurveys(orgId, projectId);
-}, [orgId, projectId]);
-
-// count responses using API
-useEffect(() => {
-  const fetchCounts = async () => {
-    if (!surveys?.length) {
-      setSurveysWithCounts([]);
-      return;
-    }
-    const updated = await Promise.all(
-      surveys.map(async (s) => {
-        try {
-          const { count } = await countResponses(s.survey_id || s.surveyId || s.id);
-          return { ...s, surveyId: s.survey_id || s.surveyId || s.id, responseCount: count || 0 };
-        } catch {
-          return { ...s, surveyId: s.survey_id || s.surveyId || s.id, responseCount: 0 };
-        }
-      })
-    );
-    setSurveysWithCounts(updated);
-  };
-  fetchCounts();
-}, [surveys]);
-
-const handleResponseCountClick = async (surveyId) => {
-  if (!surveyId) return;
-  const resp = await listResponses(surveyId);
-  setSelectedSurveyId(surveyId);
-  setResponseData(resp || []);
-  setOpenPopup(true);
-};
-
-
+  const { saveQuestion } = useQuestion();
 
   const [surveysWithCounts, setSurveysWithCounts] = useState([]);
-
   const [anchorEl, setAnchorEl] = useState(null);
+  const [selectedSurveyId, setSelectedSurveyId] = useState(null);
+  const [responseData, setResponseData] = useState([]);
+  const [openPopup, setOpenPopup] = useState(false);
+
+  // Fetch all surveys
+  useEffect(() => {
+    if (!orgId || !projectId) return;
+    getAllSurveys(orgId, projectId);
+  }, [orgId, projectId]);
+
+  // Count responses
+  useEffect(() => {
+    const fetchCounts = async () => {
+      if (!surveys?.length) {
+        setSurveysWithCounts([]);
+        return;
+      }
+      const updated = await Promise.all(
+        surveys.map(async (s) => {
+          try {
+            const { count } = await countResponses(s.survey_id || s.surveyId || s.id);
+            return { ...s, surveyId: s.survey_id || s.surveyId || s.id, responseCount: count || 0 };
+          } catch {
+            return { ...s, surveyId: s.survey_id || s.surveyId || s.id, responseCount: 0 };
+          }
+        })
+      );
+      setSurveysWithCounts(updated);
+    };
+    fetchCounts();
+  }, [surveys]);
+
+  const handleResponseCountClick = async (surveyId) => {
+    if (!surveyId) return;
+    const resp = await listResponses(surveyId);
+    setSelectedSurveyId(surveyId);
+    setResponseData(resp || []);
+    setOpenPopup(true);
+  };
 
   const openMenuFor = (event, surveyId) => {
     setAnchorEl(event.currentTarget);
@@ -123,17 +134,6 @@ const handleResponseCountClick = async (surveyId) => {
     setAnchorEl(null);
     setSelectedSurveyId(null);
   };
-
-  useEffect(() => {
-    if (!orgId || !projectId) return;
-    getAllSurveys(orgId, projectId);
-  }, [orgId, projectId]);
-
-  const [selectedSurveyId, setSelectedSurveyId] = useState(null);
-  const [responseData, setResponseData] = useState([]);
-  const [openPopup, setOpenPopup] = useState(false);
-
-
 
   const handleRequestSort = (property) => {
     const isAsc = orderBy === property && order === "asc";
@@ -188,6 +188,112 @@ const handleResponseCountClick = async (surveyId) => {
     router.push(`/postgres-org/${orgId}/dashboard/projects/${projectId}/${surveyId}`);
   };
 
+  // Handle creating survey from scratch
+  const handleCreateFromScratch = async () => {
+    if (!surveyNameForTemplate.trim()) {
+      alert("Please enter a survey name");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const surveyData = {
+        name: surveyNameForTemplate,
+        time: "10 min",
+        orgId,
+        projectId,
+        createdBy: uid,
+        status: "draft",
+      };
+      
+      const newSurvey = await saveSurvey(surveyData);
+      
+      setSurveyNameForTemplate("");
+      setShowCreateDialog(false);
+      
+      // Navigate to the new survey
+      if (newSurvey?.survey_id || newSurvey?.surveyId) {
+        router.push(`/postgres-org/${orgId}/dashboard/projects/${projectId}/${newSurvey.survey_id || newSurvey.surveyId}`);
+      }
+      
+      alert("Survey created successfully!");
+    } catch (error) {
+      console.error(error);
+      alert("Failed to create survey");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle template selection
+  const handleSelectTemplate = async (template) => {
+    if (!template) {
+      // User chose "Start Blank" from template popup
+      handleCreateFromScratch();
+      return;
+    }
+console.log(surveyNameForTemplate)
+    if (!surveyNameForTemplate.trim()) {
+
+      alert("Please enter a survey name");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await createSurveyFromTemplate(
+        template,
+
+        orgId,
+        projectId,
+        uid,
+        { create: saveSurvey, update: updateSurvey },
+        { create: saveQuestion },
+              surveyNameForTemplate,  // Pass the name here
+
+      );
+
+      // Update the survey name
+      if (result?.survey_id) {
+        await updateSurvey(orgId, result.survey_id, {
+          name: surveyNameForTemplate,
+        });
+      }
+
+      setSurveyNameForTemplate("");
+      setShowTemplatePopup(false);
+      setShowCreateDialog(false);
+
+      // Navigate to the new survey
+      if (result?.survey_id) {
+        router.push(`/postgres-org/${orgId}/dashboard/projects/${projectId}/${result.survey_id}`);
+      }
+
+      alert(`Survey "${surveyNameForTemplate}" created from template successfully!`);
+    } catch (error) {
+      console.error("Failed to create survey:", error);
+      alert("Failed to create survey from template");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Open create dialog
+  const handleOpenCreateDialog = () => {
+    setSurveyNameForTemplate("");
+    setShowCreateDialog(true);
+  };
+
+  // Open template selection
+  const handleUseTemplate = () => {
+    if (!surveyNameForTemplate.trim()) {
+      alert("Please enter a survey name first");
+      return;
+    }
+    setShowCreateDialog(false);
+    setShowTemplatePopup(true);
+  };
+
   const handleSubmit = async () => {
     if (!name.trim()) return alert("Please enter a survey name");
     if (!time.trim()) return alert("Please enter survey duration");
@@ -197,7 +303,7 @@ const handleResponseCountClick = async (surveyId) => {
         await updateSurvey(orgId, editSurveyId, {
           name,
           time,
-          updatedBy: user.uid,
+          updatedBy: uid,
         });
         alert("Survey updated!");
       } else {
@@ -206,7 +312,7 @@ const handleResponseCountClick = async (surveyId) => {
           time,
           orgId,
           projectId,
-          createdBy: user.uid,
+          createdBy: uid,
         };
         await saveSurvey(surveyData);
       }
@@ -237,7 +343,6 @@ const handleResponseCountClick = async (surveyId) => {
       setLoading(true);
       try {
         await deleteSurveyContext(orgId, id);
-
         setSurveysWithCounts((prev) => prev.filter((s) => s.surveyId !== id));
       } catch (error) {
         console.error(error);
@@ -319,7 +424,7 @@ const handleResponseCountClick = async (surveyId) => {
 
             <Button
               variant="contained"
-              onClick={() => setShowForm(!showForm)}
+              onClick={handleOpenCreateDialog}
               className="whitespace-nowrap"
               size="large"
               sx={{
@@ -339,11 +444,84 @@ const handleResponseCountClick = async (surveyId) => {
               }}
             >
               <FiPlus className="text-2xl" />
-              {showForm ? "Cancel" : "Add Survey"}
+              Create Survey
             </Button>
           </div>
         </div>
       </header>
+
+      {/* Create Survey Dialog */}
+      <Dialog 
+        open={showCreateDialog} 
+        onClose={() => setShowCreateDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Typography variant="h6" fontWeight={600}>
+            Create New Survey
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <TextField
+              fullWidth
+              label="Survey Name"
+              variant="outlined"
+              value={surveyNameForTemplate}
+              onChange={(e) => setSurveyNameForTemplate(e.target.value)}
+              placeholder="Enter survey name..."
+              autoFocus
+            />
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Choose how you want to start your survey
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 3, gap: 2 }}>
+          <Button
+            onClick={() => setShowCreateDialog(false)}
+            variant="outlined"
+            disabled={loading}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleCreateFromScratch}
+            variant="outlined"
+            disabled={loading || !surveyNameForTemplate.trim()}
+          >
+            {loading ? <FaSpinner className="animate-spin" /> : "Start from Scratch"}
+          </Button>
+          <Button
+            onClick={handleUseTemplate}
+            variant="contained"
+            disabled={loading || !surveyNameForTemplate.trim()}
+            sx={{
+              backgroundColor: "var(--primary)",
+              "&:hover": {
+                backgroundColor: "var(--primary-hover)",
+              },
+            }}
+          >
+            {loading ? <FaSpinner className="animate-spin" /> : "Use Template"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Template Selection Popup */}
+      <TemplateSelectionPopup
+        isOpen={showTemplatePopup}
+        onClose={() => {
+          setShowTemplatePopup(false);
+          setShowCreateDialog(true); // Go back to create dialog
+        }}
+        onSelectTemplate={handleSelectTemplate}
+        orgId={orgId}
+        projectId={projectId}
+          name={surveyNameForTemplate}   // ADD THIS
+
+      />
 
       <SurveyFormComponent
         show={showForm}
@@ -356,9 +534,10 @@ const handleResponseCountClick = async (surveyId) => {
         handleSubmit={handleSubmit}
         handleCancel={handleCancel}
       />
+
       {surveyLoading ? (
         <div className="flex justify-center items-center py-12">
-          <FaSpinner className="animate-spin text-orange-500 dark:text-amber-300 text-4xl " />
+          <FaSpinner className="animate-spin text-orange-500 dark:text-amber-300 text-4xl" />
         </div>
       ) : surveysWithCounts?.length === 0 ? (
         <Paper
@@ -374,7 +553,7 @@ const handleResponseCountClick = async (surveyId) => {
             No surveys added yet.
           </Typography>
           <Typography variant="body2" sx={{ color: "#96949C" }}>
-            Click the "Add Survey" button to create your first survey.
+            Click the "Create Survey" button to get started.
           </Typography>
         </Paper>
       ) : (
@@ -486,8 +665,6 @@ const handleResponseCountClick = async (surveyId) => {
                           </Typography>
                         </Box>
                       </TableCell>
-
-            
 
                       <TableCell
                         sx={{
@@ -619,52 +796,46 @@ const handleResponseCountClick = async (surveyId) => {
                             <EditIcon fontSize="small" sx={{ mr: 1 }} /> Edit
                             Survey
                           </MenuItem>
-    {survey.status !== "published" && (
-  <MenuItem
-    onClick={() => {
-      updateSurvey(orgId, survey.surveyId, { status: "published" });
-    }}
-    disabled={loading}
-  >
-    <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Published
-  </MenuItem>
-)}
-
-{survey.status !== "draft" && (
-  <MenuItem
-    onClick={() => {
-      updateSurvey(orgId, survey.surveyId, { status: "draft" });
-    }}
-    disabled={loading}
-  >
-    <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Draft
-  </MenuItem>
-)}
-
-{survey.status !== "archived" && (
-  <MenuItem
-    onClick={() => {
-      updateSurvey(orgId, survey.surveyId, { status: "archived" });
-    }}
-    disabled={loading}
-  >
-    <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Archived
-  </MenuItem>
-)}
-
-{survey.status !== "test" && (
-  <MenuItem
-    onClick={() => {
-      updateSurvey(orgId, survey.surveyId, { status: "test" });
-    }}
-    disabled={loading}
-  >
-    <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Test
-  </MenuItem>
-)}
-
-
-
+                          {survey.status !== "published" && (
+                            <MenuItem
+                              onClick={() => {
+                                updateSurvey(orgId, survey.surveyId, { status: "published" });
+                              }}
+                              disabled={loading}
+                            >
+                              <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Published
+                            </MenuItem>
+                          )}
+                          {survey.status !== "draft" && (
+                            <MenuItem
+                              onClick={() => {
+                                updateSurvey(orgId, survey.surveyId, { status: "draft" });
+                              }}
+                              disabled={loading}
+                            >
+                              <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Draft
+                            </MenuItem>
+                          )}
+                          {survey.status !== "archived" && (
+                            <MenuItem
+                              onClick={() => {
+                                updateSurvey(orgId, survey.surveyId, { status: "archived" });
+                              }}
+                              disabled={loading}
+                            >
+                              <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Archived
+                            </MenuItem>
+                          )}
+                          {survey.status !== "test" && (
+                            <MenuItem
+                              onClick={() => {
+                                updateSurvey(orgId, survey.surveyId, { status: "test" });
+                              }}
+                              disabled={loading}
+                            >
+                              <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Test
+                            </MenuItem>
+                          )}
                           <MenuItem
                             onClick={() => {
                               deleteSurvey(survey.surveyId);
