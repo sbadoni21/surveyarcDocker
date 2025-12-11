@@ -45,7 +45,7 @@ export default function Dist() {
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [newBlockName, setNewBlockName] = useState("");
   const [loading, setLoading] = useState(true);
- const{uid} = useUser();
+  const { uid } = useUser();
   const pathname = usePathname();
   const parts = (pathname || "").split("/");
   const orgId = parts[3];
@@ -320,20 +320,19 @@ export default function Dist() {
     }
 
     try {
-   const result = await createSurveyFromTemplate(
-  template,
-  orgId,
-  projectId,
-  uid,                     // <-- just pass uid
-  { create: saveSurvey },
-  { create: saveQuestion }
-);
+      const result = await createSurveyFromTemplate(
+        template,
+        orgId,
+        projectId,
+        uid, // <-- just pass uid
+        { create: saveSurvey },
+        { create: saveQuestion }
+      );
 
-
-      console.log('Survey created:', result);
+      console.log("Survey created:", result);
       // Navigate to the new survey or show success message
     } catch (error) {
-      console.error('Failed to create survey:', error);
+      console.error("Failed to create survey:", error);
     }
   };
   const handleUpdateQuestion = async (questionId, updatedQuestion) => {
@@ -428,7 +427,6 @@ export default function Dist() {
     }
   };
 
-
   const updateConfig = (key, value) => {
     setNewQuestionData((prev) => ({
       ...prev,
@@ -463,30 +461,34 @@ export default function Dist() {
   return (
     <div className="flex flex-col min-h-screen">
       <TopTabsNavbar activeTab={activeTab} setActiveTab={handleSetActiveTab} />
-<Button
-  onClick={handleToggleStatus}
-  disabled={loading}
-  variant="outlined"
-  size="small"
->
-  {survey?.status === "test"
-    ? "Change Status to Published"
-    : "Change Status to Test"}
-</Button>
-<DummyGeneratorPanel orgId={orgId} projectId={projectId} surveyId={surveyId} />
-<>
-      <button onClick={() => setShowTemplatePopup(true)}>
-        Create New Survey
-      </button>
-
-      <TemplateSelectionPopup
-        isOpen={showTemplatePopup}
-        onClose={() => setShowTemplatePopup(false)}
-        onSelectTemplate={handleSelectTemplate}
+      <Button
+        onClick={handleToggleStatus}
+        disabled={loading}
+        variant="outlined"
+        size="small"
+      >
+        {survey?.status === "test"
+          ? "Change Status to Published"
+          : "Change Status to Test"}
+      </Button>
+      <DummyGeneratorPanel
         orgId={orgId}
         projectId={projectId}
+        surveyId={surveyId}
       />
-    </>
+      <>
+        <button onClick={() => setShowTemplatePopup(true)}>
+          Create New Survey
+        </button>
+
+        <TemplateSelectionPopup
+          isOpen={showTemplatePopup}
+          onClose={() => setShowTemplatePopup(false)}
+          onSelectTemplate={handleSelectTemplate}
+          orgId={orgId}
+          projectId={projectId}
+        />
+      </>
 
       <Button
         onClick={handleToggleStatus}
