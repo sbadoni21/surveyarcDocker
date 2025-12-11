@@ -21,6 +21,7 @@ import CampaignPage from "./CampaignPage";
 import SurveyResponsesPage from "@/components/SurveyResponsePopup";
 import ThemeManager from "@/components/theme";
 import { Button } from "@mui/material";
+import QuotaTab from "@/components/QuotaTab";
 
 export default function Dist() {
   const [selectedType, setSelectedType] = useState(null);
@@ -78,6 +79,7 @@ export default function Dist() {
       .toLowerCase();
     if (["questions", "question", "questoins"].includes(k)) return "questions";
     if (["rules", "logicrules", "logic"].includes(k)) return "rules";
+    if (["quota"].includes(k)) return "quota";
     if (["flow", "surveyflow"].includes(k)) return "flow";
     if (["demo", "preview"].includes(k)) return "demo";
     if (["distribution", "share"].includes(k)) return "distribution";
@@ -412,35 +414,34 @@ export default function Dist() {
   useEffect(() => {
     setShowTypePopup(false);
   }, []);
-const handleToggleStatus = async () => {
-  try {
-    const newStatus = survey.status === "test" ? "published" : "test";
+  const handleToggleStatus = async () => {
+    try {
+      const newStatus = survey.status === "test" ? "published" : "test";
 
-    await updateSurvey(orgId, surveyId, { status: newStatus });
+      await updateSurvey(orgId, surveyId, { status: newStatus });
 
-    // 🔥 After backend saves, fetch updated survey
-    const refreshed = await getSurvey(surveyId);
-    setSurvey(normalizeSurveyFromApi(refreshed));
-  } catch (err) {
-    console.error("Failed to update status", err);
-  }
-};
+      // 🔥 After backend saves, fetch updated survey
+      const refreshed = await getSurvey(surveyId);
+      setSurvey(normalizeSurveyFromApi(refreshed));
+    } catch (err) {
+      console.error("Failed to update status", err);
+    }
+  };
 
   if (loading) return <Loading />;
   return (
     <div className="flex flex-col min-h-screen">
       <TopTabsNavbar activeTab={activeTab} setActiveTab={handleSetActiveTab} />
-<Button
-  onClick={handleToggleStatus}
-  disabled={loading}
-  variant="outlined"
-  size="small"
->
-  {survey?.status === "test"
-    ? "Change Status to Published"
-    : "Change Status to Test"}
-</Button>
-
+      <Button
+        onClick={handleToggleStatus}
+        disabled={loading}
+        variant="outlined"
+        size="small"
+      >
+        {survey?.status === "test"
+          ? "Change Status to Published"
+          : "Change Status to Test"}
+      </Button>
 
       <div className="flex-1 overflow-auto bg-[#f5f5f5] dark:bg-[#121214] p-4">
         {activeTab === "questions" && (
@@ -515,6 +516,22 @@ const handleToggleStatus = async () => {
             blocks={survey?.blocks || []}
             rules={survey?.rules || []}
             setRules={setRules}
+          />
+        )}
+        {activeTab === "quota" && (
+          <QuotaTab
+            surveyId={surveyId}
+            orgId={orgId}
+            questions={questions}
+            onQuotaAssigned={(quota, questionId) => {
+              // best-effort: call handleUpdateQuestion (if available) to attach quota to question config
+              if (typeof handleUpdateQuestion === "function" && questionId) {
+                // merge quota info into question config — adapt to your shape
+                handleUpdateQuestion(questionId, {
+                  quota: { id: quota.id, name: quota.name },
+                });
+              }
+            }}
           />
         )}
 

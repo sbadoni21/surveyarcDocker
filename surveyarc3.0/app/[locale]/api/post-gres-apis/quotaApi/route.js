@@ -52,24 +52,6 @@ function buildForwardUrl(pathParam, search = "") {
   return urlPath ? `${baseQuotas}/${urlPath}${search}` : `${baseQuotas}${search}`;
 }
 
-export async function GET(req, ctx) {
-  try {
-    const { path } = ctx.params ?? {};
-    const url = buildForwardUrl(path, req.nextUrl.search);
-    console.log("[quotaApi proxy] GET ->", url);
-
-    const res = await fetch(url, {
-      method: "GET",
-      signal: AbortSignal.timeout(60000),
-    });
-
-    return decryptResponse(res);
-  } catch (e) {
-    console.error("[quotaApi proxy] GET error:", e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
-  }
-}
-
 export async function POST(req, ctx) {
   try {
     const { path } = ctx.params ?? {};
