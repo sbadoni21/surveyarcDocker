@@ -21,6 +21,8 @@ const ResponseModel = {
       respondent_id: data.respondent_id,
       status: data.status || "started",
       meta_data: data.meta_data || {},
+      source_id: data.source_id || undefined,
+
       answers: data.answers || [],
     };
 

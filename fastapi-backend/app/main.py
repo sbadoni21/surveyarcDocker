@@ -32,7 +32,7 @@ from app.routes import (
     support_groups, support_teams, support_routing, slas, business_calendars, tags, 
     ticket_categories, ticket_sla, ticket_taxonomies, audit_events, contact_emails, 
     contact_lists, list_members, contact_phone, contact_socials, ticket_templates, audience_files,
-    themes, campaigns, scheduler_routes, salesforce_routes, salesforce_campaign_routes, salesforce_sync_routes, group
+    themes, campaigns, scheduler_routes, salesforce_routes, salesforce_campaign_routes, salesforce_sync_routes, group, participant_sources
 )
 
 # Configure logging
@@ -416,4 +416,5 @@ app.include_router(salesforce_routes.router)
 app.include_router(salesforce_campaign_routes.router)
 app.include_router(salesforce_sync_routes.router)
 app.include_router(group.router)
+app.include_router(participant_sources.router)
 

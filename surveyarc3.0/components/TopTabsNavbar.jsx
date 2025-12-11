@@ -13,6 +13,7 @@ export default function TopTabsNavbar({ activeTab, setActiveTab }) {
     { id: "demo", label: "Demo survey", icon: <Icon icon="solar:play-linear" width="20" height="20" /> },
     { id: "responses", label: "Responses", icon: <Icon icon="ri:survey-line" width="20" height="20" /> },
     { id: "theme", label: "Theme", icon: <Icon icon="ri:palette-line" width="20" height="20" /> },
+    { id: "panel", label: "Panel", icon: <Icon icon="solar:play-linear" width="20" height="20" /> },
 
 { id: "campaign", label: "Campaign", icon:<Icon icon="solar:target-linear" width="20" height="20" />
 

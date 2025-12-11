@@ -53,21 +53,21 @@ def _write_answers(db, survey_id: str, response_id: str, answers: list, org_id: 
 @router.post("/", response_model=ResponseOut)
 def create_response(data: ResponseCreate, db: Session = Depends(get_db)):
     rid = data.response_id or "resp_" + uuid.uuid4().hex[:10]
-    # print("Creating response inside fastapi-backend post route:", data)
 
     answers_data = [a.model_dump() for a in data.answers or []]
 
     row = Response(
-        response_id=rid,
-        org_id=data.org_id,
-        survey_id=data.survey_id,
-        respondent_id=data.respondent_id,
-        status=data.status or "started",
-        meta_data=data.meta_data or {},
-        started_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        answers_blob=answers_data,
-    )
+            response_id=rid,
+            org_id=data.org_id,
+            survey_id=data.survey_id,
+            respondent_id=data.respondent_id,
+            status=data.status or "started",
+            meta_data=data.meta_data or {},
+            source_id=data.source_id,          # <--- HERE
+            started_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+            answers_blob=answers_data,
+        )
 
     db.add(row)
     answers_list = [a.model_dump() for a in data.answers or []]
@@ -75,18 +75,18 @@ def create_response(data: ResponseCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(row)
 
-    RedisResponseService.cache_response(row)
+    # 🔹 FIX: Normalize before caching
+    normalized_response = normalize_response(row)
+    RedisResponseService.cache_response(normalized_response)
+    
+    # 🔹 FIX: Get all responses, normalize them, then cache
     rows = db.query(Response).filter(Response.survey_id == data.survey_id).all()
-    RedisResponseService.cache_list(data.survey_id, rows)
+    normalized_list = [normalize_response(r) for r in rows]
+    RedisResponseService.cache_list(data.survey_id, normalized_list)
     RedisResponseService.cache_count(data.survey_id, len(rows))
 
-    # ✅ convert answers to plain dicts before returning
-    safe_answers = [a.model_dump() for a in data.answers or []]
-    return {
-        **row.__dict__,
-        "answers": safe_answers,
-    }
-
+    # Return the normalized response
+    return normalized_response
 
 @router.get("", response_model=List[ResponseOut])
 def list_responses(survey_id: str = Query(...), db: Session = Depends(get_db)):
@@ -103,11 +103,11 @@ def list_responses(survey_id: str = Query(...), db: Session = Depends(get_db)):
 
     normalized = [normalize_response(r) for r in rows]
 
-    RedisResponseService.cache_list(survey_id, normalized)
+    # 🔹 FIX: Cache the normalized data, not the ORM objects
+    RedisResponseService.cache_list(survey_id, normalized)  # ✅ This is correct
     RedisResponseService.cache_count(survey_id, len(rows))
 
     return normalized
-
 
 
 @router.get("/count")
@@ -149,7 +149,6 @@ def update_response(survey_id: str, response_id: str, data: ResponseUpdate, db: 
         raise HTTPException(status_code=404, detail="Response not found")
 
     upd = data.dict(exclude_unset=True)
-    # inline answers update
     answers = upd.pop("answers", None)
 
     for k, v in upd.items():
@@ -157,16 +156,17 @@ def update_response(survey_id: str, response_id: str, data: ResponseUpdate, db: 
     row.updated_at = datetime.utcnow()
     if answers is not None:
         row.answers_blob = answers
-        _write_answers(db, survey_id, response_id, answers)
+        _write_answers(db, survey_id, response_id, answers, data.org_id)  # 🔹 Add org_id parameter
 
     db.commit()
     db.refresh(row)
 
-    RedisResponseService.cache_response(row)
-    # invalidate list & count to be safe
+    # 🔹 FIX: Normalize before caching
+    normalized_response = normalize_response(row)
+    RedisResponseService.cache_response(normalized_response)
     RedisResponseService.invalidate(response_id, survey_id=survey_id)
-    return row
-
+    
+    return normalized_response  # 🔹 Return normalized, not ORM object
 @router.delete("/{survey_id}/{response_id}")
 def delete_response(survey_id: str, response_id: str, db: Session = Depends(get_db)):
     row = (

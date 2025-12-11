@@ -1,17 +1,28 @@
 # app/routes/survey.py
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models.survey import Survey
 from ..schemas.survey import SurveyCreate, SurveyUpdate, SurveyOut
 from ..services.redis_survey_service import RedisSurveyService
+import os
+import asyncio
+from pydantic import BaseModel, Field
+
+from ..services.dummy_responses_bot import (
+    DummyBotConfig,
+    generate_dummy_responses,
+)
+
+
 
 router = APIRouter(prefix="/surveys", tags=["Surveys"])
+dummy_generation_tasks: Dict[str, dict] = {}
 
 @router.post("/", response_model=SurveyOut)
 def create_survey(data: SurveyCreate, db: Session = Depends(get_db)):
@@ -180,3 +191,125 @@ def list_responses(survey_id: str, db: Session = Depends(get_db)):
     # Fallback empty list if you haven't implemented responses storage yet
     RedisSurveyService.cache_responses(survey_id, [])
     return []
+
+class DummyGenerateRequest(BaseModel):
+    org_id: str
+    project_id: str
+    count: int = Field(100, ge=1, le=1000)
+    concurrency: int = Field(5, ge=1, le=20)
+    headless: bool = True
+    base_form_url: str | None = None
+
+
+@router.post("/{survey_id}/generate-dummy")
+async def generate_dummy_for_survey(
+    survey_id: str,
+    payload: DummyGenerateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """
+    Start dummy response generation and return task ID for tracking.
+    """
+    task_id = f"task_{uuid.uuid4().hex[:12]}"
+    
+    base_form_url = (
+       
+         "http://localhost:3000/en/form"
+    )
+
+    cfg = DummyBotConfig(
+        base_form_url=base_form_url,
+        org_id=payload.org_id,
+        project_id=payload.project_id,
+        survey_id=survey_id,
+        total_respondents=payload.count,
+        concurrency=payload.concurrency,
+        headless=payload.headless,
+    )
+
+    # Initialize task status
+    dummy_generation_tasks[task_id] = {
+        "status": "running",
+        "survey_id": survey_id,
+        "started_at": datetime.utcnow().isoformat(),
+        "progress": {"completed": 0, "total": payload.count},
+        "result": None,
+    }
+
+    # 🔹 IMPROVED: Proper background task with error handling
+    async def _bg_task():
+        try:
+            result = await generate_dummy_responses(cfg)
+            dummy_generation_tasks[task_id].update({
+                "status": "completed",
+                "completed_at": datetime.utcnow().isoformat(),
+                "result": result,
+            })
+        except Exception as e:
+            print(f"[BOT] Task {task_id} failed:", e)
+            dummy_generation_tasks[task_id].update({
+                "status": "failed",
+                "completed_at": datetime.utcnow().isoformat(),
+                "error": str(e),
+            })
+
+    # Use BackgroundTasks to ensure proper lifecycle
+    background_tasks.add_task(_bg_task)
+
+    return {
+        "task_id": task_id,
+        "status": "started",
+        "survey_id": survey_id,
+        "config": {
+            "org_id": payload.org_id,
+            "project_id": payload.project_id,
+            "count": payload.count,
+            "concurrency": payload.concurrency,
+        },
+        "check_status_url": f"/surveys/{survey_id}/generate-dummy/{task_id}",
+    }
+
+
+@router.get("/{survey_id}/generate-dummy/{task_id}")
+def get_dummy_generation_status(survey_id: str, task_id: str):
+    """
+    Check the status of a dummy generation task.
+    """
+    if task_id not in dummy_generation_tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    task = dummy_generation_tasks[task_id]
+    
+    if task["survey_id"] != survey_id:
+        raise HTTPException(status_code=400, detail="Survey ID mismatch")
+    
+    return task
+
+
+@router.delete("/{survey_id}/generate-dummy/{task_id}")
+def cancel_dummy_generation(survey_id: str, task_id: str):
+    """
+    Cancel/remove a dummy generation task.
+    Note: This only removes the tracking entry; 
+    can't actually stop Playwright tasks once started.
+    """
+    if task_id not in dummy_generation_tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    del dummy_generation_tasks[task_id]
+    
+    return {"detail": f"Task {task_id} removed"}
+
+
+@router.get("/{survey_id}/generate-dummy")
+def list_dummy_generation_tasks(survey_id: str):
+    """
+    List all dummy generation tasks for a survey.
+    """
+    tasks = {
+        tid: task 
+        for tid, task in dummy_generation_tasks.items()
+        if task["survey_id"] == survey_id
+    }
+    
+    return {"survey_id": survey_id, "tasks": tasks}

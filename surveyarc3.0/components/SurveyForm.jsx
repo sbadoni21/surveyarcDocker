@@ -13,7 +13,7 @@ export default function SurveyForm({
   handleSubmit,
   rules,
   theme,
-    initialAnswers = {},     // 🔹 NEW
+  initialAnswers = {},     // 🔹 NEW
 
 }) {
   const [currentBlockIndex, setCurrentBlockIndex] = useState(0);
@@ -926,31 +926,32 @@ const buildFollowupPayload = (rawFollowup) => {
           <div className="w-full max-w-3xl mx-auto flex-1">
             {pageQuestions.length ? (
               pageQuestions.map((question, idx) => (
-                <div key={question.questionId} className="mb-8">
-                  {!["end_screen", "welcome_screen"].includes(
-                    question.type
-                  ) && (
-                    <p className="text-lg lg:text-2xl capitalize text-left font-semibold mb-4 text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
-                      {question.label}
-                    </p>
-                  )}
-                  {question.description && (
-                    <i className="mb-4 text-sm text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
-                      {question.description}
-                    </i>
-                  )}
-                  <RenderQuestion
-                    question={question}
-                    value={answers[question.questionId] ?? ""}
-                    onChange={(value) => handleAnswerChange(question, value)}
-                    config={
-                      question.config || defaultConfigMap[question.type] || {}
-                    }
-                    inputClasses={getInputClasses()}
-                    disabled={submitting}
-                  />
-                </div>
-              ))
+    <div
+      key={question.questionId}
+      className="mb-8"
+      data-question-id={question.questionId}
+      data-q-type={question.type}
+    >
+      {!["end_screen", "welcome_screen"].includes(question.type) && (
+        <p className="text-lg lg:text-2xl capitalize text-left font-semibold mb-4 text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
+          {question.label}
+        </p>
+      )}
+      {question.description && (
+        <i className="mb-4 text-sm text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
+          {question.description}
+        </i>
+      )}
+      <RenderQuestion
+        question={question}
+        value={answers[question.questionId] ?? ""}
+        onChange={(value) => handleAnswerChange(question, value)}
+        config={question.config || defaultConfigMap[question.type] || {}}
+        inputClasses={getInputClasses()}
+        disabled={submitting}
+      />
+    </div>
+  ))
             ) : (
               <div className="text-center py-12">
                 <p className="text-xl text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
@@ -968,35 +969,45 @@ const buildFollowupPayload = (rawFollowup) => {
 
           <div className="flex justify-center items-center w-full gap-3">
             {isLastBlock ? (
-              <button
-                onClick={async () => {
-                  if (!validateCurrentPageRequired()) return;
+          // In SurveyForm.jsx, replace the submit button onClick (around line 1215):
 
-                  if (
-                    !window.confirm(
-                      "Are you sure you want to submit your responses?"
-                    )
-                  )
-                    return;
-                  setSubmitting(true);
-                  try {
-                    await handleSubmit(answers);
-                    setSubmitting(false);
-                  } catch (err) {
-                    console.error("Submit failed:", err);
-                    setSubmitting(false);
-                    alert("Submission failed. Please try again.");
-                  }
-                }}
-                disabled={submitting}
-                className={`flex items-center text-sm lg:text-lg gap-2 px-6 py-3 rounded-md font-semibold transition-transform duration-150 ${
-                  submitting ? "opacity-70 cursor-not-allowed" : "hover:scale-105"
-                } bg-gradient-to-r from-green-500 to-green-600 text-white`}
-              >
-                {submitting ? "Submitting…" : "Submit"}
-              </button>
+<button
+  data-role="submit"
+  onClick={async (e) => {
+    e.preventDefault();
+    
+    if (submitting) return;
+    if (!validateCurrentPageRequired()) return;
+
+    // 🔹 REMOVE THE CONFIRM - IT BLOCKS AUTOMATION
+    // Instead, just log
+    console.log("🔹 Submit button clicked, starting submission...");
+    
+    setSubmitting(true);
+    
+    try {
+      console.log("🔹 Calling handleSubmit with", Object.keys(answers).length, "answers");
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      await handleSubmit(answers);
+      console.log("🔹 handleSubmit completed successfully");
+    } catch (err) {
+      console.error("Submit failed:", err);
+      setSubmitting(false);
+      alert("Submission failed. Please try again.");
+    }
+  }}
+  disabled={submitting}
+  className={`flex items-center text-sm lg:text-lg gap-2 px-6 py-3 rounded-md font-semibold transition-transform duration-150 ${
+    submitting ? "opacity-70 cursor-not-allowed" : "hover:scale-105"
+  } bg-gradient-to-r from-green-500 to-green-600 text-white`}
+>
+  {submitting ? "Submitting…" : "Submit"}
+</button>
             ) : (
               <button
+                  data-role="next"
+
                 onClick={handleNextBlock}
                 className="flex items-center text-sm lg:text-lg gap-2 px-6 py-3 rounded-md font-semibold transition-transform duration-150 hover:scale-105 bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]"
                 disabled={submitting}
