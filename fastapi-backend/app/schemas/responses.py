@@ -14,7 +14,7 @@ class ResponseBase(BaseModel):
 
     status: Optional[str] = "started"
     meta_data: Dict[str, Any] = Field(default_factory=dict)
-    answers: List[AnswerIn] = Field(default_factory=list)  # inline payload
+    answers: List[AnswerIn] = Field(default_factory=list) 
 
 
 class ResponseCreate(ResponseBase):

@@ -229,3 +229,45 @@ def get_result_analytics(campaign_id: str, db: Session = Depends(get_db)):
         timeline_data=timeline_data,
         failure_reasons=failure_reasons
     )
+@router.post("/get-or-create", response_model=CampaignResultOut)
+def get_or_create_result(data: CampaignResultCreate, db: Session = Depends(get_db)):
+    """
+    Get existing result or create new one for campaign + contact
+    """
+    # Try to find existing result
+    existing = db.query(CampaignResult).filter(
+        CampaignResult.campaign_id == data.campaign_id,
+        CampaignResult.contact_id == data.contact_id
+    ).first()
+    
+    if existing:
+        # Update metadata if provided
+        if data.meta_data:
+            existing.meta_data = {**(existing.meta_data or {}), **data.meta_data}
+            existing.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(existing)
+        return existing
+    
+    # Create new result
+    rid = data.result_id or "result_" + uuid.uuid4().hex[:10]
+    row = CampaignResult(
+        result_id=rid,
+        campaign_id=data.campaign_id,
+        org_id=data.org_id,
+        contact_id=data.contact_id,
+        contact_email=data.contact_email,
+        contact_phone=data.contact_phone,
+        status=data.status,
+        channel=data.channel,
+        message_id=data.message_id,
+        error=data.error,
+        error_code=data.error_code,
+        meta_data=data.meta_data or {},
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row

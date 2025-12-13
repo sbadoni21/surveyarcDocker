@@ -12,6 +12,7 @@ class ResultStatus(str, enum.Enum):
     pending = "pending"
     queued = "queued"
     sending = "sending"
+    delivered = "delivered"   # ✅ ADD THIS
     sent = "sent"
     failed = "failed"
     bounced = "bounced"

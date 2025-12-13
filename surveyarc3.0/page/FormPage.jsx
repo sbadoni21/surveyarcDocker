@@ -13,6 +13,7 @@ import { useOrganisation } from "@/providers/postGresPorviders/organisationProvi
 import { useResponse } from "@/providers/postGresPorviders/responsePProvider";
 import { useTheme } from "@/providers/postGresPorviders/themeProvider";
 import TicketModel from "@/models/ticketModel";
+import { useCampaignResult } from "@/providers/postGresPorviders/campaginResultProvider";
 
 export default function FormPage() {
   const searchParams = useSearchParams();
@@ -31,6 +32,8 @@ export default function FormPage() {
   const [startTime] = useState(() => new Date());
   const prefillQuestionId = searchParams.get("prefill_q") || null;
   const prefillAnswer = searchParams.get("prefill_a") || null;
+  const [campaignResult, setCampaignResult] = useState(null);
+  const { createCampaignResult, updateCampaignResult, getOrCreateCampaignResult } = useCampaignResult();
 
   const platform = useMemo(() => {
     return campaignType?.toLowerCase() === "social media"
@@ -155,6 +158,40 @@ export default function FormPage() {
   // PANEL VARIABLE COLLECTION - FIXED VERSION
   // ============================================================
 
+useEffect(() => {
+  if (!campaignID || !contactID || campaignResult) return;
+
+  const run = async () => {
+    try {
+      console.log("🟢 Getting or creating CampaignResult");
+      
+      const result = await getOrCreateCampaignResult({
+        campaignId: campaignID,
+        orgId,
+        projectId,
+        contactId: contactID,
+        contactEmail: searchParams.get("email") || null,
+        contactPhone: searchParams.get("phone") || null,
+        status: "pending",
+        channel: campaignType || "email",
+        metaData: {
+          entry_type: "survey_open",
+          source: "form_page",
+          raw_query: Object.fromEntries(searchParams.entries()),
+          panel_vars: collectPanelVariables(),
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
+      setCampaignResult(result);
+      console.log("✅ CampaignResult ready:", result.resultId);
+    } catch (err) {
+      console.error("❌ Failed to get/create CampaignResult", err);
+    }
+  };
+
+  run();
+}, [campaignID, contactID, campaignResult]);
   const collectPanelVariables = () => {
     console.log("🔍 collectPanelVariables called");
     console.log("🔍 participantSource:", participantSource);
@@ -299,6 +336,13 @@ export default function FormPage() {
       ).catch((err) => console.error(`Failed to track ${exitType}:`, err));
 
       const redirectUrl = buildPanelRedirectUrl(exitType);
+if (campaignResult) {
+  await updateCampaignResult(campaignResult.resultId, {
+    status: exitType === "quota_full" ? "skipped" : "failed",
+    failed_at: new Date().toISOString(),
+    failure_reason: exitType,
+  });
+}
 
       if (redirectUrl) {
         console.log(`🚀 Panel ${exitType} redirect:`, redirectUrl);
@@ -549,6 +593,13 @@ export default function FormPage() {
       const savedResponse = await saveResponse(orgId, surveyId, responseData);
       console.log("✅ Response saved:", savedResponse.response_id);
       setResponseId(savedResponse.response_id);
+if (campaignResult) {
+  await updateCampaignResult(campaignResult.resultId, {
+    survey_completed_at: new Date().toISOString(),
+    survey_response_id: savedResponse.response_id,
+    status: "completed",
+  });
+}
 
       // Update contact
       if (contactID) {
@@ -636,6 +687,21 @@ export default function FormPage() {
       throw err;
     }
   };
+useEffect(() => {
+  if (!campaignResult) return;
+
+  const markStarted = async () => {
+    if (campaignResult.surveyStartedAt) return;
+
+    console.log("🟡 Marking survey started");
+
+    await updateCampaignResult(campaignResult.resultId, {
+      survey_started_at: new Date().toISOString(),
+    });
+  };
+
+  markStarted();
+}, [campaignResult]);
 
   // ============================================================
   // RENDER

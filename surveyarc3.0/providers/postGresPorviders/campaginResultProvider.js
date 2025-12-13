@@ -2,7 +2,7 @@
 // providers/CampaignResultProvider.js
 "use client";
 import React, { createContext, useContext, useState } from "react";
-import CampaignResultModel from "@/models/postGresModels/campaignResultModel";
+import CampaignResultModel from "@/models/postGresModels/campaginResults";
 
 const CampaignResultContext = createContext();
 
@@ -20,7 +20,17 @@ export const CampaignResultProvider = ({ children }) => {
       setLoading(false);
     }
   };
-
+  const getOrCreateCampaignResult = async (data) => {
+    const result = await CampaignResultModel.getOrCreate(data);
+    setCampaignResults((prev) => {
+      const exists = prev.find((r) => r.resultId === result.resultId);
+      if (exists) {
+        return prev.map((r) => (r.resultId === result.resultId ? result : r));
+      }
+      return [result, ...prev];
+    });
+    return result;
+  };
   const createCampaignResult = async (data) => {
     const created = await CampaignResultModel.create(data);
     setCampaignResults((prev) => [created, ...prev]);
@@ -42,7 +52,7 @@ export const CampaignResultProvider = ({ children }) => {
         loading,
         getCampaignResults,
         createCampaignResult,
-        updateCampaignResult,
+        updateCampaignResult,getOrCreateCampaignResult
       }}
     >
       {children}

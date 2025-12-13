@@ -1157,7 +1157,7 @@ accountId
 
               <div className="flex flex-wrap gap-2">
                 {[
-                  { label: "Now", value: null },
+                  { label: "Now", v: 1, u: "minutes" },
                   { label: "10 mins", v: 10, u: "minutes" },
                   { label: "30 mins", v: 30, u: "minutes" },
                   { label: "1 hour", v: 1, u: "hours" },

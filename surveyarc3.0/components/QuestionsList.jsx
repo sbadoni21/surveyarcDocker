@@ -5,10 +5,11 @@ import {
   FiCheck,
   FiX,
   FiTrash2,
-  FiPlusSquare,
   FiInfo,
+  FiMoreVertical,
+  FiChevronUp,
+  FiChevronDown,
 } from "react-icons/fi";
-
 import { ICONS_MAP } from "@/utils/questionTypes";
 import {
   DndContext,
@@ -30,6 +31,8 @@ import { usePathname } from "next/navigation";
 import { useSurvey } from "@/providers/surveyPProvider";
 import { RiDeleteBin6Line } from "react-icons/ri";
 import { useQuestion } from "@/providers/questionPProvider";
+import { IoAdd } from "react-icons/io5";
+import { Settings } from "lucide-react";
 
 const ICON_BG_CLASSES = {
   CONTACT_EMAIL: "bg-[#FFEEDF] dark:bg-[#483A2D]",
@@ -95,8 +98,6 @@ const SortableItem = ({ q, index, onDelete, onSelect }) => {
             )}
             <p className="text-sm font-medium text-slate-800 dark:text-[#96949C] break-words max-w-full">
               {q.label}
-              {/* {q.label?.split(" ").slice(0, 7).join(" ")}
-              {q.label?.split(" ").length > 7 && " ..."} */}
             </p>
           </button>
 
@@ -117,6 +118,7 @@ const SortableItem = ({ q, index, onDelete, onSelect }) => {
 const BlockContainer = ({
   blockId,
   title,
+  onOpenRandomization,
   randomization,
   randomizeQuestions,
   isEditing = false,
@@ -154,8 +156,27 @@ const BlockContainer = ({
       : "bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700";
 
   const [infoOpen, setInfoOpen] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
 
   const showInfo = infoOpen;
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setDropdownOpen(false);
+      }
+    };
+
+    if (dropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [dropdownOpen]);
 
   return (
     <section className="mb-6 border p-4 rounded bg-white dark:bg-gray-900">
@@ -266,6 +287,7 @@ const BlockContainer = ({
               </>
             ) : (
               <>
+                {/* Quick add question button - visible */}
                 <button
                   type="button"
                   onClick={() => onRequestNewQuestion?.(blockId)}
@@ -273,51 +295,102 @@ const BlockContainer = ({
                   title="Add new question to this block"
                   aria-label="Add question"
                 >
-                  <FiPlusSquare className="h-4 w-4" />
+                  <IoAdd className="h-4 w-4" />
                 </button>
 
-                <button
-                  type="button"
-                  onClick={onStartEdit}
-                  className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-[#222] text-sm"
-                  title="Rename block"
-                  aria-label="Rename block"
-                >
-                  <FiEdit2 className="h-4 w-4" />
-                </button>
+                {/* Dropdown menu for other actions */}
+                <div className="relative" ref={dropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setDropdownOpen(!dropdownOpen)}
+                    className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-[#222] text-sm"
+                    title="More actions"
+                    aria-label="More actions"
+                  >
+                    <FiMoreVertical className="h-4 w-4" />
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={onDelete}
-                  className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-red-200 dark:border-red-700 hover:bg-red-50 dark:hover:bg-[#300] text-red-600"
-                  title="Delete block"
-                  aria-label="Delete block"
-                >
-                  <FiTrash2 className="h-4 w-4" />
-                </button>
+                  {dropdownOpen && (
+                    <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 border border-slate-200 dark:border-slate-700 rounded-md shadow-lg z-20">
+                      <div className="py-1">
+                        {/* Move Up */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            moveBlock(blockId, "up");
+                            setDropdownOpen(false);
+                          }}
+                          disabled={blockIndex === 0}
+                          className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                        >
+                          <FiChevronUp className="h-4 w-4" />
+                          Move Up
+                        </button>
+
+                        {/* Move Down */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            moveBlock(blockId, "down");
+                            setDropdownOpen(false);
+                          }}
+                          disabled={blockIndex === totalBlocks - 1}
+                          className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                        >
+                          <FiChevronDown className="h-4 w-4" />
+                          Move Down
+                        </button>
+
+                        <hr className="my-1 border-slate-200 dark:border-slate-700" />
+
+                        {/* Randomization */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onOpenRandomization?.(blockId);
+                            setDropdownOpen(false);
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2"
+                        >
+                          <Settings className="h-4 w-4" />
+                          Randomization…
+                        </button>
+
+                        <hr className="my-1 border-slate-200 dark:border-slate-700" />
+
+                        {/* Rename */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onStartEdit();
+                            setDropdownOpen(false);
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2"
+                        >
+                          <FiEdit2 className="h-4 w-4" />
+                          Rename Block
+                        </button>
+
+                        <hr className="my-1 border-slate-200 dark:border-slate-700" />
+
+                        {/* Delete */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onDelete();
+                            setDropdownOpen(false);
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+                        >
+                          <FiTrash2 className="h-4 w-4" />
+                          Delete Block
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </>
             )}
-
-            <div className="flex flex-col ml-2">
-              <button
-                onClick={() => moveBlock(blockId, "up")}
-                disabled={blockIndex === 0}
-                className="px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs disabled:opacity-40"
-                title="Move Up"
-                aria-label="Move block up"
-              >
-                ↑
-              </button>
-              <button
-                onClick={() => moveBlock(blockId, "down")}
-                disabled={blockIndex === totalBlocks - 1}
-                className="px-2 py-1 mt-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs disabled:opacity-40"
-                title="Move Down"
-                aria-label="Move block down"
-              >
-                ↓
-              </button>
-            </div>
           </div>
         </div>
 
@@ -376,10 +449,11 @@ const SortableBlock = ({
   moveBlock,
   blockIndex,
   totalBlocks,
+  onOpenRandomization,
   activeId,
   handleAddPageBreak,
   handleRemovePageBreak,
-  onRequestNewQuestion, // forwarded
+  onRequestNewQuestion,
 }) => {
   return (
     <BlockContainer
@@ -389,6 +463,7 @@ const SortableBlock = ({
       randomizeQuestions={block.randomization?.type !== "none" ? true : false}
       isEditing={isEditing}
       editValue={editValue}
+      onOpenRandomization={onOpenRandomization}
       onEditChange={onEditChange}
       onStartEdit={() => onStartEdit(block)}
       onSaveEdit={() => onSaveEdit(block.blockId)}
@@ -488,8 +563,7 @@ const DraggableQuestionsList = ({
   blocks,
   setSelectedQuestionIndex,
   onBlocksChange,
-  selectedBlockId,
-  onRequestNewQuestion, // NEW prop from QuestionsTab/Dist
+  onRequestNewQuestion,
 }) => {
   const pathname = usePathname();
   const pathParts = pathname.split("/");
@@ -504,6 +578,12 @@ const DraggableQuestionsList = ({
 
   const [renamingBlockId, setRenamingBlockId] = useState(null);
   const [renameValue, setRenameValue] = useState("");
+  const [showRandomizationModal, setShowRandomizationModal] = useState(false);
+  const [selectedBlockId, setSelectedBlockId] = useState(null);
+  const [tempRandomization, setTempRandomization] = useState({
+    type: "none",
+    subsetCount: "",
+  });
 
   const qIndex = useMemo(() => {
     const idx = new Map();
@@ -593,6 +673,16 @@ const DraggableQuestionsList = ({
     } catch (e) {
       console.error("Failed to update blocks", e);
     }
+  };
+
+  const openRandomizationForBlock = (blockId) => {
+    const block = renderBlocks.find((b) => b.blockId === blockId);
+
+    setSelectedBlockId(blockId);
+    setTempRandomization(
+      block?.randomization || { type: "none", subsetCount: "" }
+    );
+    setShowRandomizationModal(true);
   };
 
   const sensors = useSensors(
@@ -873,10 +963,12 @@ const DraggableQuestionsList = ({
     setRenamingBlockId(block.blockId);
     setRenameValue(block.name || "");
   };
+
   const cancelRename = () => {
     setRenamingBlockId(null);
     setRenameValue("");
   };
+
   const saveRename = async (blockId) => {
     const trimmed = (renameValue || "").trim();
     if (!trimmed) return cancelRename();
@@ -890,7 +982,7 @@ const DraggableQuestionsList = ({
   };
 
   return (
-    <div ref={scrollRef} className="rounded-lg dark:bg-[#1A1A1E]  p-0.5">
+    <div ref={scrollRef} className="rounded-lg dark:bg-[#1A1A1E] p-0.5">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -917,12 +1009,102 @@ const DraggableQuestionsList = ({
               (b) => b.blockId === block.blockId
             )}
             totalBlocks={renderBlocks.length}
+            onOpenRandomization={openRandomizationForBlock}
             activeId={activeId}
             handleAddPageBreak={handleAddPageBreak}
             handleRemovePageBreak={handleRemovePageBreak}
             onRequestNewQuestion={onRequestNewQuestion}
           />
         ))}
+
+        {showRandomizationModal && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-[#1A1A1E] p-6 rounded-lg shadow-2xl w-[380px]">
+              <h2 className="text-lg font-semibold mb-4">
+                Block Randomization
+              </h2>
+
+              <div className="space-y-3 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    checked={tempRandomization.type === "none"}
+                    onChange={() =>
+                      setTempRandomization({ type: "none", subsetCount: "" })
+                    }
+                  />
+                  No randomization
+                </label>
+
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    checked={tempRandomization.type === "full"}
+                    onChange={() =>
+                      setTempRandomization({ type: "full", subsetCount: "" })
+                    }
+                  />
+                  Randomize all questions
+                </label>
+
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    checked={tempRandomization.type === "subset"}
+                    onChange={() =>
+                      setTempRandomization({
+                        type: "subset",
+                        subsetCount: tempRandomization.subsetCount || 1,
+                      })
+                    }
+                  />
+                  Random subset
+                </label>
+
+                {tempRandomization.type === "subset" && (
+                  <input
+                    type="number"
+                    min={1}
+                    value={tempRandomization.subsetCount}
+                    onChange={(e) =>
+                      setTempRandomization({
+                        ...tempRandomization,
+                        subsetCount: Number(e.target.value),
+                      })
+                    }
+                    className="border p-2 w-full rounded-md dark:bg-gray-800 dark:border-gray-700"
+                  />
+                )}
+              </div>
+
+              <div className="flex justify-end gap-3 mt-5">
+                <button
+                  onClick={() => setShowRandomizationModal(false)}
+                  className="px-4 py-2 bg-gray-400 text-white rounded-md hover:bg-gray-500"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={async () => {
+                    const newBlocks = renderBlocks.map((b) =>
+                      b.blockId === selectedBlockId
+                        ? { ...b, randomization: tempRandomization }
+                        : b
+                    );
+
+                    setRenderBlocks(newBlocks);
+                    await persistBlocks(newBlocks);
+                    setShowRandomizationModal(false);
+                  }}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <DragOverlay>
           {activeId

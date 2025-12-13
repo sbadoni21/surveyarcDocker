@@ -43,6 +43,7 @@ import { FaSpinner } from "react-icons/fa";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import { TemplateSelectionPopup } from "@/components/surveys/TemplateSelectionPopup";
 import { createSurveyFromTemplate } from "@/utils/createSurveyFromTemplate";
+import { format, formatDistanceToNow } from "date-fns";
 
 export default function SurveyPage() {
   const [name, setName] = useState("");
@@ -82,7 +83,7 @@ export default function SurveyPage() {
   } = useSurvey();
 
   const { saveQuestion } = useQuestion();
-
+console.log(surveys)
   const [surveysWithCounts, setSurveysWithCounts] = useState([]);
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedSurveyId, setSelectedSurveyId] = useState(null);
@@ -117,13 +118,6 @@ export default function SurveyPage() {
     fetchCounts();
   }, [surveys]);
 
-  const handleResponseCountClick = async (surveyId) => {
-    if (!surveyId) return;
-    const resp = await listResponses(surveyId);
-    setSelectedSurveyId(surveyId);
-    setResponseData(resp || []);
-    setOpenPopup(true);
-  };
 
   const openMenuFor = (event, surveyId) => {
     setAnchorEl(event.currentTarget);
@@ -577,10 +571,9 @@ console.log(surveyNameForTemplate)
                 <TableRow>
                   {[
                     { key: "name", label: "Survey Name" },
-                    { key: "surveyId", label: "Survey ID" },
+                    { key: "survey_id", label: "Survey ID" },
                     { key: "status", label: "Status" },
-                    { key: "responseCount", label: "Total responses" },
-                    { key: "updatedAt", label: "Last modified" },
+                    { key: "updated_at", label: "Last modified" },
                     { key: "actions", label: "Actions" },
                   ].map((col, idx) => (
                     <TableCell
@@ -700,25 +693,7 @@ console.log(surveyNameForTemplate)
                         </span>
                       </TableCell>
 
-                      <TableCell
-                        sx={{
-                          borderBottom: "none",
-                        }}
-                      >
-                        <Typography
-                          onClick={() => handleResponseCountClick(survey.id)}
-                          sx={{
-                            color: isDarkMode ? "#96949C" : "#000",
-                            fontWeight: 600,
-                            fontSize: 14,
-                            cursor: "pointer",
-                            textDecoration: "underline",
-                          }}
-                        >
-                          {survey.responseCount || 0}
-                        </Typography>
-                      </TableCell>
-
+      
                       <TableCell
                         sx={{
                           borderBottom: "none",
@@ -730,23 +705,20 @@ console.log(surveyNameForTemplate)
                             color: isDarkMode ? "#96949C" : "text.secondary",
                           }}
                         >
-                          {survey.updatedAt?.seconds
-                            ? (() => {
-                                const date = new Date(
-                                  survey.updatedAt.seconds * 1000
-                                );
-                                const dd = String(date.getDate()).padStart(
-                                  2,
-                                  "0"
-                                );
-                                const mm = String(date.getMonth() + 1).padStart(
-                                  2,
-                                  "0"
-                                );
-                                const yy = String(date.getFullYear()).slice(-2);
-                                return `${dd}/${mm}/${yy}`;
-                              })()
-                            : "N/A"}
+                        <Typography
+  fontSize={14}
+  title={
+    survey.updated_at
+      ? format(new Date(survey.updated_at), "PPpp")
+      : ""
+  }
+>
+  {survey.updated_at
+    ? formatDistanceToNow(new Date(survey.updated_at), { addSuffix: true })
+    : "N/A"}
+</Typography>
+
+
                         </Typography>
                       </TableCell>
 

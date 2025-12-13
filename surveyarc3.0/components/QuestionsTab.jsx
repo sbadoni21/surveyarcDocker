@@ -136,7 +136,7 @@ const QuestionsTab = ({
 
   return (
     <div className="flex gap-4 dark:bg-[#121214] h-[calc(100vh-120px)] overflow-hidden min-h-0 bg-[#F5F5F5]">
-      <aside className="w-[40%] relative z-10 shrink-0 h-full overflow-y-auto">
+      <aside className="w-[25%] relative z-10 shrink-0 h-full overflow-y-auto">
         {Array.isArray(normalizedBlocks) && normalizedBlocks.length > 0 ? (
           <DraggableQuestionsList
             questions={questions}

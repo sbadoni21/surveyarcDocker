@@ -67,7 +67,29 @@ const CampaignResultModel = {
     const res = await fetch(`${BASE}/${encodeURIComponent(resultId)}`, { cache: "no-store" });
     return toCamel(await json(res));
   },
-
+  async getOrCreate(data) {
+    const body = {
+      campaign_id: data.campaignId,
+      org_id: data.orgId,
+      project_id: data.projectId,
+      contact_id: data.contactId,
+      contact_email: data.contactEmail,
+      contact_phone: data.contactPhone,
+      status: data.status,
+      channel: data.channel,
+      message_id: data.messageId,
+      error: data.error,
+      error_code: data.errorCode,
+      meta_data: data.metaData || {},
+    };
+    const res = await fetch(`${BASE}/get-or-create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    return toCamel(await json(res));
+  },
   async update(resultId, data) {
     const res = await fetch(`${BASE}/${encodeURIComponent(resultId)}`, {
       method: "PATCH",
