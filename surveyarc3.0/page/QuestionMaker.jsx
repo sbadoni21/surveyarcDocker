@@ -456,7 +456,7 @@ export default function Dist() {
       console.error("Failed to update status", err);
     }
   };
-
+console.log(questions)
   if (loading) return <Loading />;
   return (
     <div className="flex flex-col min-h-screen">

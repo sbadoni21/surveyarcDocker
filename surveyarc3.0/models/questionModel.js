@@ -57,6 +57,7 @@ const QuestionModel = {
   async get(orgId, surveyId, questionId) {
     const res = await fetch(`${BASE}/${encodeURIComponent(surveyId)}/${encodeURIComponent(questionId)}`, { cache: "no-store" });
     const q = await json(res);
+    console.log(q)
     return toCamel(q);
   },
 async getBulkQuestions(questionIds) {

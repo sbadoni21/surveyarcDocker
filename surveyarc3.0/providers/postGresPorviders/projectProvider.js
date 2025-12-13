@@ -208,7 +208,6 @@ export const ProjectProvider = ({ children }) => {
     return res;
   };
   const listFavorites = async (userId) => {
-    console.log(userId)
     if (!orgId) return { count: 0, items: [] };
     return await projectModel.listFavorites(orgId,userId);
   };

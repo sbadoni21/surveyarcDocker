@@ -23,6 +23,7 @@
     "cookies-next": "^6.0.0",
     "crypto-js": "^4.2.0",
     "dagre": "^0.8.5",
+    "date-fns": "^4.1.0",
     "dotenv": "^16.6.1",
     "firebase": "^11.10.0",
     "firebase-admin": "^13.4.0",

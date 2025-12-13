@@ -23,7 +23,6 @@ export const UserProvider = ({ children }) => {
   const getUser = useCallback(
     async (uidToLoad) => {
       if (!uidToLoad) {
-        console.log("[UserProvider] getUser called with empty uid");
         setUser(null);
         setUid(null);
         setLoading(false);
@@ -32,9 +31,7 @@ export const UserProvider = ({ children }) => {
 
       try {
         setLoading(true);
-        console.log("[UserProvider] Fetching user from Postgres:", uidToLoad);
         const u = await UserModel.get(String(uidToLoad));
-        console.log("[UserProvider] Loaded user:", u);
         setUser(u || null);
         setUid(u?.uid || null);
         setError(null);
@@ -56,7 +53,6 @@ export const UserProvider = ({ children }) => {
   useEffect(() => {
     const cookieUid = getCookie("currentUserId");
     if (!cookieUid) {
-      console.log("[UserProvider] No currentUserId cookie, treating as logged out");
       setLoading(false);
       return;
     }
@@ -66,7 +62,6 @@ export const UserProvider = ({ children }) => {
   // ------------------ PUBLIC HELPERS (NAMES PRESERVED) ------------------
 
   const setCurrentUser = (userData) => {
-    console.log("[UserProvider] setCurrentUser:", userData);
     setUser(userData || null);
     setUid(userData?.uid || null);
   };
@@ -164,7 +159,6 @@ export const UserProvider = ({ children }) => {
     }
   }, []);
   const logout = () => {
-    console.log("[UserProvider] logout called");
     setUser(null);
     setUid(null);
     deleteCookie("currentUserId");

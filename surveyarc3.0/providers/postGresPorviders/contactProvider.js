@@ -262,7 +262,6 @@ const removeContactsFromList = async (listId, contactIds) => {
       throw new Error("No valid contact IDs provided");
     }
 
-    console.log("🗑️ Removing contacts:", { listId, contactIds: idsArray });
 
     const response = await ListModel.removeContacts(listId, idsArray);
         return response;

@@ -49,7 +49,6 @@ export const exportSurveyToExcel = async (responses, questions, surveyName = 'Su
       // Debug log to see what we're getting
       if (answersArray.length === 0) {
         console.warn('No answers found for response:', response.response_id || response.responseId);
-        console.log('Response object:', response);
       } else {
         console.log(`Processing ${answersArray.length} answers for response:`, response.response_id || response.responseId);
       }
