@@ -32,6 +32,8 @@ class URLVariable(BaseModel):
     description: Optional[str] = None
     default_value: Optional[str] = None
     validation_regex: Optional[str] = None
+    mapped_to: Optional[str] = None   # ✅ ADD THIS
+
 
 
 class URLVariableCreate(URLVariable):
@@ -45,6 +47,8 @@ class URLVariableUpdate(BaseModel):
     description: Optional[str] = None
     default_value: Optional[str] = None
     validation_regex: Optional[str] = None
+    mapped_to: Optional[str] = None   # ✅ ADD THIS
+
 
 
 # Exit Page Schemas

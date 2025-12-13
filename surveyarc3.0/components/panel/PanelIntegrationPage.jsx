@@ -48,6 +48,19 @@ export default function PanelIntegrationPage({ sourceId = null, onClose = null }
 
     setProviderTemplate(src.meta_data?.provider || "custom_external");
     setShowTemplateSelector(false);
+    
+    // Ensure url_variables have all required fields including mapped_to
+    const normalizedUrlVariables = (src.url_variables || []).map(v => ({
+      var_name: v.var_name || "",
+      var_value: v.var_value || "",
+      required: v.required || "optional",
+      authentication: v.authentication || "no_authentication",
+      description: v.description || "",
+      default_value: v.default_value || null,
+      validation_regex: v.validation_regex || null,
+      mapped_to: v.mapped_to || null, // ← CRITICAL: preserve mapped_to
+    }));
+
     setForm({
       source_name: src.source_name,
       source_type: src.source_type,
@@ -55,7 +68,7 @@ export default function PanelIntegrationPage({ sourceId = null, onClose = null }
       is_active: src.is_active,
       expected_completes: src.expected_completes ?? "",
       expected_incidence_rate: src.expected_incidence_rate ?? "",
-      url_variables: src.url_variables || [],
+      url_variables: normalizedUrlVariables,
       meta_data: src.meta_data || {},
     });
 
@@ -81,6 +94,19 @@ export default function PanelIntegrationPage({ sourceId = null, onClose = null }
     if (selectedSourceId || !orgId || !surveyId) return;
 
     const tpl = buildTemplateConfig(providerTemplate, orgId, surveyId);
+    
+    // Ensure template url_variables have all fields including mapped_to
+    const normalizedUrlVariables = (tpl.url_variables || []).map(v => ({
+      var_name: v.var_name || "",
+      var_value: v.var_value || "",
+      required: v.required || "optional",
+      authentication: v.authentication || "no_authentication",
+      description: v.description || "",
+      default_value: v.default_value || null,
+      validation_regex: v.validation_regex || null,
+      mapped_to: v.mapped_to || null, // ← CRITICAL: include mapped_to
+    }));
+
     setForm((prev) => ({
       source_name: !prev.source_name || PROVIDER_TEMPLATES.some(p => prev.source_name === p.label) ? tpl.source_name : prev.source_name,
       source_type: tpl.source_type,
@@ -88,7 +114,7 @@ export default function PanelIntegrationPage({ sourceId = null, onClose = null }
       is_active: true,
       expected_completes: prev.expected_completes || tpl.expected_completes,
       expected_incidence_rate: prev.expected_incidence_rate || tpl.expected_incidence_rate,
-      url_variables: tpl.url_variables,
+      url_variables: normalizedUrlVariables,
       meta_data: tpl.meta_data,
     }));
 
@@ -103,7 +129,9 @@ export default function PanelIntegrationPage({ sourceId = null, onClose = null }
   const updateUrlVariable = (index, field, value) => {
     setForm((prev) => ({
       ...prev,
-      url_variables: prev.url_variables.map((v, i) => i === index ? { ...v, [field]: value } : v),
+      url_variables: prev.url_variables.map((v, i) => 
+        i === index ? { ...v, [field]: value } : v
+      ),
     }));
   };
 
@@ -170,7 +198,7 @@ export default function PanelIntegrationPage({ sourceId = null, onClose = null }
         description: "",
         default_value: null,
         validation_regex: null,
-        mapped_to: null,
+        mapped_to: null, // ← CRITICAL: include mapped_to
       }],
     }));
   };
@@ -208,6 +236,18 @@ export default function PanelIntegrationPage({ sourceId = null, onClose = null }
       }
     });
 
+    // ✅ Ensure all url_variables include mapped_to field
+    const normalizedUrlVariables = form.url_variables.map(v => ({
+      var_name: v.var_name || "",
+      var_value: v.var_value || "",
+      required: v.required || "optional",
+      authentication: v.authentication || "no_authentication",
+      description: v.description || "",
+      default_value: v.default_value || null,
+      validation_regex: v.validation_regex || null,
+      mapped_to: v.mapped_to || null, // ← CRITICAL: include mapped_to in payload
+    }));
+
     const payload = {
       org_id: orgId,
       survey_id: surveyId,
@@ -217,12 +257,13 @@ export default function PanelIntegrationPage({ sourceId = null, onClose = null }
       is_active: form.is_active,
       expected_completes: form.expected_completes ? Number(form.expected_completes) : null,
       expected_incidence_rate: form.expected_incidence_rate ? Number(form.expected_incidence_rate) : null,
-      url_variables: form.url_variables || [],
+      url_variables: normalizedUrlVariables, // ← Use normalized variables
       meta_data: { ...(form.meta_data || {}), provider: providerTemplate },
       exit_pages,
     };
 
     console.log("💾 Saving Panel with Payload:", JSON.stringify(payload, null, 2));
+    console.log("🔍 URL Variables being sent:", JSON.stringify(normalizedUrlVariables, null, 2));
 
     try {
       if (selectedSourceId) {
@@ -246,6 +287,19 @@ export default function PanelIntegrationPage({ sourceId = null, onClose = null }
     setProviderTemplate(templateId);
     setShowTemplateSelector(false);
     const tpl = buildTemplateConfig(templateId, orgId, surveyId);
+    
+    // Ensure template url_variables have mapped_to field
+    const normalizedUrlVariables = (tpl.url_variables || []).map(v => ({
+      var_name: v.var_name || "",
+      var_value: v.var_value || "",
+      required: v.required || "optional",
+      authentication: v.authentication || "no_authentication",
+      description: v.description || "",
+      default_value: v.default_value || null,
+      validation_regex: v.validation_regex || null,
+      mapped_to: v.mapped_to || null, // ← CRITICAL
+    }));
+
     setForm({
       source_name: tpl.source_name,
       source_type: tpl.source_type,
@@ -253,7 +307,7 @@ export default function PanelIntegrationPage({ sourceId = null, onClose = null }
       is_active: true,
       expected_completes: "",
       expected_incidence_rate: "",
-      url_variables: tpl.url_variables,
+      url_variables: normalizedUrlVariables,
       meta_data: tpl.meta_data,
     });
     setStandardExits({
