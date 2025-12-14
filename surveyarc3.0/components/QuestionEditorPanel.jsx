@@ -210,6 +210,21 @@ export default function QuestionEdritorPanel({
     setDirty(true);
   };
 
+  const onSerialLabelChange = (value) => {
+    if (isEditMode) {
+      setEditableQuestion((prev) => ({
+        ...prev,
+        serial_label: value,
+      }));
+    } else {
+      setNewQuestionData((prev) => ({
+        ...prev,
+        serial_label: value,
+      }));
+    }
+    setDirty(true);
+  };
+
   return (
     <main className="flex-1 dark:bg-[#121214] bg-[#F5F5F5] ">
       {isEditMode ? (
@@ -225,6 +240,19 @@ export default function QuestionEdritorPanel({
               editableQuestion?.type
             ) && (
               <>
+                <div className="animate-in slide-in-from-bottom duration-300 delay-50">
+                  <LabeledInput
+                    label="Question Label (Serial / Decipher)"
+                    value={editableQuestion?.serial_label || ""}
+                    onChange={(e) => onSerialLabelChange(e.target.value)}
+                    placeholder="e.g. Q1, A2, S12"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Used for logic, exports & referencing (must be unique per
+                    survey)
+                  </p>
+                </div>
+
                 <div className="animate-in slide-in-from-bottom duration-300 delay-100">
                   <LabeledInput
                     label="Question Label *"
@@ -277,6 +305,18 @@ export default function QuestionEdritorPanel({
 
             {!["end_screen", "welcome_screen"].includes(selectedType) && (
               <>
+                <div className="animate-in slide-in-from-bottom duration-300 delay-50">
+                  <LabeledInput
+                    label="Question Label (Serial / Decipher)"
+                    value={newQuestionData?.serial_label || ""}
+                    onChange={(e) => onSerialLabelChange(e.target.value)}
+                    placeholder="Auto-generated if left empty"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Optional. Example: Q1, Q2, A1
+                  </p>
+                </div>
+
                 <div className="animate-in slide-in-from-bottom duration-300 delay-100">
                   <LabeledInput
                     label="Question Label *"

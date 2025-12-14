@@ -12,6 +12,7 @@ class Question(Base):
     project_id = Column(String, nullable=True)
     type = Column(String, nullable=False)
     label = Column(String, nullable=False)
+    serial_label = Column(String, nullable=True)    # ✅ NEW
     description = Column(String, default="")
     required = Column(Boolean, default=True)
     config = Column(JSON, default={})
