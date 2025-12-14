@@ -463,14 +463,9 @@ export default function Dist() {
 console.log(questions)
   if (loading) return <Loading />;
   return (
-    <div className="flex flex-col min-h-screen">
-      <TopTabsNavbar activeTab={activeTab} setActiveTab={handleSetActiveTab} />
+<div className="flex flex-col h-screen overflow-hidden">
+      <TopTabsNavbar activeTab={activeTab} setActiveTab={handleSetActiveTab}  />
      
-      <DummyGeneratorPanel
-        orgId={orgId}
-        projectId={projectId}
-        surveyId={surveyId}
-      />
       <>
     
 

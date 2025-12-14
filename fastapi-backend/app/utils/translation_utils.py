@@ -187,6 +187,8 @@ def apply_translation(question_dict: dict, locale: str) -> dict:
 
     if locale_data.get("description"):
         translated["description"] = locale_data["description"]
+    if "serial_label" in question_dict:
+        translated["serial_label"] = question_dict["serial_label"]
 
     # ---------- CONFIG ----------
     if "config" in locale_data:

@@ -1,8 +1,15 @@
 import React, { useState } from 'react';
 import { MoreVertical } from 'lucide-react';
+import DummyGeneratorPanel from './dummydata-generator/DummyGeneratorPanel';
 
-export const QuickActions = ({ survey, loading, handleToggleStatus }) => {
+export const QuickActions = ({ survey, loading, handleToggleStatus, orgId, projectId }) => {
   const [anchorEl, setAnchorEl] = useState(null);
+  const [generationProgress, setGenerationProgress] = useState({
+    isGenerating: false,
+    completed: 0,
+    total: 0
+  });
+  
   const open = Boolean(anchorEl);
 
   const handleClick = (event) => {
@@ -18,6 +25,14 @@ export const QuickActions = ({ survey, loading, handleToggleStatus }) => {
     handleClose();
   };
 
+  const handleProgressUpdate = (progress) => {
+    setGenerationProgress(progress);
+  };
+
+  const progressPercent = generationProgress.total > 0 
+    ? Math.round((generationProgress.completed / generationProgress.total) * 100)
+    : 0;
+
   return (
     <div className="w-full border border-gray-300 rounded-lg bg-white shadow-sm">
       <div className="flex items-center justify-between px-4 py-3">
@@ -30,6 +45,16 @@ export const QuickActions = ({ survey, loading, handleToggleStatus }) => {
           }`}>
             {survey?.status === "test" ? "Test" : "Live"}
           </span>
+
+          {/* Generation Progress Indicator */}
+          {generationProgress.isGenerating && (
+            <div className="flex items-center gap-2 ml-4 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-full">
+              <Loader2 className="w-4 h-4 text-emerald-600 animate-spin" />
+              <span className="text-xs font-semibold text-emerald-700">
+                Generating: {generationProgress.completed}/{generationProgress.total} ({progressPercent}%)
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="relative">
@@ -58,6 +83,13 @@ export const QuickActions = ({ survey, loading, handleToggleStatus }) => {
                       ? "Change Status to Published"
                       : "Change Status to Test"}
                   </button>
+                  
+                  <DummyGeneratorPanel
+                    orgId={orgId}
+                    projectId={projectId}
+                    surveyId={survey?.surveyId}
+                    onProgressUpdate={handleProgressUpdate}
+                  />
                 </div>
               </div>
             </>

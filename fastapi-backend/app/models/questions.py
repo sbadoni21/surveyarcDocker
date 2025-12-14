@@ -37,6 +37,7 @@ class Question(Base):
             "type": self.type,
             "label": self.label,
             "description": self.description,
+            "serial_label": self.serial_label,
             "required": self.required,
             "config": self.config or {},
             "logic": self.logic or [],

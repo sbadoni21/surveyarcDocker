@@ -1,27 +1,66 @@
 "use client";
-import { Icon } from "@iconify/react";
 import React from "react";
-import { TbLayoutDistributeHorizontal, TbSettingsCog } from "react-icons/tb";
+import { 
+  ClipboardList, 
+  GitBranch, 
+  PieChart, 
+  Play, 
+  MessageSquare, 
+  Palette, 
+  Users, 
+  Languages, 
+  Megaphone 
+} from "lucide-react";
 
 export default function TopTabsNavbar({ activeTab, setActiveTab }) {
   const tabs = [
-    { id: "questions", label: "Questions", icon: <Icon icon="ri:survey-line" width="20" height="20" /> },
-    // { id: "rules", label: "Logic rules", icon: <TbSettingsCog className="w-5 h-5" /> },
-    { id: "flow", label: "Survey flow", icon: <TbSettingsCog className="w-5 h-5" /> },
-    { id: "quota", label: "Quota", icon: <TbSettingsCog className="w-5 h-5" /> },
-    // { id: "distribution", label: "Distribution", icon: <TbLayoutDistributeHorizontal width="20" height="20" /> },
-    { id: "demo", label: "Demo survey", icon: <Icon icon="solar:play-linear" width="20" height="20" /> },
-    { id: "responses", label: "Responses", icon: <Icon icon="ri:survey-line" width="20" height="20" /> },
-    { id: "theme", label: "Theme", icon: <Icon icon="ri:palette-line" width="20" height="20" /> },
-    
-    { id: "panel", label: "Panel", icon: <Icon icon="solar:play-linear" width="20" height="20" /> },
-    { id: "translation", label: "Translations", icon: <Icon icon="solar:play-linear" width="20" height="20" /> },
-{ id: "campaign", label: "Campaign", icon:<Icon icon="solar:target-linear" width="20" height="20" />
-
- },
+    { 
+      id: "questions", 
+      label: "Questions", 
+      icon: ClipboardList
+    },
+    { 
+      id: "flow", 
+      label: "Survey Flow", 
+      icon: GitBranch
+    },
+    { 
+      id: "quota", 
+      label: "Quota", 
+      icon: PieChart
+    },
+    { 
+      id: "demo", 
+      label: "Demo Survey", 
+      icon: Play
+    },
+    { 
+      id: "responses", 
+      label: "Responses", 
+      icon: MessageSquare
+    },
+    { 
+      id: "theme", 
+      label: "Theme", 
+      icon: Palette
+    },
+    { 
+      id: "panel", 
+      label: "Panel", 
+      icon: Users
+    },
+    { 
+      id: "translation", 
+      label: "Translations", 
+      icon: Languages
+    },
+    { 
+      id: "campaign", 
+      label: "Campaign",
+      icon: Megaphone
+    },
   ];
 
-  // Map tab ids to desired hash routes (including your misspelling requirement)
   const hashMap = {
     questions: "#questoins",
     rules: "#logicrules",
@@ -36,34 +75,81 @@ export default function TopTabsNavbar({ activeTab, setActiveTab }) {
     setActiveTab(id);
     const hash = hashMap[id] || `#${id}`;
     if (typeof window !== "undefined") {
-      // replace the hash without adding a new history entry
       history.replaceState(null, "", hash);
     }
   };
 
   return (
-    <div className="flex justify-start items-center ">
-      <div className="flex justify-center py-4 px-4 w-[100%]  dark:bg-[#1A1A1E] bg-[#FFFFFF]">
-        <div className="dark:bg-[#0e0e0f] rounded-xl bg-[#F5F5F5] px-2 py-2 shadow-sm flex gap-1">
+    <div className="w-full border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-[#1A1A1E]">
+      <div className="px-6">
+        <nav className="flex justify-center items-center gap-1 overflow-x-auto scrollbar-hide -mb-px">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
+            const IconComponent = tab.icon;
+            
             return (
               <button
                 key={tab.id}
                 onClick={() => handleClick(tab.id)}
-                className={`flex items-center gap-2 text-sm font-medium px-5 py-3 rounded-lg transition-all duration-200 ${
-                  isActive ? "bg-[#ED7A13] text-white" : "text-gray-600 hover:bg-gray-100"
-                }`}
-                // Optional: show the target hash on hover without changing styles
+                className={`
+                  group relative flex items-center gap-2.5 px-5 py-4 
+                  font-medium text-[12px] whitespace-nowrap
+                  transition-all duration-200 ease-in-out
+                  ${isActive 
+                    ? 'text-[#ED7A13]' 
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                  }
+                `}
                 title={hashMap[tab.id]}
               >
-                {tab.icon}
-                <span>{tab.label}</span>
+                {/* Icon */}
+                <IconComponent 
+                  className={`
+                    w-4 h-4 transition-all duration-200
+                    ${isActive 
+                      ? 'text-[#ED7A13] scale-110' 
+                      : 'text-gray-500 dark:text-gray-500 group-hover:text-gray-700 dark:group-hover:text-gray-300 group-hover:scale-105'
+                    }
+                  `}
+                  strokeWidth={isActive ? 2.5 : 2}
+                />
+                
+                {/* Label */}
+                <span className="relative">
+                  {tab.label}
+                  
+                  {/* Active indicator line */}
+                  {isActive && (
+                    <span className="absolute -bottom-[17px] left-0 right-0 h-0.5 bg-[#ED7A13] rounded-full" />
+                  )}
+                </span>
+
+                {/* Hover background effect */}
+                <div 
+                  className={`
+                    absolute inset-0 rounded-lg -z-10
+                    transition-all duration-200
+                    ${isActive 
+                      ? 'bg-orange-50 dark:bg-orange-950/20' 
+                      : 'bg-transparent group-hover:bg-gray-50 dark:group-hover:bg-gray-800/50'
+                    }
+                  `}
+                />
               </button>
             );
           })}
-        </div>
+        </nav>
       </div>
+
+      <style jsx>{`
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+      `}</style>
     </div>
   );
 }

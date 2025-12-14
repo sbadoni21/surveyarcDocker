@@ -2,36 +2,53 @@
 import React, { useState, useEffect, useRef } from "react";
 import { X, Loader2, CheckCircle2, AlertCircle, StopCircle, Clock } from "lucide-react";
 
-export default function DummyGeneratorPanel({ orgId, projectId, surveyId }) {
+export default function DummyGeneratorPanel({ orgId, projectId, surveyId, onProgressUpdate }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [count, setCount] = useState(10);
   const [completed, setCompleted] = useState(0);
-  const [status, setStatus] = useState("idle"); // idle, generating, success, error, stopped
+  const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
   const [startTime, setStartTime] = useState(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [jobId, setJobId] = useState(null);
   const pollIntervalRef = useRef(null);
   const timerIntervalRef = useRef(null);
+  const lastProgressRef = useRef(null);
 
-  // Format time in MM:SS
+  // Notify parent component of progress changes - with memoization to prevent infinite loops
+  useEffect(() => {
+    if (onProgressUpdate) {
+      const progressData = {
+        isGenerating,
+        completed,
+        total: count,
+        status
+      };
+      
+      // Only update if the data actually changed
+      const progressString = JSON.stringify(progressData);
+      if (progressString !== lastProgressRef.current) {
+        lastProgressRef.current = progressString;
+        onProgressUpdate(progressData);
+      }
+    }
+  }, [isGenerating, completed, count, status]);
+
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Calculate estimated time remaining
   const getEstimatedTime = () => {
     if (completed === 0 || elapsedTime === 0) return "Calculating...";
-    const rate = completed / elapsedTime; // responses per second
+    const rate = completed / elapsedTime;
     const remaining = count - completed;
     const estimatedSeconds = Math.ceil(remaining / rate);
     return formatTime(estimatedSeconds);
   };
 
-  // Timer for elapsed time
   useEffect(() => {
     if (isGenerating && startTime) {
       timerIntervalRef.current = setInterval(() => {
@@ -51,7 +68,6 @@ export default function DummyGeneratorPanel({ orgId, projectId, surveyId }) {
     };
   }, [isGenerating, startTime]);
 
-  // Poll for progress
   useEffect(() => {
     if (!isGenerating || !jobId) return;
 
@@ -86,9 +102,8 @@ export default function DummyGeneratorPanel({ orgId, projectId, surveyId }) {
       }
     };
 
-    // Poll every 2 seconds
     pollIntervalRef.current = setInterval(pollProgress, 2000);
-    pollProgress(); // Initial call
+    pollProgress();
 
     return () => {
       if (pollIntervalRef.current) {
@@ -129,14 +144,12 @@ export default function DummyGeneratorPanel({ orgId, projectId, surveyId }) {
       const data = await res.json();
       console.log("Generation started:", data);
       
-      // Backend returns task_id - use it for tracking
       const backendJobId = data.task_id || data.taskId || data.jobId || data.job_id || data.id;
       
       if (backendJobId) {
         console.log("Using backend task tracking:", backendJobId);
         setJobId(backendJobId);
       } else {
-        // Fallback: simulate if no job tracking available yet
         console.log("No job ID provided, using simulated progress");
         setJobId("simulated-" + Date.now());
         simulateProgress();
@@ -150,9 +163,8 @@ export default function DummyGeneratorPanel({ orgId, projectId, surveyId }) {
     }
   };
 
-  // Fallback simulation if backend doesn't provide real-time progress
   const simulateProgress = () => {
-    const duration = count * 200; // ~200ms per response
+    const duration = count * 200;
     const updateInterval = 500;
     const incrementPerUpdate = (count / (duration / updateInterval));
     
@@ -188,7 +200,6 @@ export default function DummyGeneratorPanel({ orgId, projectId, surveyId }) {
       }
     } catch (err) {
       console.error("Failed to stop generation:", err);
-      // Force stop locally anyway
       setIsGenerating(false);
       setStatus("stopped");
     }
@@ -223,32 +234,13 @@ export default function DummyGeneratorPanel({ orgId, projectId, surveyId }) {
 
   return (
     <>
-      {/* Trigger Button - always visible if not generating */}
-      {!isOpen && !isGenerating && (
+      {/* Button in dropdown menu */}
+      {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-28 right-6 px-4 py-3 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-medium shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center gap-2 z-50"
+          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors border-t border-gray-200"
         >
-          <span className="text-lg">🤖</span>
-          Generate Dummy Data
-        </button>
-      )}
-
-      {/* Minimized Progress Indicator */}
-      {!isOpen && isGenerating && (
-        <button
-          onClick={() => setIsOpen(true)}
-          className="fixed bottom-6 right-6 px-4 py-3 rounded-lg bg-white dark:bg-gray-800 shadow-xl border-2 border-emerald-500 flex items-center gap-3 z-50 hover:scale-105 transition-all"
-        >
-          <Loader2 className="w-5 h-5 text-emerald-600 animate-spin" />
-          <div className="flex flex-col items-start">
-            <span className="text-sm font-semibold text-gray-900 dark:text-white">
-              Generating... {progress}%
-            </span>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              {completed}/{count} responses
-            </span>
-          </div>
+          🤖 Generate Dummy Data
         </button>
       )}
 
@@ -256,7 +248,6 @@ export default function DummyGeneratorPanel({ orgId, projectId, surveyId }) {
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
-            {/* Header */}
             <div className="bg-gradient-to-r from-emerald-500 to-teal-600 p-6 relative">
               <button
                 onClick={handleClose}
@@ -273,7 +264,6 @@ export default function DummyGeneratorPanel({ orgId, projectId, surveyId }) {
               </p>
             </div>
 
-            {/* Content */}
             <div className="p-6 space-y-6">
               {status === "idle" && (
                 <>
@@ -312,7 +302,6 @@ export default function DummyGeneratorPanel({ orgId, projectId, surveyId }) {
                     <span className="font-medium">Generating responses...</span>
                   </div>
 
-                  {/* Stats Grid */}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
                       <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Completed</div>
@@ -331,7 +320,6 @@ export default function DummyGeneratorPanel({ orgId, projectId, surveyId }) {
                     </div>
                   </div>
 
-                  {/* Progress Bar */}
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
                       <span>Progress</span>
@@ -351,7 +339,6 @@ export default function DummyGeneratorPanel({ orgId, projectId, surveyId }) {
                     </div>
                   </div>
 
-                  {/* Stop Button */}
                   <button
                     onClick={handleStop}
                     className="w-full px-6 py-3 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
@@ -362,7 +349,7 @@ export default function DummyGeneratorPanel({ orgId, projectId, surveyId }) {
 
                   <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-sm text-blue-700 dark:text-blue-300">
                     <p className="font-medium mb-1">💡 Tip</p>
-                    <p>You can minimize this panel and continue working. Progress will be saved.</p>
+                    <p>You can close this panel and continue working. Progress is tracked in the status bar.</p>
                   </div>
                 </div>
               )}
@@ -379,7 +366,7 @@ export default function DummyGeneratorPanel({ orgId, projectId, surveyId }) {
                     </p>
                     <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-3 w-full">
                       <div className="text-sm text-emerald-700 dark:text-emerald-300">
-                        <strong>Average rate:</strong> {((count / elapsedTime) * 60).toFixed(1)} responses/min
+                        <strong>Average rate:</strong> {elapsedTime > 0 ? ((count / elapsedTime) * 60).toFixed(1) : '—'} responses/min
                       </div>
                     </div>
                   </div>
