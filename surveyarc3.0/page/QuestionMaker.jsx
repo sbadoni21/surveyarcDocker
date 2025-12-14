@@ -28,6 +28,7 @@ import { TemplateSelectionPopup } from "@/components/surveys/TemplateSelectionPo
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import QuotaTab from "@/components/QuotaTab";
 import TranslationInitScreen from "./TranslationPage";
+import { QuickActions } from "@/components/QuickActions";
 
 export default function Dist() {
   const [selectedType, setSelectedType] = useState(null);
@@ -480,17 +481,8 @@ console.log(questions)
           projectId={projectId}
         />
       </>
-
-      <Button
-        onClick={handleToggleStatus}
-        disabled={loading}
-        variant="outlined"
-        size="small"
-      >
-        {survey?.status === "test"
-          ? "Change Status to Published"
-          : "Change Status to Test"}
-      </Button>
+<div className="flex justify-end items-end">     <QuickActions survey={survey} loading={loading} handleToggleStatus={handleToggleStatus}/>
+</div>
 
       <div className="flex-1 overflow-auto bg-[#f5f5f5] dark:bg-[#121214] p-4">
         {activeTab === "questions" && (
