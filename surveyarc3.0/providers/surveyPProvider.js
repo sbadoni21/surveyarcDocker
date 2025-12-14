@@ -20,7 +20,6 @@ export const SurveyProvider = ({ children }) => {
     setLoading(true);
     try {
       const raw = await SurveyModel.getAllByProject(projectId);
-      console.log('getAllSurveys raw response:', raw);
 
       // Handle both array and { items: [] } style responses
       const list = Array.isArray(raw)
@@ -43,7 +42,6 @@ export const SurveyProvider = ({ children }) => {
   const fetchSurveysByProject = async (projectId) => {
     try {
       const raw = await SurveyModel.getAllByProject(projectId);
-      console.log(`Surveys for project ${projectId}:`, raw);
 
       const list = Array.isArray(raw)
         ? raw
@@ -63,7 +61,6 @@ export const SurveyProvider = ({ children }) => {
     setLoading(true);
     try {
       const raw = await SurveyModel.getAll(orgId);
-      console.log('getAllOrgSurveys raw response:', raw);
 
       const list = Array.isArray(raw)
         ? raw
@@ -85,7 +82,6 @@ export const SurveyProvider = ({ children }) => {
   const fetchAllOrgSurveys = async (orgId) => {
     try {
       const raw = await SurveyModel.getAll(orgId);
-      console.log('fetchAllOrgSurveys raw response:', raw);
 
       const list = Array.isArray(raw)
         ? raw

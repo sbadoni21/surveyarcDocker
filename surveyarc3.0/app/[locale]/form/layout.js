@@ -9,6 +9,7 @@ import { ResponseProvider } from "@/providers/postGresPorviders/responsePProvide
 import { ContactProvider } from "@/providers/postGresPorviders/contactProvider";
 import { ThemeProvider } from "@/providers/postGresPorviders/themeProvider";
 import { SupportTeamProvider } from "@/providers/postGresPorviders/SupportTeamProvider";
+import { CampaignResultProvider } from "@/providers/postGresPorviders/campaginResultProvider";
 
 export default async function Layout(props) {
   const { children } = props;
@@ -26,7 +27,9 @@ export default async function Layout(props) {
           <RuleProvider>
             <ContactProvider>
               <SupportTeamProvider>
+                <CampaignResultProvider>
               <ResponseProvider>{children}</ResponseProvider>
+              </CampaignResultProvider>
               </SupportTeamProvider>
             </ContactProvider>
           </RuleProvider>

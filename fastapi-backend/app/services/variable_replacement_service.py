@@ -10,7 +10,8 @@ from datetime import datetime, timezone
 from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
 
 from ..models.contact import Contact
-from ..models.campaigns import Campaign, CampaignResult
+from ..models.campaigns import Campaign
+from ..models.campaign_result import CampaignResult
 
 # Configure logging
 logging.basicConfig(

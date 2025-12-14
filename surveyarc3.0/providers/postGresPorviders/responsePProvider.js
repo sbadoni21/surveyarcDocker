@@ -23,32 +23,17 @@ export const ResponseProvider = ({ children }) => {
   // 3) Final resolved surveyId (prefer query, fallback to path)
   const resolvedSurveyId = surveyIdFromQuery || surveyIdFromPath;
 
-  // 🔍 DEBUG: Log all extraction attempts
-  useEffect(() => {
-    console.group("🔍 [ResponseProvider] Survey ID Extraction Debug");
-    console.log("Full pathname:", pathname);
-    console.log("Search params:", Object.fromEntries(searchParams?.entries() || []));
-    console.log("surveyIdFromQuery:", surveyIdFromQuery);
-    console.log("surveyIdFromPath:", surveyIdFromPath);
-    console.log("resolvedSurveyId:", resolvedSurveyId);
-    console.log("Current responses count:", responses.length);
-    console.groupEnd();
-  }, [pathname, searchParams, surveyIdFromQuery, surveyIdFromPath, resolvedSurveyId, responses.length]);
-
   useEffect(() => {
     // 🔹 Don't auto-fetch on the public /form page at all
     if (pathname?.startsWith("/form")) {
-      console.log("[ResponseProvider] ⏭️ Skipping auto-fetch on /form page");
       return;
     }
 
     // 🔹 Prevent duplicate fetches for the same survey
     if (resolvedSurveyId && resolvedSurveyId !== lastFetchedSurveyId.current) {
-      console.log("[ResponseProvider] 🚀 Auto-fetching responses for:", resolvedSurveyId);
       lastFetchedSurveyId.current = resolvedSurveyId;
       getAllResponses(resolvedSurveyId);
     } else if (!resolvedSurveyId) {
-      console.log("[ResponseProvider] ⚠️ No surveyId found in query or path");
       // Reset when no survey is selected
       lastFetchedSurveyId.current = null;
       setResponses([]);
@@ -65,18 +50,13 @@ export const ResponseProvider = ({ children }) => {
     }
     
     setLoading(true);
-    console.log("[ResponseProvider] 📡 Fetching responses for:", surveyId);
     
     try {
       const list = await ResponseModel.getAllBySurvey(surveyId);
-      console.log("[ResponseProvider] ✅ Received responses:", {
-        count: list?.length || 0,
-        data: list,
-      });
+  
       setResponses(list || []);
       return list;
     } catch (error) {
-      console.error("[ResponseProvider] ❌ Error fetching responses:", error);
       setResponses([]);
       return [];
     } finally {
@@ -90,23 +70,18 @@ export const ResponseProvider = ({ children }) => {
       setSelectedResponse(r);
       return r;
     } catch (error) {
-      console.error("[ResponseProvider] Error fetching response:", error);
       throw error;
     }
   };
 
   const saveResponse = async (orgId, surveyId, data) => {
-    console.log("[ResponseProvider] 💾 Saving response for survey:", surveyId);
     try {
       const created = await ResponseModel.create(orgId, surveyId, data);
-      console.log("[ResponseProvider] ✅ Response saved:", created);
       
       // Only update the list if we're viewing this survey
       if (surveyId === resolvedSurveyId) {
-        console.log("[ResponseProvider] 🔄 Adding to current survey's responses");
         setResponses((prev) => {
           const updated = [created, ...prev];
-          console.log("[ResponseProvider] Updated responses count:", updated.length);
           return updated;
         });
       } else {
@@ -137,12 +112,10 @@ export const ResponseProvider = ({ children }) => {
   };
 
   const deleteResponse = async (surveyId, responseId) => {
-    console.log("[ResponseProvider] 🗑️ Deleting response:", responseId);
     try {
       await ResponseModel.delete(surveyId, responseId);
       setResponses((prev) => {
         const filtered = prev.filter((r) => r.response_id !== responseId);
-        console.log("[ResponseProvider] ✅ Response deleted. New count:", filtered.length);
         return filtered;
       });
       if (selectedResponse?.response_id === responseId) {

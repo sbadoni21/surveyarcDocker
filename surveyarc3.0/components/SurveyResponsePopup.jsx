@@ -9,6 +9,7 @@ import { useResponse } from "@/providers/postGresPorviders/responsePProvider";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import ExportSurveyButton from "./ExportSurveyButton";
+import ResponsesOverviewPage from "@/page/responses/ResponsesOverviewPage";
 
 const EXCLUDED_KEYS = ["id", "projectId", "__v", "orgId", "surveyId"];
 
@@ -36,39 +37,21 @@ const SurveyResponsesPage = ({ survey }) => {
   const { responses, deleteResponse, surveyId, loading } = useResponse();
   
   const surveyStatus = survey?.status;
-
-  // 🔍 DEBUG: Log whenever responses change
-  useEffect(() => {
-    console.group("🎯 [SurveyResponsesPage] Component State");
-    console.log("responses from context:", responses);
-    console.log("responses length:", responses?.length);
-    console.log("responses is array?", Array.isArray(responses));
-    console.log("loading:", loading);
-    console.log("surveyId:", surveyId);
-    console.log("surveyStatus:", surveyStatus);
-    console.groupEnd();
-  }, [responses, loading, surveyId, surveyStatus]);
-
+console.log(responses)
   // ✅ Filter the actual responses array
   const filteredResponses = useMemo(() => {
-    console.log("🔄 [useMemo] Recalculating filteredResponses");
-    console.log("  - Raw responses:", responses);
-    console.log("  - Is Array?", Array.isArray(responses));
-    console.log("  - Length:", responses?.length);
+
     
     if (!responses || !Array.isArray(responses)) {
-      console.log("  - ⚠️ Returning empty array (no valid responses)");
       return [];
     }
 
     if (surveyStatus === "test") {
       const filtered = responses.filter((r) => r.status === "test_completed");
-      console.log(`  - ✅ Returning ${filtered.length} test responses`);
       return filtered;
     }
 
     const filtered = responses.filter((r) => r.status !== "test_completed");
-    console.log(`  - ✅ Returning ${filtered.length} non-test responses`);
     return filtered;
   }, [responses, surveyStatus]);
 
@@ -119,36 +102,30 @@ const SurveyResponsesPage = ({ survey }) => {
   const responseCountLabel =
     filteredResponses.length === 1 ? "response" : "responses";
 
-  console.log("🖼️ [Render] filteredResponses.length:", filteredResponses.length);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950/95">
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Debug Info - Remove after fixing */}
-        <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-          <p className="text-xs font-mono">
-            <strong>Debug:</strong> responses={responses?.length || 0}, 
-            filtered={filteredResponses.length}, 
-            loading={loading ? "true" : "false"},
-            surveyId={surveyId || "null"}
-          </p>
-        </div>
+       
 
         {/* Sticky Header */}
         <div className="sticky top-0 z-30 pb-4 mb-6 bg-slate-50/90 dark:bg-slate-950/90 backdrop-blur border-b border-slate-200/60 dark:border-slate-800">
           <div className="flex items-start gap-4 mb-3 pt-1">
             <div>
-              <p className="text-xs uppercase tracking-wide text-slate-400 mb-1">
-                Survey
-              </p>
-              <h1 className="text-2xl md:text-3xl font-semibold text-slate-900 dark:text-slate-50">
-                Survey Responses
-              </h1>
-              {survey?.title && (
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                  {survey.title}
+             
+              {survey?.name && (
+                <p className="text-2xl text-black dark:text-slate-400 font-bold mt-1">
+                  {survey.name}
                 </p>
+              
               )}
+                 {survey?.survey_id && (
+                <p className="text-sm text-slate-900 dark:text-slate-400 text-bold mt-1">
+                  {survey.survey_id}
+                </p>
+              
+              )}
+           
             </div>
 
             <div className="ml-auto flex flex-col items-end gap-2">
@@ -184,12 +161,22 @@ const SurveyResponsesPage = ({ survey }) => {
                     : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
                 }`}
               >
-                Responses
+                Overview
               </button>
               <button
                 onClick={() => setTab(1)}
                 className={`relative px-4 py-1.5 text-xs md:text-sm font-medium rounded-full transition-all ${
                   tab === 1
+                    ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-50 shadow-sm"
+                    : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+                }`}
+              >
+                Responses
+              </button>
+               <button
+                onClick={() => setTab(2)}
+                className={`relative px-4 py-1.5 text-xs md:text-sm font-medium rounded-full transition-all ${
+                  tab === 2
                     ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-50 shadow-sm"
                     : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
                 }`}
@@ -232,7 +219,7 @@ const SurveyResponsesPage = ({ survey }) => {
         {/* Content */}
         {!loading && (
           <div className="min-h-[60vh] pb-12">
-            {tab === 0 && (
+            {tab === 1 && (
               <>
                 {filteredResponses.length === 0 ? (
                   <div className="flex items-center justify-center min-h-[360px]">
@@ -398,8 +385,12 @@ const SurveyResponsesPage = ({ survey }) => {
                 )}
               </>
             )}
+ {tab === 0 && (
+               
 
-            {tab === 1 && (
+              <ResponsesOverviewPage/>
+              )}
+            {tab === 2 && (
               <div>
                 {Object.entries(analytics).length === 0 ? (
                   <div className="bg-white dark:bg-slate-900/80 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 px-8 py-12 text-center shadow-sm">

@@ -9,7 +9,8 @@ from typing import List, Optional
 from datetime import datetime, timezone
 
 from ..db import get_db
-from ..models.campaigns import Campaign, CampaignResult, CampaignEvent, CampaignStatus, CampaignChannel, RecipientStatus
+from ..models.campaigns import Campaign, CampaignEvent, CampaignStatus, CampaignChannel, RecipientStatus
+from ..models.campaign_result import CampaignResult
 from ..models.contact import Contact, ContactList
 from ..schemas.campaign import (
     CampaignCreate, CampaignUpdate, Campaign as CampaignSchema,

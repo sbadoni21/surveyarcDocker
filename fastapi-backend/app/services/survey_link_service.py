@@ -13,8 +13,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 
 from ..models.survey_link import SurveyLinkReference
-from ..models.campaigns import Campaign, CampaignResult
+from ..models.campaigns import Campaign
 from ..models.contact import Contact
+from ..models.campaign_result import CampaignResult
 
 logger = logging.getLogger(__name__)
 

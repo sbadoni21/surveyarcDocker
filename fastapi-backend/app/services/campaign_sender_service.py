@@ -12,11 +12,11 @@ from typing import List, Optional
 from .variable_replacement_service import replace_variables, build_tracking_url
 from ..models.campaigns import (
     Campaign, 
-    CampaignResult, 
     CampaignStatus, 
     CampaignChannel, 
     RecipientStatus
 )
+from ..models.campaign_result import CampaignResult
 from ..models.outbox import Outbox
 from ..models.contact import Contact
 from ..utils.id_generator import generate_id

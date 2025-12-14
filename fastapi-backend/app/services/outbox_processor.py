@@ -18,10 +18,11 @@ from ..db import SessionLocal
 from ..models.outbox import Outbox
 from ..models.campaigns import (
     Campaign, 
-    CampaignResult, 
     RecipientStatus,
     CampaignStatus
 )
+from ..models.campaign_result import CampaignResult
+
 
 # ============================================
 # CONFIGURATION

@@ -22,27 +22,15 @@ export const ParticipantSourceProvider = ({ children }) => {
 
   const resolvedSurveyId = surveyIdFromQuery || surveyIdFromPath;
 
-  useEffect(() => {
-    console.group("🔍 [ParticipantSourceProvider] Survey ID Debug");
-    console.log("pathname:", pathname);
-    console.log("searchParams:", Object.fromEntries(searchParams?.entries() || []));
-    console.log("surveyIdFromQuery:", surveyIdFromQuery);
-    console.log("surveyIdFromPath:", surveyIdFromPath);
-    console.log("resolvedSurveyId:", resolvedSurveyId);
-    console.log("current sources count:", sources.length);
-    console.groupEnd();
-  }, [pathname, searchParams, surveyIdFromQuery, surveyIdFromPath, resolvedSurveyId, sources.length]);
 
   useEffect(() => {
     if (!resolvedSurveyId) {
-      console.log("[ParticipantSourceProvider] ⚠️ No surveyId found, clearing sources");
       lastFetchedSurveyId.current = null;
       setSources([]);
       return;
     }
 
     if (resolvedSurveyId !== lastFetchedSurveyId.current) {
-      console.log("[ParticipantSourceProvider] 🚀 Fetching participant sources for:", resolvedSurveyId);
       lastFetchedSurveyId.current = resolvedSurveyId;
       fetchSources({ survey_id: resolvedSurveyId });
     } else {
@@ -80,7 +68,6 @@ export const ParticipantSourceProvider = ({ children }) => {
 
   const createSource = async (payload) => {
     // payload must include org_id & survey_id
-    console.log("[ParticipantSourceProvider] 💾 Creating participant source:", payload);
     try {
       const created = await ParticipantSourceModel.create(payload);
       // if it belongs to the current survey, add to list
@@ -95,7 +82,6 @@ export const ParticipantSourceProvider = ({ children }) => {
   };
 
   const updateSource = async (sourceId, updateData) => {
-    console.log("[ParticipantSourceProvider] ✏️ Updating source:", sourceId);
     try {
       const updated = await ParticipantSourceModel.update(sourceId, updateData);
       setSources((prev) =>
@@ -110,7 +96,6 @@ export const ParticipantSourceProvider = ({ children }) => {
   };
 
   const deleteSource = async (sourceId) => {
-    console.log("[ParticipantSourceProvider] 🗑️ Deleting source:", sourceId);
     try {
       await ParticipantSourceModel.remove(sourceId);
       setSources((prev) => prev.filter((s) => s.id !== sourceId));

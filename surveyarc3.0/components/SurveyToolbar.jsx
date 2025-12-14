@@ -84,7 +84,7 @@ export default function SurveyToolbar({
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4 ">
         {showBlocks &&
           ((blocks?.length || 0) === 0 ? (
             <div className="w-full flex items-center justify-between gap-4 p-4 rounded-lg border bg-white dark:bg-[#1A1A1E] dark:border-slate-700">
@@ -103,7 +103,7 @@ export default function SurveyToolbar({
                   className="inline-flex items-center gap-2 rounded-md bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 transition-colors"
                   title="Add Block"
                 >
-                  <FiPlusSquare className="h-4 w-4" />
+                  <IoAdd className="h-4 w-4" />
                   Add Block
                 </button>
 
@@ -220,23 +220,7 @@ export default function SurveyToolbar({
                 </div>
               </div>
 
-              {selectedBlock && (
-                <button
-                  onClick={() => {
-                    const current = selectedBlockData?.randomization || {
-                      type: "none",
-                      subsetCount: "",
-                    };
-                    setTempRandomization(current);
-                    setShowRandomizationModal(true);
-                  }}
-                  className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-md shadow transition-all duration-200 hover:scale-105"
-                  title="Open randomization settings for selected block"
-                >
-                  <Settings size={14} />
-                  <span className="hidden sm:inline">Randomization</span>
-                </button>
-              )}
+            
 
               <span className="hidden sm:inline-block h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
 

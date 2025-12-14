@@ -132,7 +132,6 @@ const router = useRouter();
         // ✅ Creates/updates ContactList for that SF account
         // and syncs contacts into it (backend logic)
         const result = await syncAccountAsNewList(sfSelectedAccountId, orgId);
-        console.log("SF sync (new list) result:", result);
         await refresh();
         alert(`✅ Synced ${result?.sync_summary?.contacts_synced ?? result?.total_synced ?? 0} contacts from Salesforce`);
       } else if (sfMode === "existing-list") {
@@ -145,7 +144,6 @@ const router = useRouter();
           accountId: sfSelectedAccountId,
           orgId,
         });
-        console.log("SF sync (existing list) result:", result);
         await refresh();
         alert(`✅ Added ${result?.added ?? 0} contact(s) from Salesforce`);
       }
@@ -206,7 +204,6 @@ const handleCreateManualContact = async (contactData, listId) => {
       link: s.link?.trim() || null
     }));
 
-    console.log("✅ Valid data:", { validEmails, validPhones, validSocials });
 
     const payload = {
       contactId: newContactId,     // ✅ camelCase for the model
