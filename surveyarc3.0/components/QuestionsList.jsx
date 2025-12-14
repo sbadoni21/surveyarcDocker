@@ -68,6 +68,7 @@ const SortableItem = ({ q, index, onDelete, onSelect }) => {
     useSortable({ id: q.questionId });
 
   const style = { transform: CSS.Transform.toString(transform), transition };
+  const displayLabel = q.serial_label || q.label || "1";
 
   return (
     <div
@@ -96,6 +97,7 @@ const SortableItem = ({ q, index, onDelete, onSelect }) => {
                 </div>
               </div>
             )}
+
             <p className="text-sm font-medium text-slate-800 dark:text-[#96949C] break-words max-w-full">
               {q.label}
             </p>

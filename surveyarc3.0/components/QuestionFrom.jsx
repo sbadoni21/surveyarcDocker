@@ -53,9 +53,6 @@ import MonadicConfig from "./QuestionsConfigComponents/MonadicConfig";
 import SequentialMonadicConfig from "./QuestionsConfigComponents/SequentialMonadicConfig";
 import ForcedExposureConfig from "./QuestionsConfigComponents/ForcedExposureConfig";
 
-import quotaModel from "@/models/postGresModels/quotaModel";
-import QuestionQuotaModal from "./QuestionQuotaModel";
-
 export default function QuestionConfigForm({
   type,
   config = {},
@@ -64,8 +61,6 @@ export default function QuestionConfigForm({
   orgId = null, // pass from QuestionEditorPanel
   questionId = null, // pass if available
 }) {
-  const [showQuotaModal, setShowQuotaModal] = useState(false);
-
   const componentsMap = {
     [QUESTION_TYPES.CONTACT_EMAIL]: (
       <EmailConfig config={config} updateConfig={updateConfig} />
@@ -252,39 +247,6 @@ export default function QuestionConfigForm({
 
   const Specific = componentsMap[type] || <DefaultConfig />;
 
-  // Quota helpers
-  const existingQuota = config?.quota ?? null;
-
-  const assignQuotaToQuestion = (quota) => {
-    // store compact summary in question config; you can store only quotaId if you prefer
-    const qInfo = {
-      id: quota.id,
-      name: quota.name,
-      cells: quota.cells ?? (quota.cells || []),
-      isEnabled: quota.isEnabled ?? quota.is_enabled ?? true,
-    };
-    // updateConfig should be implemented by parent to merge config into question
-    updateConfig("quota", qInfo);
-  };
-
-  const removeQuotaFromQuestion = () => {
-    updateConfig("quota", null);
-  };
-  // derive options from question config (adapt keys your app uses)
-  const questionOptions = (
-    config?.options ||
-    config?.choices ||
-    config?.items ||
-    []
-  ).map((o) =>
-    typeof o === "string"
-      ? { id: o, label: o }
-      : {
-          id: o.id ?? o.value ?? o.key ?? o.optionId ?? o.label,
-          label: o.label ?? o.text ?? o.value ?? String(o.id ?? o),
-        }
-  );
-
   return (
     <div className="space-y-4 p-3">
       {/* Global required toggle for ALL question types */}
@@ -307,94 +269,7 @@ export default function QuestionConfigForm({
         </div>
       </div>
 
-      {/* Specific config UI */}
       <div>{Specific}</div>
-
-      {/* Quota controls */}
-      <div className="mt-4 border-t pt-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1">
-            <div className="text-sm font-medium">Question Quota</div>
-            <div className="text-xs text-gray-500">
-              Attach a quota that controls how many respondents can answer this
-              question.
-            </div>
-
-            {existingQuota ? (
-              <div className="mt-2 text-sm">
-                <div>
-                  Quota: <strong>{existingQuota.name}</strong>
-                </div>
-                <div className="text-xs text-gray-500">
-                  Cells: {existingQuota.cells?.length ?? 0}
-                </div>
-                <div className="text-xs text-gray-500">
-                  ID: {existingQuota.id}
-                </div>
-              </div>
-            ) : (
-              <div className="mt-2 text-sm text-gray-500">
-                No quota attached.
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-col items-end gap-2">
-            <button
-              type="button"
-              onClick={() => setShowQuotaModal(true)}
-              className="px-3 py-1 border rounded"
-            >
-              {existingQuota ? "Edit / Replace" : "Add Quota"}
-            </button>
-
-            {existingQuota && (
-              <button
-                type="button"
-                onClick={removeQuotaFromQuestion}
-                className="px-3 py-1 text-sm text-red-600"
-              >
-                Remove
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={async () => {
-                if (!existingQuota?.id) return;
-                try {
-                  const counts = await quotaModel.evaluate(
-                    existingQuota.id,
-                    {}
-                  );
-                  // optional: show a small alert/modal — kept simple here
-                  window.alert(
-                    "Quota evaluate result: " + JSON.stringify(counts)
-                  );
-                } catch (e) {
-                  console.error(e);
-                  window.alert(
-                    "Failed to fetch quota evaluation: " + String(e)
-                  );
-                }
-              }}
-              className="px-3 py-1 text-sm border rounded"
-            >
-              Preview Counts
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <QuestionQuotaModal
-        open={showQuotaModal}
-        setOpen={setShowQuotaModal}
-        surveyId={surveyId}
-        orgId={orgId}
-        questionId={questionId}
-        questionOptions={questionOptions}
-        onQuotaAssigned={assignQuotaToQuestion}
-      />
     </div>
   );
 }

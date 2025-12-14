@@ -226,6 +226,7 @@ export default function Dist() {
       questionId,
       type: selectedType,
       label: labelToSave,
+      serial_label: newQuestionData.serial_label,
       description: newQuestionData.description || "",
       config: newQuestionData.config || {},
       required: true,

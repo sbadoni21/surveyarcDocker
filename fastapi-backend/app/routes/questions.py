@@ -33,6 +33,8 @@ from ..utils.translation_utils import (
 # ============================================================
 # ROUTER
 # ============================================================
+from ..services.question_label_service import generate_next_serial_label
+
 
 router = APIRouter(prefix="/questions", tags=["Questions"])
 
@@ -171,6 +173,43 @@ def create_question(
     user: User = Depends(get_current_user),
 ):
     q = Question(**data.dict(exclude_unset=True))
+def create_question(data: QuestionCreate, db: Session = Depends(get_db)):
+    serial_label = data.serial_label
+
+    # ✅ Auto-generate if not provided
+    if not serial_label:
+        serial_label = generate_next_serial_label(db, data.survey_id, prefix="Q")
+
+    # ❌ Check uniqueness
+    exists = (
+        db.query(Question)
+        .filter(
+            Question.survey_id == data.survey_id,
+            Question.serial_label == serial_label,
+        )
+        .first()
+    )
+    if exists:
+        raise HTTPException(409, detail="serial_label already exists in this survey")
+
+    q = Question(
+        question_id=data.question_id,
+        survey_id=data.survey_id,
+        org_id=data.org_id,
+        project_id=data.project_id,
+        type=data.type,
+
+        label=data.label,
+        serial_label=serial_label,   # ✅
+
+        required=data.required if data.required is not None else True,
+        description=data.description or "",
+        config=data.config or {},
+        logic=data.logic or [],
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+
     db.add(q)
     db.commit()
     db.refresh(q)
@@ -188,6 +227,41 @@ def get_question(
     db: Session = Depends(get_db),
 ):
     q = db.query(Question).filter(Question.question_id == question_id).first()
+    RedisQuestionService.cache_question(q.survey_id, q)
+    RedisQuestionService.cache_questions_list(q.survey_id, [q])
+
+    return q
+
+@router.get("/{survey_id}", response_model=List[QuestionOut])
+def get_all_questions(survey_id: str, db: Session = Depends(get_db)):
+    # Try to get from cache
+    cached = RedisQuestionService.get_questions_for_survey(survey_id)
+    if cached is not None:  # Explicitly check for None, not just falsy
+        print(f"[API] Returning {len(cached)} questions from cache for survey {survey_id}")
+        return cached
+
+    # Cache miss or expired - fetch from DB
+    print(f"[API] Cache miss for survey {survey_id}, fetching from DB")
+    rows = db.query(Question).filter(Question.survey_id == survey_id).all()
+    
+    # Cache the results if we got any
+    if rows:
+        print(f"[API] Caching {len(rows)} questions for survey {survey_id}")
+        RedisQuestionService.cache_questions_list(survey_id, rows)
+    
+    return rows
+
+@router.get("/{survey_id}/{question_id}", response_model=QuestionOut)
+def get_question(survey_id: str, question_id: str, db: Session = Depends(get_db)):
+    cached = RedisQuestionService.get_question(survey_id, question_id)
+    if cached is not None:
+        return cached
+
+    q = (
+        db.query(Question)
+        .filter(Question.survey_id == survey_id, Question.question_id == question_id)
+        .first()
+    )
     if not q:
         raise HTTPException(404, "Question not found")
 
@@ -205,13 +279,40 @@ def update_question(
     user: User = Depends(get_current_user),
 ):
     q = db.query(Question).filter(Question.question_id == question_id).first()
+@router.patch("/{survey_id}/{question_id}", response_model=QuestionOut)
+def update_question(survey_id: str, question_id: str, data: QuestionUpdate, db: Session = Depends(get_db)):
+    q = (
+        db.query(Question)
+        .filter(
+            Question.survey_id == survey_id,
+            Question.question_id == question_id,
+        )
+        .first()
+    )
     if not q:
         raise HTTPException(404, "Question not found")
 
     for k, v in data.dict(exclude_unset=True).items():
+    if data.serial_label:
+        dup = (
+            db.query(Question)
+            .filter(
+                Question.survey_id == survey_id,
+                Question.serial_label == data.serial_label,
+                Question.question_id != question_id,
+            )
+            .first()
+        )
+        if dup:
+            raise HTTPException(409, detail="serial_label already exists")
+
+    updates = data.dict(exclude_unset=True)
+    for k, v in updates.items():
         setattr(q, k, v)
 
     q.updated_at = datetime.now(timezone.utc)
+
+    q.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(q)
 
@@ -220,6 +321,8 @@ def update_question(
 
     return q.to_dict()
 
+    RedisQuestionService.cache_question(survey_id, q)
+    return q
 
 @router.delete("/{question_id}")
 def delete_question(
