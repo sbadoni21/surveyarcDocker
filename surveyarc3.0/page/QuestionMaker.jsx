@@ -461,7 +461,7 @@ export default function Dist() {
   return (
     <div className="flex flex-col min-h-screen">
       <TopTabsNavbar activeTab={activeTab} setActiveTab={handleSetActiveTab} />
-      <Button
+      {/* <Button
         onClick={handleToggleStatus}
         disabled={loading}
         variant="outlined"
@@ -470,7 +470,7 @@ export default function Dist() {
         {survey?.status === "test"
           ? "Change Status to Published"
           : "Change Status to Test"}
-      </Button>
+      </Button> */}
       <DummyGeneratorPanel
         orgId={orgId}
         projectId={projectId}

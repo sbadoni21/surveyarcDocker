@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -193,7 +199,9 @@ export default function SurveyFlowScreen({
   const blockEntryMap = useMemo(() => {
     const m = new Map();
     for (const b of blocksResolved) {
-      const first = (b._questions || []).find((q) => !q.__isPageBreak)?.questionId;
+      const first = (b._questions || []).find(
+        (q) => !q.__isPageBreak
+      )?.questionId;
       if (first) m.set(b.blockId, first);
     }
     return m;
@@ -227,7 +235,8 @@ export default function SurveyFlowScreen({
     const out = [];
     for (const b of blocksForFlow) {
       const count = b._questions.length || 1;
-      const width = Math.max(1, count) * X_GAP - (X_GAP - Q_WIDTH) + BLOCK_PADDING * 2;
+      const width =
+        Math.max(1, count) * X_GAP - (X_GAP - Q_WIDTH) + BLOCK_PADDING * 2;
       const height = BLOCK_HEADER_H + 80 + BLOCK_PADDING * 2;
       out.push({
         blockId: b.blockId,
@@ -404,7 +413,9 @@ export default function SurveyFlowScreen({
               )}`
           )
           .join("\nAND ");
-        const actText = (rule.actions || []).map((a) => actionPreview(a)).join("\n");
+        const actText = (rule.actions || [])
+          .map((a) => actionPreview(a))
+          .join("\n");
 
         const logicId = `logic-${rule.ruleId}`;
         logic.push({
@@ -434,7 +445,9 @@ export default function SurveyFlowScreen({
         (rule.actions || []).forEach((a, ai) => {
           if (a?.type === "show_message") {
             const isRightHalf = i >= Math.floor(list.length / 2);
-            const msgX = isRightHalf ? x + NODE_W + MSG_X_OFFSET : x - (MSG_X_OFFSET + MSG_W + 20);
+            const msgX = isRightHalf
+              ? x + NODE_W + MSG_X_OFFSET
+              : x - (MSG_X_OFFSET + MSG_W + 20);
             const msgY = y + msgCount * (MSG_H + MSG_Y_STEP);
             msgs.push({
               id: `msg-${rule.ruleId}-${ai}`,
@@ -534,7 +547,8 @@ export default function SurveyFlowScreen({
         }
 
         const primaryQ =
-          (rule.conditions || []).find((c) => !!c.questionId)?.questionId || null;
+          (rule.conditions || []).find((c) => !!c.questionId)?.questionId ||
+          null;
         const res = resolveActionOrSkipTargetId({
           action: a,
           primaryQuestionId: primaryQ,
@@ -544,8 +558,12 @@ export default function SurveyFlowScreen({
           blocks: blocksResolved,
         });
 
-        const explicitQuestionIds = Array.isArray(a.questionIds) && a.questionIds.length ? a.questionIds : null;
-        const targetIds = explicitQuestionIds ?? (res?.targetId ? [res.targetId] : []);
+        const explicitQuestionIds =
+          Array.isArray(a.questionIds) && a.questionIds.length
+            ? a.questionIds
+            : null;
+        const targetIds =
+          explicitQuestionIds ?? (res?.targetId ? [res.targetId] : []);
 
         if (targetIds.length) {
           const isSkip = String(a.type || "").startsWith("skip");
@@ -555,8 +573,12 @@ export default function SurveyFlowScreen({
 
           targetIds.forEach((targetId, tIdx) => {
             const resolvedTargetId = String(targetId);
-            const targetIsPageBreak = typeof resolvedTargetId === "string" && resolvedTargetId.startsWith("PB-");
-            const targetIsInFlow = !!globalQ.find((q) => q.questionId === resolvedTargetId);
+            const targetIsPageBreak =
+              typeof resolvedTargetId === "string" &&
+              resolvedTargetId.startsWith("PB-");
+            const targetIsInFlow = !!globalQ.find(
+              (q) => q.questionId === resolvedTargetId
+            );
             if (targetIsPageBreak || !targetIsInFlow) return;
 
             arr.push({
@@ -571,12 +593,27 @@ export default function SurveyFlowScreen({
                 strokeDasharray: dash,
               },
               markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
-              label: isSkip ? "Skip Question" : isGoto ? (a.type === "goto_question" ? "Go to Question" : "Go") : actionEdgeLabel(a, resolvedTargetId, blocksResolved, res?.meta),
+              label: isSkip
+                ? "Skip Question"
+                : isGoto
+                ? a.type === "goto_question"
+                  ? "Go to Question"
+                  : "Go"
+                : actionEdgeLabel(
+                    a,
+                    resolvedTargetId,
+                    blocksResolved,
+                    res?.meta
+                  ),
               labelStyle: { fontSize: 11, fill: "#E5E7EB", fontWeight: 500 },
               labelBgPadding: [6, 4],
               labelBgBorderRadius: 8,
               labelBgStyle: {
-                fill: isGoto ? "rgba(6,78,59,.95)" : isSkip ? "rgba(120,53,15,.95)" : "rgba(127,29,29,.95)",
+                fill: isGoto
+                  ? "rgba(6,78,59,.95)"
+                  : isSkip
+                  ? "rgba(120,53,15,.95)"
+                  : "rgba(127,29,29,.95)",
                 stroke,
               },
             });
@@ -591,7 +628,9 @@ export default function SurveyFlowScreen({
           const stroke = isGoto ? "#10B981" : isSkip ? "#F59E0B" : "#EF4444";
           const resolvedTargetId = String(res.targetId);
           const targetIsPageBreak = resolvedTargetId.startsWith("PB-");
-          const targetIsInFlow = !!globalQ.find((q) => q.questionId === resolvedTargetId);
+          const targetIsInFlow = !!globalQ.find(
+            (q) => q.questionId === resolvedTargetId
+          );
           if (!targetIsPageBreak && targetIsInFlow) {
             arr.push({
               id: `act-${logicId}-${res.targetId}-${idx}`,
@@ -610,7 +649,11 @@ export default function SurveyFlowScreen({
               labelBgPadding: [6, 4],
               labelBgBorderRadius: 8,
               labelBgStyle: {
-                fill: isGoto ? "rgba(6,78,59,.95)" : isSkip ? "rgba(120,53,15,.95)" : "rgba(127,29,29,.95)",
+                fill: isGoto
+                  ? "rgba(6,78,59,.95)"
+                  : isSkip
+                  ? "rgba(120,53,15,.95)"
+                  : "rgba(127,29,29,.95)",
                 stroke,
               },
             });
@@ -641,8 +684,12 @@ export default function SurveyFlowScreen({
           blocks: blocksResolved,
         });
 
-        const explicitQuestionIds = Array.isArray(a.questionIds) && a.questionIds.length ? a.questionIds : null;
-        const targetIds = explicitQuestionIds ?? (res?.targetId ? [res.targetId] : []);
+        const explicitQuestionIds =
+          Array.isArray(a.questionIds) && a.questionIds.length
+            ? a.questionIds
+            : null;
+        const targetIds =
+          explicitQuestionIds ?? (res?.targetId ? [res.targetId] : []);
 
         if (targetIds && targetIds.length) {
           targetIds.forEach((t) => {
@@ -746,7 +793,9 @@ export default function SurveyFlowScreen({
     const q = questionsById.get(node.id);
     if (q) {
       const bId = qToBlockId.get(q.questionId);
-      setEditingRule(makeEmptyRule ? makeEmptyRule(surveyId, bId, q.questionId) : null);
+      setEditingRule(
+        makeEmptyRule ? makeEmptyRule(surveyId, bId, q.questionId) : null
+      );
     }
   };
 
@@ -762,7 +811,9 @@ export default function SurveyFlowScreen({
       if (act.type === "skip_block")
         base.blockIds = Array.isArray(act.blockIds) ? act.blockIds : [];
       if (act.type === "skip_questions")
-        base.questionIds = Array.isArray(act.questionIds) ? act.questionIds : [];
+        base.questionIds = Array.isArray(act.questionIds)
+          ? act.questionIds
+          : [];
       if (act.type === "show_message") base.message = act.message || "";
       if (act.type === "raise_ticket") {
         base.subjectTemplate = act.subjectTemplate || "";
@@ -814,7 +865,9 @@ export default function SurveyFlowScreen({
   }
 
   function openTicketFormForAction(act, index) {
-    const tagIds = namesToTagIds ? namesToTagIds(csvToArray(act.tagsCsv), availableTags) : [];
+    const tagIds = namesToTagIds
+      ? namesToTagIds(csvToArray(act.tagsCsv), availableTags)
+      : [];
     setTicketInitial({
       subject:
         (act.subjectTemplate || "").trim() ||
@@ -841,7 +894,14 @@ export default function SurveyFlowScreen({
       ...messageNodes,
       endNode,
     ],
-    [blockNodes, blockLabelNodes, questionNodes, logicNodes, messageNodes, endNode]
+    [
+      blockNodes,
+      blockLabelNodes,
+      questionNodes,
+      logicNodes,
+      messageNodes,
+      endNode,
+    ]
   );
 
   const computedEdges = edges;
@@ -892,9 +952,16 @@ export default function SurveyFlowScreen({
   const onNodeDragStop = useCallback(
     (evt, node) => {
       setNodesState((nds) => {
-        const updated = nds.map((n) => (n.id === node.id ? { ...n, position: node.position } : n));
+        const updated = nds.map((n) =>
+          n.id === node.id ? { ...n, position: node.position } : n
+        );
         try {
-          localStorage.setItem(PERSIST_KEY, JSON.stringify(updated.map((n) => ({ id: n.id, position: n.position }))));
+          localStorage.setItem(
+            PERSIST_KEY,
+            JSON.stringify(
+              updated.map((n) => ({ id: n.id, position: n.position }))
+            )
+          );
         } catch (e) {
           console.warn("Failed to persist node positions", e);
         }
@@ -921,6 +988,7 @@ export default function SurveyFlowScreen({
       </div>
     );
 
+  console.log(rules);
   return (
     <div className="grid grid-cols-1 2xl:grid-cols-[1fr_320px] gap-5 w-full h-[88vh]">
       <div className="w-full h-full dark:bg-[#0D0D0F] p-4 rounded-xl border-2 border-neutral-800 shadow-2xl overflow-hidden">
@@ -950,15 +1018,20 @@ export default function SurveyFlowScreen({
             {loops.map((lp, i) => (
               <div key={i} className="mb-2">
                 <div className="text-xs text-amber-700 mb-1">
-                  Path: <span className="font-medium">{lp.path.join(" → ")}</span>
+                  Path:{" "}
+                  <span className="font-medium">{lp.path.join(" → ")}</span>
                 </div>
                 <div className="text-xs">
-                  Rules involved: {lp.rules.length ? lp.rules.map((r) => `${r.name || r.ruleId}`).join(", ") : "Unknown"}
+                  Rules involved:{" "}
+                  {lp.rules.length
+                    ? lp.rules.map((r) => `${r.name || r.ruleId}`).join(", ")
+                    : "Unknown"}
                 </div>
               </div>
             ))}
             <div className="text-xs text-amber-700 mt-2">
-              Please review these rules — they create a cycle where a question can lead back to itself via one or more rules.
+              Please review these rules — they create a cycle where a question
+              can lead back to itself via one or more rules.
             </div>
           </div>
         )}
@@ -1008,8 +1081,10 @@ export default function SurveyFlowScreen({
               <div className="text-sm text-indigo-900">
                 <p className="font-medium mb-1">Quick Start Guide</p>
                 <p className="text-indigo-700">
-                  Click a <span className="font-semibold">question node</span> to create a new branch. Click a{" "}
-                  <span className="font-semibold">logic node</span> to edit existing rules.
+                  Click a <span className="font-semibold">question node</span>{" "}
+                  to create a new branch. Click a{" "}
+                  <span className="font-semibold">logic node</span> to edit
+                  existing rules.
                 </p>
               </div>
             </div>
@@ -1035,7 +1110,6 @@ export default function SurveyFlowScreen({
             currentUserId={currentUserId}
             emptyAction={emptyAction}
             emptyCondition={emptyCondition}
-
           />
         )}
       </div>
@@ -1048,8 +1122,12 @@ export default function SurveyFlowScreen({
           setEditingRule((prev) => {
             if (!prev) return prev;
             const actions = [...(prev.actions || [])];
-            const current = { ...(actions[ticketActIndex] || { type: "raise_ticket" }) };
-            const ticketData = Array.isArray(current.ticketData) ? [...current.ticketData] : [];
+            const current = {
+              ...(actions[ticketActIndex] || { type: "raise_ticket" }),
+            };
+            const ticketData = Array.isArray(current.ticketData)
+              ? [...current.ticketData]
+              : [];
             ticketData[0] = template;
             current.ticketData = ticketData;
             current.subjectTemplate = template.subjectTemplate;
