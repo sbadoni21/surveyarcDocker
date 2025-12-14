@@ -14,6 +14,7 @@ import { useResponse } from "@/providers/postGresPorviders/responsePProvider";
 import { useTheme } from "@/providers/postGresPorviders/themeProvider";
 import TicketModel from "@/models/ticketModel";
 import { useCampaignResult } from "@/providers/postGresPorviders/campaginResultProvider";
+import quotaModel from "@/models/postGresModels/quotaModel";
 
 export default function FormPage() {
   const searchParams = useSearchParams();
@@ -60,10 +61,20 @@ export default function FormPage() {
   const { updateContact } = useContacts();
   const { organisation, update } = useOrganisation();
   const { getById } = useTheme();
+  const [quotas, setQuotas] = useState([]);
+  const [prefillDraft, setPrefillDraft] = useState(null);
 
   // ============================================================
   // HELPER FUNCTIONS
   // ============================================================
+  useEffect(() => {
+    if (!surveyId) return;
+
+    quotaModel
+      .listBySurvey(surveyId)
+      .then(setQuotas)
+      .catch((e) => console.error("Failed to load quotas", e));
+  }, [surveyId]);
 
   const shuffleArray = (array) => {
     const shuffled = [...array];
@@ -532,11 +543,58 @@ if (campaignResult) {
     const qid = q.questionId || q.id;
     return { [qid]: prefillAnswer };
   }, [prefillQuestionId, prefillAnswer, questions]);
+  useEffect(() => {
+    if (!contactID || !surveyId) return;
 
-  // ============================================================
-  // SUBMIT HANDLER
-  // ============================================================
+    const loadDraft = async () => {
+      try {
+        const res = await fetch(`/api/post-gres-apis/contacts/${contactID}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
 
+        const contact = await res.json();
+        const draft = contact?.survey_drafts?.[surveyId];
+
+        if (draft?.answers && Object.keys(draft.answers).length > 0) {
+          const resume = window.confirm(
+            "You have an unfinished response. Resume where you left off?"
+          );
+
+          if (resume) {
+            setPrefillDraft(draft);
+          } else {
+            // wipe draft
+            await updateContact(contactID, {
+              survey_drafts: {
+                [surveyId]: null,
+              },
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load draft", err);
+      }
+    };
+
+    loadDraft();
+  }, [contactID, surveyId]);
+  const saveDraftIfAllowed = async (draft) => {
+    if (!contactID) return; // 🚫 STRICT RULE
+
+    try {
+      await updateContact(contactID, {
+        survey_drafts: {
+          [surveyId]: {
+            ...draft,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      });
+    } catch (err) {
+      console.error("Failed to save draft", err);
+    }
+  };
   const handleSubmit = async (answers) => {
     console.log("🔹 handleSubmit called with", Object.keys(answers).length, "answers");
 
@@ -544,9 +602,31 @@ if (campaignResult) {
       alert("Survey not ready. Please try again later.");
       return;
     }
+    const respondentId = userKey || contactID || "anonymous";
 
     try {
       setStatus("Saving response…");
+          const quotaResult = await evaluateQuotas({
+        quotas,
+        answers,
+        respondentId,
+      });
+
+      if (quotaResult.blocked) {
+        const statusKey =
+          quotaResult.reason === "overquota" ? "overquota" : "screenout";
+
+        const redirect = buildPanelRedirectUrl(statusKey);
+
+        if (redirect) {
+          window.location.href = redirect;
+          return;
+        }
+
+        alert(quotaResult.reason || "Quota reached.");
+        router.push("/quota-ended");
+        return;
+      }
       const surveyStatus = survey?.status;
       const endTime = new Date();
       const totalMs = endTime - startTime;
@@ -600,6 +680,15 @@ if (campaignResult) {
     status: "completed",
   });
 }
+   try {
+        await incrementQuotas({
+          quotas,
+          answers,
+          respondentId,
+        });
+      } catch (e) {
+        console.error("Quota increment failed:", e);
+      }
 
       // Update contact
       if (contactID) {
@@ -687,6 +776,7 @@ if (campaignResult) {
       throw err;
     }
   };
+
 useEffect(() => {
   if (!campaignResult) return;
 
@@ -722,7 +812,20 @@ useEffect(() => {
           handleSubmit={handleSubmit}
           rules={rules}
           theme={theme}
+            initialPosition={{
+            blockIndex: prefillDraft?.lastBlockIndex ?? 0,
+            pageIndex: prefillDraft?.lastPageIndex ?? 0,
+          }}
+                    onDraftChange={(draft) => saveDraftIfAllowed(draft)}
+
           initialAnswers={prefillAnswers}
+            evaluateQuotaOnPage={(answers) =>
+            evaluateQuotas({
+              quotas,
+              answers,
+              respondentId: userKey,
+            })
+          }
           onPanelExit={handlePanelExit}
         />
       )}

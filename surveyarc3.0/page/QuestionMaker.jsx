@@ -27,6 +27,7 @@ import { createSurveyFromTemplate } from "@/utils/createSurveyFromTemplate";
 import { TemplateSelectionPopup } from "@/components/surveys/TemplateSelectionPopup";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import QuotaTab from "@/components/QuotaTab";
+import TranslationInitScreen from "./TranslationPage";
 
 export default function Dist() {
   const [selectedType, setSelectedType] = useState(null);
@@ -93,6 +94,7 @@ export default function Dist() {
     if (["theme"].includes(k)) return "theme";
     if (["responses"].includes(k)) return "responses";
     if (["panel"].includes(k)) return "panel";
+    if (["translation"].includes(k)) return "translation";
     return "questions";
   }, []);
 
@@ -595,6 +597,7 @@ console.log(questions)
         {activeTab === "responses" && <SurveyResponsesPage survey={survey} />}
         {activeTab === "theme" && <ThemeManager />}
         {activeTab === "panel" && <PanelManager />}
+        {activeTab === "translation" && <TranslationInitScreen />}
       </div>
     </div>
   );
