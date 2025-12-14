@@ -53,6 +53,7 @@ const toCamel = (q) => ({
   surveyId: q.survey_id,
   orgId: q.org_id,
   projectId: q.project_id,
+  serial_label: q.serial_label,
   type: q.type,
   label: q.label,
   description: q.description,
@@ -83,6 +84,9 @@ const QuestionModel = {
         project_id: data.projectId,
         question_id: data.questionId,
         type: data.type,
+          serial_label: data.serial_label
+,
+
         label: data.label,
         required: data.required ?? true,
         description: data.description || "",
@@ -100,6 +104,7 @@ const QuestionModel = {
       `${BASE}/surveys/${encodeURIComponent(surveyId)}/questions?lang=en`,
       { cache: "no-store" }
     );
+
     return (await json(res)).map(toCamel);
   },
 
@@ -108,6 +113,7 @@ const QuestionModel = {
       `${BASE}/${encodeURIComponent(questionId)}?lang=en`,
       { cache: "no-store" }
     );
+
     return toCamel(await json(res));
   },
 

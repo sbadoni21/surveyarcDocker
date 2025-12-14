@@ -55,6 +55,7 @@ export const QuestionProvider = ({ children }) => {
   const getAllQuestions = async (_orgId, _surveyId) => {
     if (!_orgId || !_surveyId) return [];
     const data = await QuestionModel.getAll(_orgId, _surveyId);
+     console.log(data)
     setQuestions(data || []);
     return data;
   };
