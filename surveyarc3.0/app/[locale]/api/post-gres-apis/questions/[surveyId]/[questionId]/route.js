@@ -13,7 +13,7 @@ const looksEncrypted = (o) =>
 const safeParse = (t) => { try { return { ok: true, json: JSON.parse(t) }; } catch { return { ok: false, raw: t }; } };
 
 export async function GET(_req, { params }) {
-  const { surveyId, questionId } = params;
+  const { surveyId, questionId } = await params;
   const url = `${BASE}/questions/${encodeURIComponent(surveyId)}/${encodeURIComponent(questionId)}`;
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
@@ -55,7 +55,7 @@ export async function PATCH(req, { params }) {
 }
 
 export async function DELETE(_req, { params }) {
-  const { surveyId, questionId } = params;
+  const { surveyId, questionId } = await params;
   try {
     const res = await fetch(`${BASE}/questions/${encodeURIComponent(surveyId)}/${encodeURIComponent(questionId)}`, {
       method: "DELETE",

@@ -1,4 +1,44 @@
-const BASE = "/api/post-gres-apis/questions";
+// ============================================================
+// QuestionModel (Provider-Compatible)
+// - Keeps ALL function names exactly as used in QuestionProvider
+// - Uses `ques` routes internally
+// - Uses `lang` instead of locale
+// - Defaults lang = "en"
+// - Sends ONLY x-user-id from cookie: currentUserId
+// ============================================================
+
+const BASE = "/api/post-gres-apis/ques";
+
+// ----------------------------
+// Helpers
+// ----------------------------
+
+const normalizeLang = (lang) => lang || "en";
+
+/**
+ * 🍪 Read currentUserId from cookies
+ */
+const getUserIdFromCookie = () => {
+  if (typeof document === "undefined") return null;
+
+  const match = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith("currentUserId="));
+
+  return match ? decodeURIComponent(match.split("=")[1]) : null;
+};
+
+/**
+ * 🔐 Headers for ALL requests
+ */
+const headersWithUser = (extra = {}) => {
+  const userId = getUserIdFromCookie();
+  return {
+    "Content-Type": "application/json",
+    ...(userId ? { "x-user-id": userId } : {}),
+    ...extra,
+  };
+};
 
 const json = async (res) => {
   if (!res.ok) {
@@ -15,78 +55,266 @@ const toCamel = (q) => ({
   projectId: q.project_id,
   type: q.type,
   label: q.label,
-  required: q.required,
   description: q.description,
+  required: q.required,
   config: q.config,
   logic: q.logic,
+  translations: q.translations || {},
   createdAt: q.created_at,
   updatedAt: q.updated_at,
 });
 
+// ============================================================
+// MODEL (DO NOT RENAME FUNCTIONS)
+// ============================================================
+
 const QuestionModel = {
+  // ==========================================================
+  // QUESTION CRUD
+  // ==========================================================
+
   async create(orgId, surveyId, data) {
-    const body = {
-      org_id: orgId,
-      project_id: data.projectId,
-      survey_id: surveyId,
-      question_id: data.questionId,       // optional
-      type: data.type,
-      label: data.label,
-      required: data.required ?? true,
-      description: data.description || "",
-      config: data.config || {},
-      logic: data.logic || [],
-    };
-    console.log(body)
     const res = await fetch(`${BASE}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      headers: headersWithUser(),
+      body: JSON.stringify({
+        org_id: orgId,
+        survey_id: surveyId,
+        project_id: data.projectId,
+        question_id: data.questionId,
+        type: data.type,
+        label: data.label,
+        required: data.required ?? true,
+        description: data.description || "",
+        config: data.config || {},
+        logic: data.logic || [],
+      }),
       cache: "no-store",
     });
-    const out = await json(res);
-    return toCamel(out);
+
+    return toCamel(await json(res));
   },
 
   async getAll(orgId, surveyId) {
-    const res = await fetch(`${BASE}?survey_id=${encodeURIComponent(surveyId)}`, { cache: "no-store" });
-    const arr = await json(res);
-    return (arr || []).map(toCamel);
+    const res = await fetch(
+      `${BASE}/surveys/${encodeURIComponent(surveyId)}/questions?lang=en`,
+      { cache: "no-store" }
+    );
+    return (await json(res)).map(toCamel);
   },
 
   async get(orgId, surveyId, questionId) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(surveyId)}/${encodeURIComponent(questionId)}`, { cache: "no-store" });
-    const q = await json(res);
-    console.log(q)
-    return toCamel(q);
+    const res = await fetch(
+      `${BASE}/${encodeURIComponent(questionId)}?lang=en`,
+      { cache: "no-store" }
+    );
+    return toCamel(await json(res));
   },
-async getBulkQuestions(questionIds) {
-  const res = await fetch(`${BASE}/bulk-questions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question_ids: questionIds }), // Wrap in object
-    cache: "no-store",
-  });
-  const q = await res.json(); // Fix: use res.json() instead of json(res)
-  return q;
-},
+
   async update(orgId, surveyId, questionId, updateData) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(surveyId)}/${encodeURIComponent(questionId)}`, {
+    const res = await fetch(`${BASE}/${encodeURIComponent(questionId)}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: headersWithUser(),
       body: JSON.stringify(updateData),
       cache: "no-store",
     });
-    const q = await json(res);
-    return toCamel(q);
+    return toCamel(await json(res));
   },
 
   async delete(orgId, surveyId, questionId) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(surveyId)}/${encodeURIComponent(questionId)}`, {
+    const res = await fetch(`${BASE}/${encodeURIComponent(questionId)}`, {
       method: "DELETE",
+      headers: headersWithUser({ "Content-Type": undefined }),
       cache: "no-store",
     });
     return json(res);
+  },
+
+  async getBulkQuestions(questionIds) {
+    const res = await fetch(`${BASE}/bulk`, {
+      method: "POST",
+      headers: headersWithUser(),
+      body: JSON.stringify({
+        question_ids: questionIds,
+        lang: "en",
+      }),
+      cache: "no-store",
+    });
+    return (await json(res)).map(toCamel);
+  },
+// QuestionModel.js
+
+async resyncSurveyTranslations(surveyId) {
+  const res = await fetch(
+    `${BASE}/surveys/${encodeURIComponent(
+      surveyId
+    )}/translations/resync`,
+    {
+      method: "POST",
+      headers: headersWithUser(),
+      cache: "no-store",
+    }
+  );
+  return json(res);
+},
+
+  // ==========================================================
+  // SINGLE QUESTION TRANSLATION
+  // ==========================================================
+
+  async getQuestionTranslations(surveyId, questionId) {
+    const res = await fetch(
+      `${BASE}/${encodeURIComponent(questionId)}/translations`,
+      { cache: "no-store" }
+    );
+    return json(res);
+  },
+
+  async getQuestionTranslation(surveyId, questionId, locale) {
+    const lang = normalizeLang(locale);
+    const res = await fetch(
+      `${BASE}/${encodeURIComponent(questionId)}/translations/${encodeURIComponent(lang)}`,
+      { cache: "no-store" }
+    );
+    return json(res);
+  },
+
+  async getQuestionWithTranslation(surveyId, questionId, locale) {
+    const lang = normalizeLang(locale);
+    const res = await fetch(
+      `${BASE}/${encodeURIComponent(questionId)}/translated?lang=${encodeURIComponent(lang)}`,
+      { cache: "no-store" }
+    );
+    return json(res);
+  },
+
+  async getBlankTranslationStructure(surveyId, questionId, locale) {
+    const lang = normalizeLang(locale);
+    const res = await fetch(
+      `${BASE}/${encodeURIComponent(questionId)}/translations/blank/${encodeURIComponent(lang)}`,
+      { cache: "no-store" }
+    );
+    return json(res);
+  },
+
+async updateQuestionTranslation(surveyId, questionId, locale, translationData) {
+    const lang = normalizeLang(locale);
+    const url = `${BASE}/${encodeURIComponent(questionId)}/translations/${encodeURIComponent(lang)}`;
+    console.log('🔍 Calling API:', {
+      url,
+      method: 'PUT',
+      questionId,
+      locale: lang,
+      body: { locale: lang, ...translationData }
+    });
+    
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: headersWithUser(),
+      body: JSON.stringify({ locale: lang, ...translationData }),
+      cache: "no-store",
+    });
+    
+    console.log('📡 Response:', res.status, res.statusText);
+    
+    return json(res);
+  },
+
+
+  async deleteQuestionTranslation(surveyId, questionId, locale) {
+    const lang = normalizeLang(locale);
+    const res = await fetch(
+      `${BASE}/${encodeURIComponent(questionId)}/translations/${encodeURIComponent(lang)}`,
+      {
+        method: "DELETE",
+        headers: headersWithUser({ "Content-Type": undefined }),
+        cache: "no-store",
+      }
+    );
+    return json(res);
+  },
+
+  async deleteAllQuestionTranslations(surveyId, questionId) {
+    const res = await fetch(
+      `${BASE}/${encodeURIComponent(questionId)}/translations?confirm=true`,
+      {
+        method: "DELETE",
+        headers: headersWithUser({ "Content-Type": undefined }),
+        cache: "no-store",
+      }
+    );
+    return json(res);
+  },
+
+  // ==========================================================
+  // SURVEY-LEVEL TRANSLATION
+  // ==========================================================
+
+  async initializeTranslations(surveyId, locale) {
+    console.log(surveyId, locale);
+    const lang = normalizeLang(locale);
+    const res = await fetch(
+      `${BASE}/surveys/${encodeURIComponent(surveyId)}/translations/initialize`,
+      {
+        method: "POST",
+        headers: headersWithUser(),
+        body: JSON.stringify({ survey_id: surveyId, locale }),
+        cache: "no-store",
+      }
+    );
+    return json(res);
+  },
+
+  async getTranslationStatus(surveyId) {
+    const res = await fetch(
+      `${BASE}/surveys/${encodeURIComponent(surveyId)}/translations/coverage`,
+      { cache: "no-store" }
+    );
+    return json(res);
+  },
+
+  async getSurveyTranslations(surveyId, locale = null) {
+    const lang = locale ? `?lang=${encodeURIComponent(locale)}` : "";
+    const res = await fetch(
+      `${BASE}/surveys/${encodeURIComponent(surveyId)}/translations${lang}`,
+      { cache: "no-store" }
+    );
+    return json(res);
+  },
+
+  async bulkUpdateTranslations(surveyId, bulkData) {
+    const res = await fetch(
+      `${BASE}/surveys/${encodeURIComponent(surveyId)}/translations/bulk`,
+      {
+        method: "PUT",
+        headers: headersWithUser(),
+        body: JSON.stringify(bulkData),
+        cache: "no-store",
+      }
+    );
+    return json(res);
+  },
+
+  async deleteTranslation(surveyId, locale) {
+    const lang = normalizeLang(locale);
+    const res = await fetch(
+      `${BASE}/surveys/${encodeURIComponent(surveyId)}/translations/${encodeURIComponent(lang)}`,
+      {
+        method: "DELETE",
+        headers: headersWithUser({ "Content-Type": undefined }),
+        cache: "no-store",
+      }
+    );
+    return json(res);
+  },
+
+  async getAllWithLocale(orgId, surveyId, locale) {
+    const lang = normalizeLang(locale);
+    const res = await fetch(
+      `${BASE}/surveys/${encodeURIComponent(surveyId)}/questions?lang=${encodeURIComponent(lang)}`,
+      { cache: "no-store" }
+    );
+    return (await json(res)).map(toCamel);
   },
 };
 

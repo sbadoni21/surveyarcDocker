@@ -1,7 +1,7 @@
 "use client";
 import React, { useRef, useState, useEffect } from "react";
 import { FiPlusSquare } from "react-icons/fi";
-import { IoCopyOutline } from "react-icons/io5";
+import { IoAdd, IoCopyOutline } from "react-icons/io5";
 import { MdOutlineFileDownload } from "react-icons/md";
 import { QRCodeCanvas } from "qrcode.react";
 import html2canvas from "html2canvas";

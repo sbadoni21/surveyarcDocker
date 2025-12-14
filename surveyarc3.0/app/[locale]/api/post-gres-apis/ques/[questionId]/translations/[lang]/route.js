@@ -1,0 +1,119 @@
+// app/[locale]/api/post-gres-apis/ques/[questionId]/translations/[lang]/route.js
+
+import { NextResponse } from "next/server";
+import { decryptGetResponse } from "@/utils/crypto_client";
+import { cookies } from "next/headers";
+
+const BASE = process.env.FASTAPI_BASE_URL;
+
+const looksEncrypted = (o) =>
+  o &&
+  typeof o === "object" &&
+  "key_id" in o &&
+  "encrypted_key" in o &&
+  "ciphertext" in o &&
+  "iv" in o &&
+  "tag" in o;
+
+export async function PUT(req, ctx) {
+  const { questionId, lang } = await ctx.params; // ✅ REQUIRED in Next 15
+  const body = await req.json();
+
+  // ✅ Next.js 15 SAFE cookie access
+  const cookieStore = await cookies();
+  const currentUserId = cookieStore.get("currentUserId")?.value;
+
+  if (!currentUserId) {
+    return NextResponse.json(
+      { status: "error", message: "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  // ✅ FastAPI expects 'locale' in body, not 'lang'
+  const payload = {
+    ...body,
+    locale: lang // Ensure locale matches the URL parameter
+  };
+
+  const res = await fetch(
+    `${BASE}/questions/${encodeURIComponent(
+      questionId
+    )}/translations/${encodeURIComponent(lang)}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": currentUserId, // ✅ REQUIRED by FastAPI
+      },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    }
+  );
+
+  const text = await res.text();
+
+  try {
+    const json = JSON.parse(text);
+
+    if (looksEncrypted(json)) {
+      return NextResponse.json(await decryptGetResponse(json), {
+        status: res.status,
+      });
+    }
+
+    return NextResponse.json(json, { status: res.status });
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid backend response", raw: text },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req, ctx) {
+  const { questionId, lang } = await ctx.params; // ✅ REQUIRED in Next 15
+
+  // ✅ Next.js 15 SAFE cookie access
+  const cookieStore = await cookies();
+  const currentUserId = cookieStore.get("currentUserId")?.value;
+
+  if (!currentUserId) {
+    return NextResponse.json(
+      { status: "error", message: "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  const res = await fetch(
+    `${BASE}/questions/${encodeURIComponent(
+      questionId
+    )}/translations/${encodeURIComponent(lang)}`,
+    {
+      method: "DELETE",
+      headers: {
+        "x-user-id": currentUserId, // ✅ REQUIRED by FastAPI
+      },
+      cache: "no-store",
+    }
+  );
+
+  const text = await res.text();
+
+  try {
+    const json = JSON.parse(text);
+
+    if (looksEncrypted(json)) {
+      return NextResponse.json(await decryptGetResponse(json), {
+        status: res.status,
+      });
+    }
+
+    return NextResponse.json(json, { status: res.status });
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid backend response", raw: text },
+      { status: 500 }
+    );
+  }
+}

@@ -1,6 +1,8 @@
 fastapi-backend/.venv/
+fastapi-backend/venv/
 fastapi-backend/app/_pycache_/
 key-server/.venv/
+key-server/venv/
 key-server/app/_pycache_/
 surveyarc3.0/.env
 .venv

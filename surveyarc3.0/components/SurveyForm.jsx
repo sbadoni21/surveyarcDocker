@@ -13,8 +13,9 @@ export default function SurveyForm({
   handleSubmit,
   rules,
   theme,
-  initialAnswers = {},     // 🔹 NEW
-
+  initialAnswers = {}, // 🔹 NEW
+  onDraftChange,
+  evaluateQuotaOnPage,
 }) {
   const [currentBlockIndex, setCurrentBlockIndex] = useState(0);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
@@ -24,7 +25,7 @@ export default function SurveyForm({
   const [submitting, setSubmitting] = useState(false);
 
   const ruleEngine = useMemo(() => new RuleEngine(rules), [rules]);
-  console.log(ruleEngine)
+  console.log(ruleEngine);
 
   const [blocksWithQuestions, setBlocksWithQuestions] = useState(() =>
     (blocks || [])
@@ -48,7 +49,19 @@ export default function SurveyForm({
       ...prev,
     }));
   }, [initialAnswers]);
+  useEffect(() => {
+    if (!onDraftChange) return;
 
+    const timeout = setTimeout(() => {
+      onDraftChange({
+        answers,
+        lastBlockIndex: currentBlockIndex,
+        lastPageIndex: currentPageIndex,
+      });
+    }, 800); // debounce
+
+    return () => clearTimeout(timeout);
+  }, [answers, currentBlockIndex, currentPageIndex]);
   useEffect(() => {
     setBlocksWithQuestions(
       (blocks || [])
@@ -184,7 +197,12 @@ export default function SurveyForm({
     (opts || []).map((o, idx) =>
       typeof o === "string"
         ? { id: `opt_${idx}`, label: o }
-        : { id: o.id ?? `opt_${idx}`, label: o.label ?? "", isOther: !!o.isOther, isNone: !!o.isNone }
+        : {
+            id: o.id ?? `opt_${idx}`,
+            label: o.label ?? "",
+            isOther: !!o.isOther,
+            isNone: !!o.isNone,
+          }
     );
 
   const isAnswered = (question, answer) => {
@@ -200,16 +218,16 @@ export default function SurveyForm({
 
     switch (qType) {
       case "checkbox": {
-        const vals = Array.isArray(answer)
-          ? answer
-          : answer?.values || [];
+        const vals = Array.isArray(answer) ? answer : answer?.values || [];
         if (!vals || vals.length === 0) return false;
 
         const otherOpt = opts.find((o) => o.isOther);
         if (otherOpt) {
           if (vals.includes(otherOpt.id)) {
             if (typeof answer === "object") {
-              return Boolean(answer.otherText && String(answer.otherText).trim());
+              return Boolean(
+                answer.otherText && String(answer.otherText).trim()
+              );
             }
             return false;
           }
@@ -244,9 +262,7 @@ export default function SurveyForm({
       case "dropdown": {
         // if dropdown configured as multiple selection (config.multiple === true)
         if (config.multiple) {
-          const vals = Array.isArray(answer)
-            ? answer
-            : answer?.values || [];
+          const vals = Array.isArray(answer) ? answer : answer?.values || [];
           if (!vals || vals.length === 0) return false;
           if (config.minSelections && Number(config.minSelections) > 0) {
             return vals.length >= Number(config.minSelections);
@@ -260,7 +276,9 @@ export default function SurveyForm({
             if (!val) return false;
             const otherOpt = opts.find((o) => o.isOther);
             if (otherOpt && val === otherOpt.id) {
-              return Boolean(answer.otherText && String(answer.otherText).trim());
+              return Boolean(
+                answer.otherText && String(answer.otherText).trim()
+              );
             }
             return true;
           }
@@ -320,7 +338,9 @@ export default function SurveyForm({
         values = rawValue.slice();
       } else if (typeof rawValue === "string") {
         const prev = answers[qid];
-        const prevVals = Array.isArray(prev) ? prev.slice() : prev?.values?.slice() || [];
+        const prevVals = Array.isArray(prev)
+          ? prev.slice()
+          : prev?.values?.slice() || [];
         if (prevVals.includes(rawValue)) {
           values = prevVals.filter((v) => v !== rawValue);
         } else {
@@ -349,10 +369,16 @@ export default function SurveyForm({
         // If caller passed a toggle string and the attempt is to add (prev length < new length)
         if (typeof rawValue === "string") {
           const prev = answers[qid];
-          const prevLen = Array.isArray(prev) ? prev.length : prev?.values?.length || 0;
-          const isAdding = ! (Array.isArray(prev) ? prev.includes(rawValue) : (prev?.values || []).includes(rawValue));
+          const prevLen = Array.isArray(prev)
+            ? prev.length
+            : prev?.values?.length || 0;
+          const isAdding = !(Array.isArray(prev)
+            ? prev.includes(rawValue)
+            : (prev?.values || []).includes(rawValue));
           if (isAdding && prevLen >= max) {
-            window.alert(`You can select maximum ${max} option${max === 1 ? "" : "s"}.`);
+            window.alert(
+              `You can select maximum ${max} option${max === 1 ? "" : "s"}.`
+            );
             return; // block the change
           }
         } else {
@@ -360,14 +386,19 @@ export default function SurveyForm({
           if (values.length > max) {
             // prefer not to silently drop — trim to max and continue
             values = values.slice(0, max);
-            window.alert(`Only first ${max} choices were accepted (maxSelect = ${max}).`);
+            window.alert(
+              `Only first ${max} choices were accepted (maxSelect = ${max}).`
+            );
           }
         }
       }
 
       // if other chosen, keep otherText attached
       if (otherOpt && values.includes(otherOpt.id)) {
-        setAnswer({ values, otherText: otherText ?? (answers[qid]?.otherText ?? "") });
+        setAnswer({
+          values,
+          otherText: otherText ?? answers[qid]?.otherText ?? "",
+        });
       } else {
         setAnswer(values);
       }
@@ -385,7 +416,9 @@ export default function SurveyForm({
       } else if (typeof rawValue === "string") {
         // toggle-like behavior for multi-dropdown if frontend uses that pattern
         const prev = answers[qid];
-        const prevVals = Array.isArray(prev) ? prev.slice() : prev?.values?.slice() || [];
+        const prevVals = Array.isArray(prev)
+          ? prev.slice()
+          : prev?.values?.slice() || [];
         if (prevVals.includes(rawValue)) {
           values = prevVals.filter((v) => v !== rawValue);
         } else {
@@ -411,22 +444,33 @@ export default function SurveyForm({
         const max = Number(config.maxSelections);
         if (typeof rawValue === "string") {
           const prev = answers[qid];
-          const prevLen = Array.isArray(prev) ? prev.length : prev?.values?.length || 0;
-          const isAdding = !(Array.isArray(prev) ? prev.includes(rawValue) : (prev?.values || []).includes(rawValue));
+          const prevLen = Array.isArray(prev)
+            ? prev.length
+            : prev?.values?.length || 0;
+          const isAdding = !(Array.isArray(prev)
+            ? prev.includes(rawValue)
+            : (prev?.values || []).includes(rawValue));
           if (isAdding && prevLen >= max) {
-            window.alert(`You can select maximum ${max} option${max === 1 ? "" : "s"}.`);
+            window.alert(
+              `You can select maximum ${max} option${max === 1 ? "" : "s"}.`
+            );
             return;
           }
         } else {
           if (values.length > max) {
             values = values.slice(0, max);
-            window.alert(`Only first ${max} choices were accepted (maxSelect = ${max}).`);
+            window.alert(
+              `Only first ${max} choices were accepted (maxSelect = ${max}).`
+            );
           }
         }
       }
 
       if (otherOpt && values.includes(otherOpt.id)) {
-        setAnswer({ values, otherText: otherText ?? (answers[qid]?.otherText ?? "") });
+        setAnswer({
+          values,
+          otherText: otherText ?? answers[qid]?.otherText ?? "",
+        });
       } else {
         setAnswer(values);
       }
@@ -498,16 +542,26 @@ export default function SurveyForm({
         const ans = answers[q.questionId];
 
         // Additional check: for checkbox & multi-dropdown, ensure minSelect satisfied if provided
-        if ((q.type === "checkbox" || (q.type === "dropdown" && cfg.multiple)) && cfg.minSelections) {
+        if (
+          (q.type === "checkbox" || (q.type === "dropdown" && cfg.multiple)) &&
+          cfg.minSelections
+        ) {
           const vals = Array.isArray(ans) ? ans : ans?.values || [];
           if (!vals || vals.length < Number(cfg.minSelections)) {
-            window.alert(`Please select at least ${cfg.minSelections} option${Number(cfg.minSelections) === 1 ? "" : "s"} for: ${q.label || "This question"}`);
+            window.alert(
+              `Please select at least ${cfg.minSelections} option${
+                Number(cfg.minSelections) === 1 ? "" : "s"
+              } for: ${q.label || "This question"}`
+            );
             return false;
           }
         }
 
         if (!isAnswered(q, ans)) {
-          window.alert("Please answer the required question: " + (q.label || "This question"));
+          window.alert(
+            "Please answer the required question: " +
+              (q.label || "This question")
+          );
           return false;
         }
       }
@@ -516,65 +570,72 @@ export default function SurveyForm({
   };
 
   const isLastBlock = currentBlockIndex === blocksWithQuestions.length - 1;
-// 🔹 Normalize followup config (same idea as RaiseTicketForm)
-// 🔹 Normalize followup config for both inline & survey modes
-const buildFollowupPayload = (rawFollowup) => {
-  if (!rawFollowup) return undefined;
-  const f = rawFollowup;
+  // 🔹 Normalize followup config (same idea as RaiseTicketForm)
+  // 🔹 Normalize followup config for both inline & survey modes
+  const buildFollowupPayload = (rawFollowup) => {
+    if (!rawFollowup) return undefined;
+    const f = rawFollowup;
 
-  // Support both camelCase and snake_case
-  const rawSurveyId = f.surveyId ?? f.survey_id ?? null;
-  const surveyId = typeof rawSurveyId === "string" ? rawSurveyId.trim() : rawSurveyId;
+    // Support both camelCase and snake_case
+    const rawSurveyId = f.surveyId ?? f.survey_id ?? null;
+    const surveyId =
+      typeof rawSurveyId === "string" ? rawSurveyId.trim() : rawSurveyId;
 
-  // ✅ Survey mode: just keep surveyId, ignore questions
-  if (f.mode === "survey" && surveyId) {
-    return {
-      mode: "survey",
-      surveyId,
-      questions: [],   // always empty for survey mode
-    };
-  }
+    // ✅ Survey mode: just keep surveyId, ignore questions
+    if (f.mode === "survey" && surveyId) {
+      return {
+        mode: "survey",
+        surveyId,
+        questions: [], // always empty for survey mode
+      };
+    }
 
-  // ✅ Inline mode: normalize questions
-  if (
-    f.mode === "inline" &&
-    Array.isArray(f.questions) &&
-    f.questions.length
-  ) {
-    const qs = f.questions
-      .filter((q) => q.label && String(q.label).trim())
-      .map((q, idx) => ({
-        id: q.id ?? `fq_${idx + 1}`,
-        type: q.type || "text",
-        label: String(q.label).trim(),
-        options:
-          q.type === "mcq"
-            ? (Array.isArray(q.options)
+    // ✅ Inline mode: normalize questions
+    if (
+      f.mode === "inline" &&
+      Array.isArray(f.questions) &&
+      f.questions.length
+    ) {
+      const qs = f.questions
+        .filter((q) => q.label && String(q.label).trim())
+        .map((q, idx) => ({
+          id: q.id ?? `fq_${idx + 1}`,
+          type: q.type || "text",
+          label: String(q.label).trim(),
+          options:
+            q.type === "mcq"
+              ? Array.isArray(q.options)
                 ? q.options
                 : String(q.options || "")
                     .split(",")
                     .map((s) => s.trim())
-                    .filter(Boolean))
-            : undefined,
-      }));
+                    .filter(Boolean)
+              : undefined,
+        }));
 
-    if (!qs.length) return undefined;
+      if (!qs.length) return undefined;
 
-    return {
-      mode: "inline",
-      surveyId: null,
-      questions: qs,
-    };
-  }
+      return {
+        mode: "inline",
+        surveyId: null,
+        questions: qs,
+      };
+    }
 
-  // Any other mode / invalid data → ignore
-  return undefined;
-};
+    // Any other mode / invalid data → ignore
+    return undefined;
+  };
 
-
-  const handleNextBlock = () => {
+  const handleNextBlock = async () => {
     if (!validateCurrentPageRequired()) return;
-
+    if (typeof evaluateQuotaOnPage === "function") {
+      const res = await evaluateQuotaOnPage(answers);
+      if (res?.blocked) {
+        alert(res.reason || "Quota reached.");
+        await handleSubmit(answers);
+        return;
+      }
+    }
     const isLastPage = currentPageIndex === blockPages.length - 1;
 
     const actionsArray = Array.isArray(pendingActions)
@@ -636,8 +697,8 @@ const buildFollowupPayload = (rawFollowup) => {
           try {
             if (action?.ticketData?.[0]) {
               const ticket = action.ticketData[0];
-              console.log(ticket)
-                const followupPayload = buildFollowupPayload(ticket.followup);
+              console.log(ticket);
+              const followupPayload = buildFollowupPayload(ticket.followup);
 
               const slaRes = SLAModel.get(ticket.slaId, ticket.orgId);
 
@@ -674,7 +735,7 @@ const buildFollowupPayload = (rawFollowup) => {
                   timestamp: new Date().toISOString(),
                 },
               };
-              
+
               raiseTicket(updatedTicketData);
             } else {
               console.warn("No ticketData found in action");
@@ -926,32 +987,36 @@ const buildFollowupPayload = (rawFollowup) => {
           <div className="w-full max-w-3xl mx-auto flex-1">
             {pageQuestions.length ? (
               pageQuestions.map((question, idx) => (
-    <div
-      key={question.questionId}
-      className="mb-8"
-      data-question-id={question.questionId}
-      data-q-type={question.type}
-    >
-      {!["end_screen", "welcome_screen"].includes(question.type) && (
-        <p className="text-lg lg:text-2xl capitalize text-left font-semibold mb-4 text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
-          {question.label}
-        </p>
-      )}
-      {question.description && (
-        <i className="mb-4 text-sm text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
-          {question.description}
-        </i>
-      )}
-      <RenderQuestion
-        question={question}
-        value={answers[question.questionId] ?? ""}
-        onChange={(value) => handleAnswerChange(question, value)}
-        config={question.config || defaultConfigMap[question.type] || {}}
-        inputClasses={getInputClasses()}
-        disabled={submitting}
-      />
-    </div>
-  ))
+                <div
+                  key={question.questionId}
+                  className="mb-8"
+                  data-question-id={question.questionId}
+                  data-q-type={question.type}
+                >
+                  {!["end_screen", "welcome_screen"].includes(
+                    question.type
+                  ) && (
+                    <p className="text-lg lg:text-2xl capitalize text-left font-semibold mb-4 text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
+                      {question.label}
+                    </p>
+                  )}
+                  {question.description && (
+                    <i className="mb-4 text-sm text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
+                      {question.description}
+                    </i>
+                  )}
+                  <RenderQuestion
+                    question={question}
+                    value={answers[question.questionId] ?? ""}
+                    onChange={(value) => handleAnswerChange(question, value)}
+                    config={
+                      question.config || defaultConfigMap[question.type] || {}
+                    }
+                    inputClasses={getInputClasses()}
+                    disabled={submitting}
+                  />
+                </div>
+              ))
             ) : (
               <div className="text-center py-12">
                 <p className="text-xl text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]">
@@ -969,45 +1034,52 @@ const buildFollowupPayload = (rawFollowup) => {
 
           <div className="flex justify-center items-center w-full gap-3">
             {isLastBlock ? (
-          // In SurveyForm.jsx, replace the submit button onClick (around line 1215):
+              // In SurveyForm.jsx, replace the submit button onClick (around line 1215):
 
-<button
-  data-role="submit"
-  onClick={async (e) => {
-    e.preventDefault();
-    
-    if (submitting) return;
-    if (!validateCurrentPageRequired()) return;
+              <button
+                data-role="submit"
+                onClick={async (e) => {
+                  e.preventDefault();
 
-    // 🔹 REMOVE THE CONFIRM - IT BLOCKS AUTOMATION
-    // Instead, just log
-    console.log("🔹 Submit button clicked, starting submission...");
-    
-    setSubmitting(true);
-    
-    try {
-      console.log("🔹 Calling handleSubmit with", Object.keys(answers).length, "answers");
-      await new Promise(resolve => setTimeout(resolve, 1000));
+                  if (submitting) return;
+                  if (!validateCurrentPageRequired()) return;
 
-      await handleSubmit(answers);
-      console.log("🔹 handleSubmit completed successfully");
-    } catch (err) {
-      console.error("Submit failed:", err);
-      setSubmitting(false);
-      alert("Submission failed. Please try again.");
-    }
-  }}
-  disabled={submitting}
-  className={`flex items-center text-sm lg:text-lg gap-2 px-6 py-3 rounded-md font-semibold transition-transform duration-150 ${
-    submitting ? "opacity-70 cursor-not-allowed" : "hover:scale-105"
-  } bg-gradient-to-r from-green-500 to-green-600 text-white`}
->
-  {submitting ? "Submitting…" : "Submit"}
-</button>
+                  // 🔹 REMOVE THE CONFIRM - IT BLOCKS AUTOMATION
+                  // Instead, just log
+                  console.log(
+                    "🔹 Submit button clicked, starting submission..."
+                  );
+
+                  setSubmitting(true);
+
+                  try {
+                    console.log(
+                      "🔹 Calling handleSubmit with",
+                      Object.keys(answers).length,
+                      "answers"
+                    );
+                    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+                    await handleSubmit(answers);
+                    console.log("🔹 handleSubmit completed successfully");
+                  } catch (err) {
+                    console.error("Submit failed:", err);
+                    setSubmitting(false);
+                    alert("Submission failed. Please try again.");
+                  }
+                }}
+                disabled={submitting}
+                className={`flex items-center text-sm lg:text-lg gap-2 px-6 py-3 rounded-md font-semibold transition-transform duration-150 ${
+                  submitting
+                    ? "opacity-70 cursor-not-allowed"
+                    : "hover:scale-105"
+                } bg-gradient-to-r from-green-500 to-green-600 text-white`}
+              >
+                {submitting ? "Submitting…" : "Submit"}
+              </button>
             ) : (
               <button
-                  data-role="next"
-
+                data-role="next"
                 onClick={handleNextBlock}
                 className="flex items-center text-sm lg:text-lg gap-2 px-6 py-3 rounded-md font-semibold transition-transform duration-150 hover:scale-105 bg-[color:var(--primary-light)] dark:bg-[color:var(--primary-dark)] text-[color:var(--text-light)] dark:text-[color:var(--text-dark)]"
                 disabled={submitting}
