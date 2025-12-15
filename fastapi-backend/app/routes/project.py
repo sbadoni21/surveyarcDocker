@@ -106,29 +106,6 @@ async def create_project(data: ProjectCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to create project")
 
 
-@router.get("/{org_id}", response_model=List[ProjectGetBase])
-async def get_all_projects(
-    org_id: str,
-    db: Session = Depends(get_db),
-    use_cache: bool = Query(True, description="Whether to use Redis cache")
-):
-    """Get all projects for an organization (cached)."""
-    try:
-        if use_cache:
-            cached = await RedisProjectService.get_cached_org_projects(org_id)
-            if cached is not None:  # FIXED: explicit None check
-                print(f"[API] Returning {len(cached)} projects from cache for org {org_id}")
-                return [ProjectGetBase(**p) for p in cached]
-
-        print(f"[API] Cache miss for org {org_id}, fetching from DB")
-        projects = db.query(Project).filter(Project.org_id == org_id).all()
-        if projects:
-            await RedisProjectService.cache_org_projects(org_id, projects)
-        return projects
-
-    except Exception as e:
-        print(f"[ProjectRoutes] Failed to get projects: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve projects")
 
 @router.get("/{org_id}", response_model=List[ProjectGetBase])
 async def get_all_projects(
