@@ -13,6 +13,7 @@ const defaultConfigMap = {
   [QUESTION_TYPES.CONTACT_ADDRESS]: {
     placeholder: "Enter your full address",
   },
+  
 
   [QUESTION_TYPES.CONTACT_WEBSITE]: {
     placeholder: "e.g. https://example.com",
@@ -221,6 +222,21 @@ const defaultConfigMap = {
     showRowNumbers: false,
     layout: "comfortable", // "comfortable" | "compact"
   },
+  [QUESTION_TYPES.AUTO_SUM]:  {
+    items: ["Item 1", "Item 2"],
+    total: 100,
+    showRemaining: true,
+    allowDecimals: false,
+    minValue: 0,
+    maxValue: null,
+    requireTotal: true,
+    allowNegative: false,
+    decimalPlaces: 2,
+    showPercentages: false,
+    enableReordering: true,
+    itemDescriptions: {}
+  },
+
 
   [QUESTION_TYPES.MULTI_GRID]: {
     rows: ["Feature A", "Feature B", "Feature C"],

@@ -332,7 +332,7 @@ export default function OrganizationAnalyticsDashboard({ orgId }) {
       {/* Debug Info - remove in production */}
       {process.env.NODE_ENV === "development" && (
         <div className="text-xs text-slate-500 p-3 bg-slate-900/50 rounded border border-slate-800">
-          <div>Projects: {projects?.length || 0}</div>
+          <div>Directories: {projects?.length || 0}</div>
           <div>Surveys (org-wide): {allSurveys?.length || 0}</div>
           <div>Surveys Fetching: {surveysFetching ? "Yes" : "No"}</div>
           <div>Total Responses: {totalResponses}</div>
@@ -358,7 +358,7 @@ export default function OrganizationAnalyticsDashboard({ orgId }) {
         />
         <MetricCard
           icon={FolderKanban}
-          label="Total Projects"
+          label="Total Directories"
           value={projectAnalytics.totalProjects}
           subtitle={`${projectAnalytics.activeProjects} active • ${projectAnalytics.completedProjects} completed`}
         />
@@ -388,7 +388,7 @@ export default function OrganizationAnalyticsDashboard({ orgId }) {
         />
         <MiniCard
           icon={AlertCircle}
-          label="Overdue Projects"
+          label="Overdue Directories"
           value={projectAnalytics.overdueCount}
           sublabel="Need attention"
           variant={projectAnalytics.overdueCount > 0 ? "warning" : "default"}
@@ -411,7 +411,7 @@ export default function OrganizationAnalyticsDashboard({ orgId }) {
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Project Status Breakdown */}
         <StatusPanel
-          title="Project Status Distribution"
+          title="Directory Status Distribution"
           data={Object.entries(STATUS_GROUPS).map(([key, label]) => ({
             key,
             label,

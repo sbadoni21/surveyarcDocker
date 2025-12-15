@@ -13,6 +13,7 @@ from ..services.redis_survey_service import RedisSurveyService
 import os
 import asyncio
 from pydantic import BaseModel, Field
+from ..models.questions import Question
 
 from ..services.dummy_responses_bot import (
     DummyBotConfig,
@@ -313,3 +314,31 @@ def list_dummy_generation_tasks(survey_id: str):
     }
     
     return {"survey_id": survey_id, "tasks": tasks}
+
+@router.get("/surveys/{survey_id}/locales")
+def get_survey_locales(
+    survey_id: str,
+    db: Session = Depends(get_db),
+):
+    """Get all available locales for a survey"""
+    from ..models.survey import Survey
+    
+    survey = db.query(Survey).filter(Survey.survey_id == survey_id).first()
+    if not survey:
+        raise HTTPException(404, "Survey not found")
+    
+    # Get from metadata
+    locales = (survey.meta_data or {}).get("locales", ["en"])
+    
+    # Double-check with questions
+    questions = db.query(Question).filter(Question.survey_id == survey_id).all()
+    all_locales = set(["en"])
+    for q in questions:
+        if q.translations:
+            all_locales.update(q.translations.keys())
+    
+    return {
+        "survey_id": survey_id,
+        "locales": sorted(list(all_locales)),
+        "metadata_locales": locales,
+    }

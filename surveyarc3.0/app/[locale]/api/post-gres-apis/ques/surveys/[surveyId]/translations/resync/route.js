@@ -19,7 +19,7 @@ export async function POST(req, ctx) {
   const { surveyId } = await ctx.params;
 
   // 🍪 Read user id from cookie
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const currentUserId = cookieStore.get("currentUserId")?.value;
 
   if (!currentUserId) {

@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { Search, Languages, Save, X, Loader2, Plus } from 'lucide-react';
+import { Search, Languages, Save, X, Loader2, Plus, Download, Upload } from 'lucide-react';
 import { useQuestion } from '@/providers/questionPProvider';
 import { AVAILABLE_LANGUAGES } from '@/utils/availableLanguages';
 import { usePathname } from 'next/navigation';
@@ -21,6 +21,7 @@ export default function TranslationUI() {
   const [loading, setLoading] = useState(false);
   const [savingCells, setSavingCells] = useState(new Set());
   const [expandedQuestions, setExpandedQuestions] = useState(new Set());
+  const [uploadingFile, setUploadingFile] = useState(false);
 
   useEffect(() => {
     if (surveyId && orgId) {
@@ -32,10 +33,23 @@ export default function TranslationUI() {
     setLoading(true);
     try {
       await getAllQuestions(orgId, surveyId);
+    } catch (error) {
+      console.error('Error loading questions:', error);
     } finally {
       setLoading(false);
     }
   };
+
+  // Debug: Log questions to console
+  useEffect(() => {
+    if (questions.length > 0) {
+      console.log('Loaded questions:', questions);
+      const invalidQuestions = questions.filter(q => !q.questionId || q.questionId === 'undefined');
+      if (invalidQuestions.length > 0) {
+        console.warn('Found questions with invalid questionId:', invalidQuestions);
+      }
+    }
+  }, [questions]);
 
   // Get all available languages from translations
   const getAvailableLanguages = () => {
@@ -50,24 +64,171 @@ export default function TranslationUI() {
 
   const availableLanguages = getAvailableLanguages();
 
-  const getTranslationValue = (question, field, subfield, locale) => {
-    if (locale === 'en') {
-      if (subfield) {
-        return question[field]?.[subfield] || '';
-      }
-      return question[field] || '';
+  // Helper function to safely display values (handle objects/arrays)
+  const formatValueForDisplay = (value) => {
+    if (value === null || value === undefined || value === '') {
+      return '';
     }
     
-    const translation = question.translations?.[locale];
-    if (!translation) return '';
-    
-    if (subfield) {
-      return translation?.[field]?.[subfield] || '';
+    // If it's an object or array, stringify it for display
+    if (typeof value === 'object') {
+      return JSON.stringify(value);
     }
-    return translation?.[field] || '';
+    
+    return String(value);
   };
 
-  const handleCellClick = (questionId, field, subfield, locale) => {
+  // Helper function to check if a value is a complex object/array
+  const isComplexValue = (value) => {
+    return value !== null && typeof value === 'object';
+  };
+
+
+const getTranslationValue = (question, field, subfield, locale) => {
+  // Helper to get nested value from object using path
+  const getNestedValue = (obj, path) => {
+    if (!path) return obj;
+    
+    // Handle array notation: items[0] or options[0].label
+    const arrayMatch = path.match(/^(\w+)\[(\d+)\](?:\.(\w+))?$/);
+    if (arrayMatch) {
+      const [, arrayName, index, prop] = arrayMatch;
+      const array = obj?.[arrayName];
+      
+      if (!Array.isArray(array) || !array[parseInt(index)]) {
+        return '';
+      }
+      
+      const item = array[parseInt(index)];
+      
+      // If no property specified, return the item itself (for string arrays)
+      if (!prop) {
+        return typeof item === 'string' ? item : '';
+      }
+      
+      // Return the property from object in array
+      return typeof item === 'object' ? (item[prop] || '') : '';
+    }
+    
+    // Handle simple nested: config.placeholder or anchors.min
+    return path.split('.').reduce((acc, part) => acc?.[part], obj) || '';
+  };
+  
+  // For English (base language), get from main question object
+  if (locale === 'en') {
+    if (subfield) {
+      return getNestedValue(question[field], subfield);
+    }
+    return question[field] || '';
+  }
+  
+  // For translations, get from translations object
+  const translation = question.translations?.[locale];
+  if (!translation) return '';
+  
+  if (subfield) {
+    return getNestedValue(translation[field], subfield);
+  }
+  return translation?.[field] || '';
+};
+
+ // Helper to get flattened config fields (including nested options)
+ // ============================================
+// UPDATED getFlattenedConfigFields function
+// Add this to replace your existing function
+// ============================================
+
+const getFlattenedConfigFields = (config) => {
+  const fields = [];
+  
+  if (!config) return fields;
+    const NON_TRANSLATABLE_FIELDS = [
+    'numSets',
+    'setSize', 
+    'randomize',
+    'required',
+    'minValue',
+    'maxValue',
+    'step',
+    'rows',
+    'cols',
+    'min',
+    'layout',
+    'noColor',
+    'total',
+    'decimalPlaces',
+    'noIcon',
+    'showIcons',
+    'yesColor',
+    'yesIcon',
+    'max',
+    'showLabels',
+    'allowMultiple',
+    'maxSelections',
+    'minSelections'
+  ];
+  Object.keys(config).forEach(key => {
+    const value = config[key];
+      if (NON_TRANSLATABLE_FIELDS.includes(key)) {
+      return;
+    }
+    // Handle arrays
+    if (Array.isArray(value)) {
+      // Array of objects (like options: [{id, label}, ...])
+      if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
+        value.forEach((option, index) => {
+          // Get translatable properties from each object
+          Object.keys(option).forEach(prop => {
+            // Only include translatable text properties
+            if (typeof option[prop] === 'string' && 
+                !['id', 'value', 'icon', 'colorTag'].includes(prop)) {
+              fields.push({
+                key: `${key}[${index}].${prop}`,
+                displayKey: `${key}[${index}].${prop}`,
+                value: option[prop]
+              });
+            }
+          });
+        });
+      }
+      // Array of strings (like items: ["Battery life", "Camera quality", ...])
+      else if (value.length > 0 && typeof value[0] === 'string') {
+        value.forEach((item, index) => {
+          fields.push({
+            key: `${key}[${index}]`,
+            displayKey: `${key}[${index}]`,
+            value: item
+          });
+        });
+      }
+    }
+    // Handle simple string/number values
+    else if (typeof value === 'string' || typeof value === 'number') {
+      fields.push({
+        key: key,
+        displayKey: key,
+        value: value
+      });
+    }
+    // Handle objects (like anchors: {min: "Low", max: "High"})
+    else if (typeof value === 'object' && value !== null) {
+      Object.keys(value).forEach(subKey => {
+        if (typeof value[subKey] === 'string') {
+          fields.push({
+            key: `${key}.${subKey}`,
+            displayKey: `${key}.${subKey}`,
+            value: value[subKey]
+          });
+        }
+      });
+    }
+  });
+  
+  return fields;
+};
+
+
+ const handleCellClick = (questionId, field, subfield, locale) => {
     if (locale === 'en') return; // Don't allow editing base language
     
     const question = questions.find(q => q.questionId === questionId);
@@ -76,76 +237,133 @@ export default function TranslationUI() {
     const cellKey = `${questionId}-${field}-${subfield || 'none'}-${locale}`;
     const currentValue = getTranslationValue(question, field, subfield, locale);
     
+    // Format the value for editing
+    const editableValue = formatValueForDisplay(currentValue);
+    
     setEditingCells(prev => ({ ...prev, [cellKey]: true }));
-    setEditValues(prev => ({ ...prev, [cellKey]: currentValue }));
+    setEditValues(prev => ({ ...prev, [cellKey]: editableValue }));
   };
 
-  const handleSave = async (questionId, field, subfield, locale) => {
-    const cellKey = `${questionId}-${field}-${subfield || 'none'}-${locale}`;
-    const editValue = editValues[cellKey] || '';
+const handleSave = async (questionId, field, subfield, locale) => {
+  const cellKey = `${questionId}-${field}-${subfield || 'none'}-${locale}`;
+  let editValue = editValues[cellKey] || '';
 
-    setSavingCells(prev => new Set(prev).add(cellKey));
-    
+  // Try to parse JSON if it looks like JSON
+  if (editValue.trim().startsWith('{') || editValue.trim().startsWith('[')) {
     try {
-      const question = questions.find(q => q.questionId === questionId);
-      if (!question) {
-        throw new Error('Question not found');
-      }
+      editValue = JSON.parse(editValue);
+    } catch (e) {
+      // If parsing fails, keep as string
+    }
+  }
 
-      // Get existing translation or create new
-      const existingTranslation = question.translations?.[locale] || {};
+  setSavingCells(prev => new Set(prev).add(cellKey));
+  
+  try {
+    const question = questions.find(q => q.questionId === questionId);
+    if (!question) {
+      throw new Error('Question not found');
+    }
 
-      // Merge ALL config fields
-      const mergedConfig = {};
-      if (question.config) {
-        Object.keys(question.config).forEach(key => {
-          mergedConfig[key] = question.config[key];
-        });
-      }
-      if (existingTranslation.config) {
-        Object.keys(existingTranslation.config).forEach(key => {
-          mergedConfig[key] = existingTranslation.config[key];
-        });
-      }
+    // Get existing translation or create new
+    const existingTranslation = question.translations?.[locale] || {};
 
-      // Build complete translation data
-      const translationData = {
-        label: existingTranslation.label || question.label || '',
-        description: existingTranslation.description || question.description || '',
-        config: mergedConfig
-      };
-
-      // Update the specific field
-      if (subfield) {
-        translationData.config[subfield] = editValue;
-      } else {
-        translationData[field] = editValue;
-      }
-
-      await updateQuestionTranslation(questionId, locale, translationData);
-      await getAllQuestions(orgId, surveyId);
-      
-      setEditingCells(prev => {
-        const updated = { ...prev };
-        delete updated[cellKey];
-        return updated;
-      });
-      setEditValues(prev => {
-        const updated = { ...prev };
-        delete updated[cellKey];
-        return updated;
-      });
-    } catch (error) {
-      console.error('Error saving translation:', error);
-      alert(`Failed to save: ${error.message}`);
-    } finally {
-      setSavingCells(prev => {
-        const updated = new Set(prev);
-        updated.delete(cellKey);
-        return updated;
+    // Deep clone config to avoid mutations
+    const mergedConfig = JSON.parse(JSON.stringify(question.config || {}));
+    
+    // Merge existing translation config
+    if (existingTranslation.config) {
+      Object.keys(existingTranslation.config).forEach(key => {
+        mergedConfig[key] = existingTranslation.config[key];
       });
     }
-  };
+
+    // Build complete translation data
+    const translationData = {
+      label: existingTranslation.label || question.label || '',
+      description: existingTranslation.description || question.description || '',
+      config: mergedConfig
+    };
+
+    // Update the specific field - HANDLE NESTED PATHS
+    if (subfield) {
+      // Handle array notation: items[0] or options[0].label
+      const arrayMatch = subfield.match(/^(\w+)\[(\d+)\](?:\.(\w+))?$/);
+      if (arrayMatch) {
+        const [, arrayName, index, prop] = arrayMatch;
+        const idx = parseInt(index);
+        
+        // Ensure array exists
+        if (!translationData.config[arrayName]) {
+          translationData.config[arrayName] = [];
+        }
+        
+        // Ensure array is large enough
+        while (translationData.config[arrayName].length <= idx) {
+          translationData.config[arrayName].push(prop ? {} : '');
+        }
+        
+        if (prop) {
+          // Array of objects: options[0].label
+          if (typeof translationData.config[arrayName][idx] !== 'object') {
+            translationData.config[arrayName][idx] = {};
+          }
+          translationData.config[arrayName][idx][prop] = editValue;
+        } else {
+          // Array of strings: items[0]
+          translationData.config[arrayName][idx] = editValue;
+        }
+      }
+      // Handle nested objects: anchors.min
+      else if (subfield.includes('.')) {
+        const [parentKey, childKey] = subfield.split('.');
+        if (!translationData.config[parentKey]) {
+          translationData.config[parentKey] = {};
+        }
+        translationData.config[parentKey][childKey] = editValue;
+      }
+      // Simple config field: placeholder
+      else {
+        translationData.config[subfield] = editValue;
+      }
+    } else {
+      // Top-level field: label or description
+      translationData[field] = editValue;
+    }
+
+    console.log('Saving translation:', {
+      questionId,
+      locale,
+      field,
+      subfield,
+      value: editValue,
+      fullData: translationData
+    });
+
+    await updateQuestionTranslation(questionId, locale, translationData);
+    await getAllQuestions(orgId, surveyId);
+    
+    setEditingCells(prev => {
+      const updated = { ...prev };
+      delete updated[cellKey];
+      return updated;
+    });
+    setEditValues(prev => {
+      const updated = { ...prev };
+      delete updated[cellKey];
+      return updated;
+    });
+  } catch (error) {
+    console.error('Error saving translation:', error);
+    alert(`Failed to save: ${error.message}`);
+  } finally {
+    setSavingCells(prev => {
+      const updated = new Set(prev);
+      updated.delete(cellKey);
+      return updated;
+    });
+  }
+};
 
   const handleCancel = (cellKey) => {
     setEditingCells(prev => {
@@ -176,15 +394,30 @@ export default function TranslationUI() {
     const rows = [];
     
     questions.forEach(question => {
-      // Collect all config keys
+      // Skip questions without proper questionId
+      if (!question.questionId || question.questionId === 'undefined') {
+        return;
+      }
+
+      // Collect all config keys from all translations
       const allConfigKeys = new Set();
       if (question.config) {
-        Object.keys(question.config).forEach(key => allConfigKeys.add(key));
+        Object.keys(question.config).forEach(key => {
+          // Skip complex objects/arrays for translation
+          if (!isComplexValue(question.config[key])) {
+            allConfigKeys.add(key);
+          }
+        });
       }
       if (question.translations) {
         Object.values(question.translations).forEach(translation => {
           if (translation.config) {
-            Object.keys(translation.config).forEach(key => allConfigKeys.add(key));
+            Object.keys(translation.config).forEach(key => {
+              // Skip complex objects/arrays for translation
+              if (!isComplexValue(translation.config[key])) {
+                allConfigKeys.add(key);
+              }
+            });
           }
         });
       }
@@ -195,7 +428,7 @@ export default function TranslationUI() {
         field: 'label',
         subfield: null,
         resource: `${question.questionId},label`,
-        type: question.type
+        type: question.type || 'unknown'
       });
 
       // Description
@@ -204,19 +437,20 @@ export default function TranslationUI() {
         field: 'description',
         subfield: null,
         resource: `${question.questionId},description`,
-        type: question.type
+        type: question.type || 'unknown'
       });
-
-      // Config fields
-      allConfigKeys.forEach(configKey => {
+    const configFields = getFlattenedConfigFields(question.config);
+      configFields.forEach(({ key, displayKey }) => {
         rows.push({
           questionId: question.questionId,
           field: 'config',
-          subfield: configKey,
-          resource: `${question.questionId},config.${configKey}`,
-          type: question.type
+          subfield: key,
+          resource: `${question.questionId},config.${displayKey}`,
+          type: question.type || 'unknown'
         });
       });
+      // Config fields (only simple values)
+
     });
     
     return rows;
@@ -243,6 +477,383 @@ export default function TranslationUI() {
     return `${questionId}-${field}-${subfield || 'none'}-${locale}`;
   };
 
+  // ============================================
+  // DOWNLOAD TRANSLATIONS AS CSV
+  // ============================================
+  const downloadTranslationsCSV = () => {
+    const rows = getResourceRows();
+    const languages = availableLanguages;
+
+    // Create CSV header
+    const header = ['Resource', 'Type', ...languages].join(',');
+    
+    // Create CSV rows
+    const csvRows = rows.map(row => {
+      const question = questions.find(q => q.questionId === row.questionId);
+      const values = languages.map(locale => {
+        const value = getTranslationValue(question, row.field, row.subfield, locale);
+        let displayValue = formatValueForDisplay(value);
+        
+        // Don't export empty placeholders - export actual empty string
+        if (!displayValue || displayValue === 'empty' || displayValue === 'Click to translate...') {
+          displayValue = '';
+        }
+        
+        // Escape quotes and wrap in quotes if contains comma or newline
+        return displayValue.includes(',') || displayValue.includes('\n') || displayValue.includes('"')
+          ? `"${displayValue.replace(/"/g, '""')}"`
+          : displayValue;
+      });
+      
+      // Quote the resource column since it contains a comma
+      return [`"${row.resource}"`, row.type, ...values].join(',');
+    });
+
+    // Combine header and rows
+    const csv = [header, ...csvRows].join('\n');
+
+    // Create blob and download
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `translations_${surveyId}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // ============================================
+  // DOWNLOAD TRANSLATIONS AS JSON
+  // ============================================
+  const downloadTranslationsJSON = () => {
+    const translations = {};
+    
+    questions.forEach(question => {
+      translations[question.questionId] = {
+        type: question.type,
+        label: {},
+        description: {},
+        config: {}
+      };
+
+      availableLanguages.forEach(locale => {
+        translations[question.questionId].label[locale] = 
+          getTranslationValue(question, 'label', null, locale);
+        translations[question.questionId].description[locale] = 
+          getTranslationValue(question, 'description', null, locale);
+
+        // Get all config keys
+        const allConfigKeys = new Set();
+        if (question.config) {
+          Object.keys(question.config).forEach(key => {
+            if (!isComplexValue(question.config[key])) {
+              allConfigKeys.add(key);
+            }
+          });
+        }
+
+        allConfigKeys.forEach(configKey => {
+          if (!translations[question.questionId].config[configKey]) {
+            translations[question.questionId].config[configKey] = {};
+          }
+          translations[question.questionId].config[configKey][locale] = 
+            getTranslationValue(question, 'config', configKey, locale);
+        });
+      });
+    });
+
+    // Create blob and download
+    const json = JSON.stringify(translations, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `translations_${surveyId}_${new Date().toISOString().split('T')[0]}.json`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // ============================================
+  // HELPER: Parse CSV line properly (handles quoted values)
+  // ============================================
+  const parseCSVLine = (line) => {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      const nextChar = line[i + 1];
+      
+      if (char === '"') {
+        if (inQuotes && nextChar === '"') {
+          current += '"';
+          i++; // Skip next quote
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  };
+
+  // ============================================
+  // UPLOAD AND PARSE CSV
+  // ============================================
+  const handleFileUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadingFile(true);
+
+    try {
+      const text = await file.text();
+      const lines = text.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 2) {
+        throw new Error('File is empty or invalid');
+      }
+
+      // Parse header
+      const header = parseCSVLine(lines[0]);
+      console.log('CSV Header:', header);
+      
+      const languageColumns = header.slice(2); // Skip 'Resource' and 'Type' columns
+      console.log('Language columns found:', languageColumns);
+      console.log('Available languages in system:', availableLanguages);
+
+      // Parse data rows
+      const updates = [];
+      for (let i = 1; i < lines.length; i++) {
+        const values = parseCSVLine(lines[i]);
+        
+        if (values.length < 3) {
+          console.warn(`Skipping line ${i + 1}: Not enough columns`);
+          continue;
+        }
+
+        const resource = values[0];
+        if (!resource || !resource.includes(',')) {
+          console.warn(`Skipping line ${i + 1}: Invalid resource format: ${resource}`);
+          continue;
+        }
+        
+        const [questionId, fieldPath] = resource.split(',');
+        if (!questionId || !fieldPath) {
+          console.warn(`Skipping line ${i + 1}: Could not parse questionId/fieldPath from: ${resource}`);
+          continue;
+        }
+        
+        const [field, subfield] = fieldPath.includes('.') 
+          ? fieldPath.split('.') 
+          : [fieldPath, null];
+
+        // Get translations for each language
+        for (let j = 0; j < languageColumns.length; j++) {
+          const locale = languageColumns[j];
+          const value = values[j + 2] || ''; // +2 to skip Resource and Type columns
+
+          // Debug log for first data row
+          if (i === 1) {
+            console.log(`  Column ${j}: locale="${locale}", rawValue="${values[j + 2]}", processedValue="${value}"`);
+          }
+
+          // Skip English (base language) and empty/placeholder values
+          if (locale === 'en') continue;
+          if (!value) continue;
+          if (value === 'empty' || value === 'Click to translate...') continue;
+
+          updates.push({
+            questionId,
+            field,
+            subfield,
+            locale,
+            value
+          });
+        }
+      }
+
+      console.log(`\nParsing complete:`);
+      console.log(`  Total data rows: ${lines.length - 1}`);
+      console.log(`  Updates to process: ${updates.length}`);
+      console.log(`\nFirst 3 updates:`, updates.slice(0, 3));
+
+      if (updates.length === 0) {
+        alert('No translations found to update. Make sure your CSV has:\n1. Non-English language columns\n2. Values in those columns\n3. Correct language codes matching your system');
+        setUploadingFile(false);
+        event.target.value = '';
+        return;
+      }
+
+      // Batch update all translations
+      let successCount = 0;
+      let errorCount = 0;
+      const errors = [];
+
+      for (const update of updates) {
+        try {
+          const question = questions.find(q => q.questionId === update.questionId);
+          if (!question) {
+            console.warn(`Question not found: ${update.questionId}`);
+            errorCount++;
+            continue;
+          }
+
+          const existingTranslation = question.translations?.[update.locale] || {};
+
+          // Merge config
+          const mergedConfig = {};
+          if (question.config) {
+            Object.keys(question.config).forEach(key => {
+              mergedConfig[key] = question.config[key];
+            });
+          }
+          if (existingTranslation.config) {
+            Object.keys(existingTranslation.config).forEach(key => {
+              mergedConfig[key] = existingTranslation.config[key];
+            });
+          }
+
+          const translationData = {
+            label: existingTranslation.label || question.label || '',
+            description: existingTranslation.description || question.description || '',
+            config: mergedConfig
+          };
+
+          // Update the specific field
+          if (update.subfield) {
+            translationData.config[update.subfield] = update.value;
+          } else {
+            translationData[update.field] = update.value;
+          }
+
+          console.log(`Updating ${update.questionId} [${update.locale}] ${update.field}${update.subfield ? '.' + update.subfield : ''} = "${update.value}"`);
+
+          await updateQuestionTranslation(update.questionId, update.locale, translationData);
+          successCount++;
+        } catch (error) {
+          console.error('Error updating translation:', error);
+          errors.push(`${update.questionId}: ${error.message}`);
+          errorCount++;
+        }
+      }
+
+      // Reload questions to show updated translations
+      await getAllQuestions(orgId, surveyId);
+
+      const message = `Upload complete!\nSuccessfully updated: ${successCount}\nErrors: ${errorCount}`;
+      if (errors.length > 0 && errors.length <= 5) {
+        alert(message + '\n\nErrors:\n' + errors.join('\n'));
+      } else {
+        alert(message);
+      }
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      alert(`Failed to upload file: ${error.message}`);
+    } finally {
+      setUploadingFile(false);
+      // Reset file input
+      event.target.value = '';
+    }
+  };
+
+  // ============================================
+  // UPLOAD JSON
+  // ============================================
+  const handleJSONUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadingFile(true);
+
+    try {
+      const text = await file.text();
+      const translations = JSON.parse(text);
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Iterate through each question in the JSON
+      for (const [questionId, questionData] of Object.entries(translations)) {
+        const question = questions.find(q => q.questionId === questionId);
+        if (!question) continue;
+
+        // Get all locales (skip 'en' as it's the base language)
+        const locales = new Set();
+        if (questionData.label) {
+          Object.keys(questionData.label).forEach(l => { if (l !== 'en') locales.add(l); });
+        }
+        if (questionData.description) {
+          Object.keys(questionData.description).forEach(l => { if (l !== 'en') locales.add(l); });
+        }
+        if (questionData.config) {
+          Object.values(questionData.config).forEach(configField => {
+            if (typeof configField === 'object') {
+              Object.keys(configField).forEach(l => { if (l !== 'en') locales.add(l); });
+            }
+          });
+        }
+
+        // Update each locale
+        for (const locale of locales) {
+          try {
+            const existingTranslation = question.translations?.[locale] || {};
+
+            const translationData = {
+              label: questionData.label?.[locale] || existingTranslation.label || question.label || '',
+              description: questionData.description?.[locale] || existingTranslation.description || question.description || '',
+              config: {}
+            };
+
+            // Merge config fields
+            if (question.config) {
+              Object.keys(question.config).forEach(key => {
+                translationData.config[key] = question.config[key];
+              });
+            }
+            if (existingTranslation.config) {
+              Object.keys(existingTranslation.config).forEach(key => {
+                translationData.config[key] = existingTranslation.config[key];
+              });
+            }
+            if (questionData.config) {
+              Object.entries(questionData.config).forEach(([key, value]) => {
+                if (typeof value === 'object' && value[locale]) {
+                  translationData.config[key] = value[locale];
+                }
+              });
+            }
+
+            await updateQuestionTranslation(questionId, locale, translationData);
+            successCount++;
+          } catch (error) {
+            console.error('Error updating translation:', error);
+            errorCount++;
+          }
+        }
+      }
+
+      await getAllQuestions(orgId, surveyId);
+      alert(`Upload complete!\nSuccessfully updated: ${successCount}\nErrors: ${errorCount}`);
+    } catch (error) {
+      console.error('Error uploading JSON:', error);
+      alert(`Failed to upload JSON: ${error.message}`);
+    } finally {
+      setUploadingFile(false);
+      event.target.value = '';
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -260,9 +871,79 @@ export default function TranslationUI() {
       <div className="bg-white border-b">
         <div className=" mx-auto px-6 py-4">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <Languages className="w-6 h-6 text-blue-600" />
-              <h1 className="text-2xl font-bold text-gray-900">Translation Manager - All Languages</h1>
+           
+            
+            {/* Download/Upload buttons */}
+            <div className="flex items-center gap-2">
+              <div className="relative group">
+                <button
+                  onClick={downloadTranslationsCSV}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  disabled={questions.length === 0}
+                >
+                  <Download className="w-4 h-4" />
+                  Download CSV
+                </button>
+              </div>
+
+              <div className="relative group">
+                <button
+                  onClick={downloadTranslationsJSON}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  disabled={questions.length === 0}
+                >
+                  <Download className="w-4 h-4" />
+                  Download JSON
+                </button>
+              </div>
+
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  id="csv-upload"
+                  disabled={uploadingFile}
+                />
+                <label
+                  htmlFor="csv-upload"
+                  className={`flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors cursor-pointer ${
+                    uploadingFile ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                >
+                  {uploadingFile ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4" />
+                  )}
+                  Upload CSV
+                </label>
+              </div>
+
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleJSONUpload}
+                  className="hidden"
+                  id="json-upload"
+                  disabled={uploadingFile}
+                />
+                <label
+                  htmlFor="json-upload"
+                  className={`flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors cursor-pointer ${
+                    uploadingFile ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                >
+                  {uploadingFile ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4" />
+                  )}
+                  Upload JSON
+                </label>
+              </div>
             </div>
           </div>
           
@@ -320,7 +1001,7 @@ export default function TranslationUI() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {filteredRows.map((row) => {
+             {filteredRows.map((row) => {
                   const question = questions.find(q => q.questionId === row.questionId);
                   
                   return (
@@ -333,7 +1014,8 @@ export default function TranslationUI() {
                       </td>
                       {availableLanguages.map(locale => {
                         const cellKey = getCellKey(row.questionId, row.field, row.subfield, locale);
-                        const value = getTranslationValue(question, row.field, row.subfield, locale);
+                        const rawValue = getTranslationValue(question, row.field, row.subfield, locale);
+                        const displayValue = formatValueForDisplay(rawValue);
                         const editing = isEditing(row.questionId, row.field, row.subfield, locale);
                         const saving = isSaving(row.questionId, row.field, row.subfield, locale);
                         
@@ -375,9 +1057,9 @@ export default function TranslationUI() {
                                   locale === 'en' 
                                     ? 'bg-blue-50 text-gray-700 font-medium' 
                                     : 'cursor-pointer hover:bg-blue-50'
-                                } ${!value && locale !== 'en' ? 'text-gray-400 italic' : ''}`}
+                                } ${!displayValue && locale !== 'en' ? 'text-gray-400 italic' : ''}`}
                               >
-                                {value || (locale === 'en' ? <span className="text-gray-400">empty</span> : 'Click to translate...')}
+                                {displayValue || (locale === 'en' ? <span className="text-gray-400">empty</span> : 'Click to translate...')}
                               </div>
                             )}
                           </td>

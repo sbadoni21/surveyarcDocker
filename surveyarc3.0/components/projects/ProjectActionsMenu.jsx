@@ -69,7 +69,7 @@ export function ProjectActionsMenu({
                     className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
                   >
                     <Edit className="w-4 h-4" />
-                    Edit Project
+                    Edit Directory
                   </button>
 
                   <button
@@ -85,7 +85,7 @@ export function ProjectActionsMenu({
                     className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
                   >
                     <Trash2 className="w-4 h-4" />
-                    Delete Project
+                    Delete Directory
                   </button>
                 </>
               )}

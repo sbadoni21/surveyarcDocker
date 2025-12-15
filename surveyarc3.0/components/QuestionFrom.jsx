@@ -29,7 +29,6 @@ import EmailConfig from "./QuestionsConfigComponents/EmailConfig";
 import OptionsConfig from "./QuestionsConfigComponents/OptionsConfig";
 import NpsQuestion from "./QuestionsConfigComponents/NPSQuestion";
 import OSATConfig from "./QuestionsConfigComponents/OSATConfig";
-
 import MaxDiffConfig from "./QuestionsConfigComponents/MaxDiffConfig";
 import ConjointConfig from "./QuestionsConfigComponents/ConjointConfig";
 import PriceSensitivityConfig from "./QuestionsConfigComponents/PriceSensitivityConfig";
@@ -52,14 +51,13 @@ import PersonaQuizConfig from "./QuestionsConfigComponents/PersonaQuizConfig";
 import MonadicConfig from "./QuestionsConfigComponents/MonadicConfig";
 import SequentialMonadicConfig from "./QuestionsConfigComponents/SequentialMonadicConfig";
 import ForcedExposureConfig from "./QuestionsConfigComponents/ForcedExposureConfig";
+import YesNoConfig from "./QuestionsConfigComponents/YesNoConfig";
+import AutoSumConfig from "./QuestionsConfigComponents/AutoSumConf";
 
 export default function QuestionConfigForm({
   type,
   config = {},
   updateConfig,
-  surveyId = null, // pass from QuestionEditorPanel
-  orgId = null, // pass from QuestionEditorPanel
-  questionId = null, // pass if available
 }) {
   const componentsMap = {
     [QUESTION_TYPES.CONTACT_EMAIL]: (
@@ -106,7 +104,9 @@ export default function QuestionConfigForm({
     ),
     [QUESTION_TYPES.MULTIPLE_CHOICE]: (
       <OptionsConfig config={config} updateConfig={updateConfig} />
-    ),
+    ),[QUESTION_TYPES.AUTO_SUM]: (
+  <AutoSumConfig config={config} updateConfig={updateConfig} />
+),
     [QUESTION_TYPES.DROPDOWN]: (
       <OptionsConfig
         config={config}
@@ -125,9 +125,7 @@ export default function QuestionConfigForm({
       />
     ),
     [QUESTION_TYPES.YES_NO]: (
-      <p className="dark:bg-[#1A1A1E] dark:text-[#96949C]">
-        No extra config required (Yes/No).
-      </p>
+      <YesNoConfig config={config} updateConfig={updateConfig} />
     ),
     [QUESTION_TYPES.SEGMENTATION_SELECTOR]: (
       <SegmentationSelectorConfig config={config} updateConfig={updateConfig} />

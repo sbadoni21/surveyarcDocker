@@ -8,12 +8,16 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
+from fastapi import UploadFile, File, Form
+from fastapi.responses import StreamingResponse
+from io import BytesIO
 
 from ..db import get_db
 from ..models.questions import Question
 from ..models.user import User
 from ..schemas.questions import (
     QuestionCreate,
+    CSVUploadResponse,
     QuestionUpdate,
     QuestionOut,
     BulkQuestionsRequest,
@@ -90,7 +94,11 @@ def survey_translation_coverage(
     survey_id: str,
     db: Session = Depends(get_db),
 ):
+    from ..models.survey import Survey
+    
+    survey = db.query(Survey).filter(Survey.survey_id == survey_id).first()
     questions = db.query(Question).filter(Question.survey_id == survey_id).all()
+    
     if not questions:
         raise HTTPException(404, "No questions found")
 
@@ -100,9 +108,14 @@ def survey_translation_coverage(
             locale_map[locale] = locale_map.get(locale, 0) + 1
 
     total = len(questions)
+    
+    # Get locales from survey metadata
+    survey_locales = (survey.meta_data or {}).get("locales", []) if survey else []
+    
     return {
         "survey_id": survey_id,
         "total_questions": total,
+        "available_locales": survey_locales,
         "coverage": {
             k: {
                 "count": v,
@@ -111,7 +124,7 @@ def survey_translation_coverage(
             for k, v in locale_map.items()
         },
     }
-
+# In your questions.py routes file
 
 @router.post(
     "/surveys/{survey_id}/translations/initialize",
@@ -122,6 +135,14 @@ def initialize_survey_translations(
     db: Session = Depends(get_db),
 ):
     """Initialize translations for all questions in a survey"""
+    from ..models.survey import Survey
+    
+    # Get survey first
+    survey = db.query(Survey).filter(Survey.survey_id == payload.survey_id).first()
+    if not survey:
+        raise HTTPException(404, "Survey not found")
+    
+    # Get all questions
     questions = db.query(Question).filter(
         Question.survey_id == payload.survey_id
     ).all()
@@ -130,35 +151,55 @@ def initialize_survey_translations(
         raise HTTPException(404, "No questions found")
 
     updated = 0
+    from sqlalchemy.orm.attributes import flag_modified
+    
     for q in questions:
         translations = q.translations or {}
 
-        # Skip if translation already exists
-        if payload.locale in translations:
-            continue
+        # 1️⃣ ALWAYS ensure "en" exists first
+        if "en" not in translations:
+            translations["en"] = create_blank_translation_structure(q, "en")
+            updated += 1
 
-        # Create the translation structure with source values
-        translations[payload.locale] = create_blank_translation_structure(
-            q, payload.locale
-        )
+        # 2️⃣ Add the requested locale (skip if already exists)
+        if payload.locale != "en" and payload.locale not in translations:
+            translations[payload.locale] = create_blank_translation_structure(q, payload.locale)
+            updated += 1
         
         # Mark as modified for SQLAlchemy
-        from sqlalchemy.orm.attributes import flag_modified
         q.translations = translations
         flag_modified(q, "translations")
-        
         q.updated_at = datetime.now(timezone.utc)
-        updated += 1
 
     db.commit()
+
+    # 3️⃣ Update survey metadata with available locales
+    all_locales = set(["en"])  # Always include English
+    for q in questions:
+        if q.translations:
+            all_locales.update(q.translations.keys())
+    
+    # Update survey meta_data
+    meta_data = survey.meta_data or {}
+    meta_data["locales"] = sorted(list(all_locales))
+    
+    survey.meta_data = meta_data
+    flag_modified(survey, "meta_data")
+    survey.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(survey)
+
+    # Invalidate caches
+    from ..services.redis_survey_service import RedisSurveyService
+    RedisSurveyService.invalidate_survey(payload.survey_id)
+    RedisQuestionService.remove_from_list(payload.survey_id)
 
     return {
         "success": True,
         "locale": payload.locale,
         "questions_updated": updated,
-        "message": f"Initialized {payload.locale} translations for {updated} questions",
+        "message": f"Initialized {payload.locale} translations for {updated} questions. Available locales: {', '.join(sorted(all_locales))}",
     }
-
 
 # ============================================================
 # QUESTION CRUD
@@ -540,44 +581,48 @@ def resync_survey_translations(
     Backfill missing translations for newly added questions
     without touching existing translations.
     """
+    from ..models.survey import Survey
+    from sqlalchemy.orm.attributes import flag_modified
 
-    questions = (
-        db.query(Question)
-        .filter(Question.survey_id == survey_id)
-        .all()
-    )
+    # Get survey
+    survey = db.query(Survey).filter(Survey.survey_id == survey_id).first()
+    if not survey:
+        raise HTTPException(404, "Survey not found")
 
+    questions = db.query(Question).filter(Question.survey_id == survey_id).all()
     if not questions:
         raise HTTPException(404, "No questions found")
 
     # 1️⃣ Collect all locales used in survey
-    all_locales = set()
+    all_locales = set(["en"])  # Always include English
     for q in questions:
         for locale in (q.translations or {}).keys():
             all_locales.add(locale)
 
-    if not all_locales:
+    if len(all_locales) == 1:  # Only "en"
         return {
             "success": True,
             "survey_id": survey_id,
-            "locales": [],
+            "locales": ["en"],
             "questions_updated": 0,
         }
 
     updated = 0
-
-    from sqlalchemy.orm.attributes import flag_modified
 
     # 2️⃣ Backfill missing locales per question
     for q in questions:
         translations = q.translations or {}
         changed = False
 
+        # Ensure "en" exists first
+        if "en" not in translations:
+            translations["en"] = create_blank_translation_structure(q, "en")
+            changed = True
+
+        # Add other locales
         for locale in all_locales:
-            if locale not in translations:
-                translations[locale] = create_blank_translation_structure(
-                    q, locale
-                )
+            if locale != "en" and locale not in translations:
+                translations[locale] = create_blank_translation_structure(q, locale)
                 changed = True
 
         if changed:
@@ -586,12 +631,22 @@ def resync_survey_translations(
             q.updated_at = datetime.now(timezone.utc)
             updated += 1
 
-            RedisQuestionService.invalidate_question(
-                q.survey_id, q.question_id
-            )
+            RedisQuestionService.invalidate_question(q.survey_id, q.question_id)
 
     db.commit()
 
+    # 3️⃣ Update survey metadata
+    meta_data = survey.meta_data or {}
+    meta_data["locales"] = sorted(list(all_locales))
+    
+    survey.meta_data = meta_data
+    flag_modified(survey, "meta_data")
+    survey.updated_at = datetime.now(timezone.utc)
+    db.commit()
+
+    # Invalidate caches
+    from ..services.redis_survey_service import RedisSurveyService
+    RedisSurveyService.invalidate_survey(survey_id)
     RedisQuestionService.remove_from_list(survey_id)
 
     return {
@@ -600,3 +655,154 @@ def resync_survey_translations(
         "locales": sorted(all_locales),
         "questions_updated": updated,
     }
+
+@router.post(
+    "/surveys/{survey_id}/translations/upload-csv",
+    response_model=CSVUploadResponse
+)
+async def upload_translation_csv(
+    survey_id: str,
+    file: UploadFile = File(...),
+    dry_run: bool = Form(False),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Upload CSV file with translations for bulk update
+    
+    Expected CSV format:
+    ```
+    Resource,Type,en,es,fr
+    Q198246,label,What is your favorite fruit?,¿Cuál es tu fruta favorita?,Quel est votre fruit préféré?
+    Q198246,description,Help text here,Texto de ayuda,Texte d'aide
+    Q198246,config.placeholder,Select option,Selecciona opción,Sélectionnez
+    Q734976,label,Enter your thoughts,Ingresa tus comentarios,Entrez vos pensées
+    ```
+    
+    Parameters:
+    - file: CSV file upload
+    - dry_run: If true, validate only without saving
+    - survey_id: Target survey
+    
+    Returns summary of upload operation
+    """
+    
+    # Validate file type
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(400, "File must be a CSV")
+    
+    # Read file content
+    try:
+        content = await file.read()
+        csv_content = content.decode('utf-8')
+    except Exception as e:
+        raise HTTPException(400, f"Failed to read CSV file: {str(e)}")
+    
+    # Import the utility function
+    from ..utils.translation_utils import process_csv_translation_upload
+    
+    # Process upload
+    result = process_csv_translation_upload(
+        csv_content=csv_content,
+        survey_id=survey_id,
+        db=db,
+        dry_run=dry_run
+    )
+    
+    if not result["success"]:
+        raise HTTPException(400, result.get("error", "Upload failed"))
+    
+    return result
+
+
+# ============================================================
+# CSV DOWNLOAD/EXPORT ENDPOINT
+# ============================================================
+
+@router.get("/surveys/{survey_id}/translations/export-csv")
+def export_translation_csv(
+    survey_id: str,
+    include_values: bool = True,
+    locales: Optional[str] = Query(None, description="Comma-separated locales, e.g., 'en,es,fr'"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Download CSV template for translation upload
+    
+    Parameters:
+    - survey_id: Target survey
+    - include_values: If true, include existing translations (default: true)
+    - locales: Comma-separated list of locales to include (optional)
+    
+    Returns CSV file download
+    """
+    
+    from ..utils.translation_utils import generate_translation_csv_template
+    
+    # Parse locales
+    target_locales = None
+    if locales:
+        target_locales = [l.strip() for l in locales.split(",") if l.strip()]
+    
+    # Generate CSV
+    csv_content = generate_translation_csv_template(
+        survey_id=survey_id,
+        db=db,
+        include_values=include_values,
+        target_locales=target_locales
+    )
+    
+    # Return as downloadable file
+    output = BytesIO()
+    output.write(csv_content.encode('utf-8'))
+    output.seek(0)
+    
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename=translations_{survey_id}.csv"
+        }
+    )
+
+
+# ============================================================
+# CSV VALIDATION ENDPOINT (DRY RUN)
+# ============================================================
+
+@router.post("/surveys/{survey_id}/translations/validate-csv")
+async def validate_translation_csv(
+    survey_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Validate CSV file without applying changes
+    Same as upload with dry_run=true
+    """
+    
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(400, "File must be a CSV")
+    
+    try:
+        content = await file.read()
+        csv_content = content.decode('utf-8')
+    except Exception as e:
+        raise HTTPException(400, f"Failed to read CSV file: {str(e)}")
+    
+    from ..utils.translation_utils import process_csv_translation_upload
+    
+    result = process_csv_translation_upload(
+        csv_content=csv_content,
+        survey_id=survey_id,
+        db=db,
+        dry_run=True  # Always dry run for validation
+    )
+    
+    return {
+        **result,
+        "message": "Validation complete. Use /upload-csv with dry_run=false to apply changes."
+    }
+

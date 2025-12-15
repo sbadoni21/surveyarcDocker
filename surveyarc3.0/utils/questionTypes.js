@@ -31,6 +31,14 @@ export const ICONS_MAP = {
       height="22"
     />
   ),
+    AUTO_SUM: (
+    <Icon
+      color="#4B4187"
+    icon="mdi:account-star-outline"
+      width="22"
+      height="22"
+    />
+  ),
     BAYES_ACQ: (
     <Icon color="#35667D" icon="mdi:chart-bell-curve-cumulative" width="22" height="22" />
   ),LIKERT: (

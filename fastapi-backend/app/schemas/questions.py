@@ -66,3 +66,12 @@ class ResyncTranslationResponse(BaseModel):
     survey_id: str
     locales: List[str]
     questions_updated: int
+
+class CSVUploadResponse(BaseModel):
+    success: bool
+    dry_run: bool = False
+    detected_locales: list[str] = []
+    questions_processed: int = 0
+    total_updates: int = 0
+    details: list[dict] = []
+    error: Optional[str] = None

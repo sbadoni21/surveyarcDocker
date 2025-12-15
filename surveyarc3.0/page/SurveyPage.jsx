@@ -1,49 +1,36 @@
 "use client";
 import React, { useState, useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { TableSortLabel } from "@mui/material";
 import { useSurvey } from "@/providers/surveyPProvider";
 import { useQuestion } from "@/providers/questionPProvider";
-import AccessTimeIcon from "@mui/icons-material/AccessTime";
-import MoreVertIcon from "@mui/icons-material/MoreVert";
-import MenuItem from "@mui/material/MenuItem";
 import SurveyFormComponent from "@/components/SurveyFormComponent";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
-  TextField,
-  Box,
-  IconButton,
-  Typography,
-  InputAdornment,
-  Button,
-  Menu,
-  TablePagination,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-} from "@mui/material";
-import {
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  Search as SearchIcon,
-  Clear as ClearIcon,
-  Visibility as ViewIcon,
-} from "@mui/icons-material";
 import SurveyResponsePopup from "@/components/SurveyResponsePopup";
-import { FiPlus } from "react-icons/fi";
-import { Icon } from "@iconify/react";
-import { FaSpinner } from "react-icons/fa";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import { TemplateSelectionPopup } from "@/components/surveys/TemplateSelectionPopup";
 import { createSurveyFromTemplate } from "@/utils/createSurveyFromTemplate";
 import { format, formatDistanceToNow } from "date-fns";
+
+// Icons (using Lucide React or similar)
+import {
+  Search,
+  Plus,
+  MoreHorizontal,
+  Eye,
+  Edit2,
+  Trash2,
+  FileText,
+  ChevronDown,
+  ChevronUp,
+  X,
+  Copy,
+  Archive,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  Download,
+  Share2,
+  Settings,
+} from "lucide-react";
 
 export default function SurveyPage() {
   const [name, setName] = useState("");
@@ -51,11 +38,10 @@ export default function SurveyPage() {
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [searchText, setSearchText] = useState("");
-  const [orderBy, setOrderBy] = useState("name");
-  const [order, setOrder] = useState("asc");
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [orderBy, setOrderBy] = useState("updated_at");
+  const [order, setOrder] = useState("desc");
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(6);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   
   // Template-related states
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -83,9 +69,9 @@ export default function SurveyPage() {
   } = useSurvey();
 
   const { saveQuestion } = useQuestion();
-console.log(surveys)
+
   const [surveysWithCounts, setSurveysWithCounts] = useState([]);
-  const [anchorEl, setAnchorEl] = useState(null);
+  const [openMenuId, setOpenMenuId] = useState(null);
   const [selectedSurveyId, setSelectedSurveyId] = useState(null);
   const [responseData, setResponseData] = useState([]);
   const [openPopup, setOpenPopup] = useState(false);
@@ -117,17 +103,6 @@ console.log(surveys)
     };
     fetchCounts();
   }, [surveys]);
-
-
-  const openMenuFor = (event, surveyId) => {
-    setAnchorEl(event.currentTarget);
-    setSelectedSurveyId(surveyId);
-  };
-
-  const closeMenu = () => {
-    setAnchorEl(null);
-    setSelectedSurveyId(null);
-  };
 
   const handleRequestSort = (property) => {
     const isAsc = orderBy === property && order === "asc";
@@ -165,14 +140,7 @@ console.log(surveys)
     return filteredAndSortedSurveys.slice(startIndex, endIndex);
   }, [filteredAndSortedSurveys, page, rowsPerPage]);
 
-  const handleChangePage = (event, newPage) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (event) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
-  };
+  const totalPages = Math.ceil(filteredAndSortedSurveys.length / rowsPerPage);
 
   useEffect(() => {
     setPage(0);
@@ -182,7 +150,6 @@ console.log(surveys)
     router.push(`/postgres-org/${orgId}/dashboard/projects/${projectId}/${surveyId}`);
   };
 
-  // Handle creating survey from scratch
   const handleCreateFromScratch = async () => {
     if (!surveyNameForTemplate.trim()) {
       alert("Please enter a survey name");
@@ -205,7 +172,6 @@ console.log(surveys)
       setSurveyNameForTemplate("");
       setShowCreateDialog(false);
       
-      // Navigate to the new survey
       if (newSurvey?.survey_id || newSurvey?.surveyId) {
         router.push(`/postgres-org/${orgId}/dashboard/projects/${projectId}/${newSurvey.survey_id || newSurvey.surveyId}`);
       }
@@ -219,16 +185,13 @@ console.log(surveys)
     }
   };
 
-  // Handle template selection
   const handleSelectTemplate = async (template) => {
     if (!template) {
-      // User chose "Start Blank" from template popup
       handleCreateFromScratch();
       return;
     }
-console.log(surveyNameForTemplate)
-    if (!surveyNameForTemplate.trim()) {
 
+    if (!surveyNameForTemplate.trim()) {
       alert("Please enter a survey name");
       return;
     }
@@ -237,17 +200,14 @@ console.log(surveyNameForTemplate)
     try {
       const result = await createSurveyFromTemplate(
         template,
-
         orgId,
         projectId,
         uid,
         { create: saveSurvey, update: updateSurvey },
         { create: saveQuestion },
-              surveyNameForTemplate,  // Pass the name here
-
+        surveyNameForTemplate,
       );
 
-      // Update the survey name
       if (result?.survey_id) {
         await updateSurvey(orgId, result.survey_id, {
           name: surveyNameForTemplate,
@@ -258,7 +218,6 @@ console.log(surveyNameForTemplate)
       setShowTemplatePopup(false);
       setShowCreateDialog(false);
 
-      // Navigate to the new survey
       if (result?.survey_id) {
         router.push(`/postgres-org/${orgId}/dashboard/projects/${projectId}/${result.survey_id}`);
       }
@@ -272,13 +231,11 @@ console.log(surveyNameForTemplate)
     }
   };
 
-  // Open create dialog
   const handleOpenCreateDialog = () => {
     setSurveyNameForTemplate("");
     setShowCreateDialog(true);
   };
 
-  // Open template selection
   const handleUseTemplate = () => {
     if (!surveyNameForTemplate.trim()) {
       alert("Please enter a survey name first");
@@ -286,50 +243,6 @@ console.log(surveyNameForTemplate)
     }
     setShowCreateDialog(false);
     setShowTemplatePopup(true);
-  };
-
-  const handleSubmit = async () => {
-    if (!name.trim()) return alert("Please enter a survey name");
-    if (!time.trim()) return alert("Please enter survey duration");
-    setLoading(true);
-    try {
-      if (isEditing && editSurveyId) {
-        await updateSurvey(orgId, editSurveyId, {
-          name,
-          time,
-          updatedBy: uid,
-        });
-        alert("Survey updated!");
-      } else {
-        const surveyData = {
-          name,
-          time,
-          orgId,
-          projectId,
-          createdBy: uid,
-        };
-        await saveSurvey(surveyData);
-      }
-
-      setName("");
-      setTime("10 min");
-      setIsEditing(false);
-      setEditSurveyId(null);
-      setShowForm(false);
-    } catch (error) {
-      console.error(error);
-      alert("Something went wrong.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCancel = () => {
-    setName("");
-    setTime("10 min");
-    setIsEditing(false);
-    setEditSurveyId(null);
-    setShowForm(false);
   };
 
   const deleteSurvey = async (id) => {
@@ -355,166 +268,387 @@ console.log(surveyNameForTemplate)
     setShowForm(true);
   };
 
-  const clearSearch = () => {
-    setSearchText("");
+  const getStatusConfig = (status) => {
+    const configs = {
+      active: {
+        bg: "bg-emerald-50 dark:bg-emerald-950/30",
+        text: "text-emerald-700 dark:text-emerald-400",
+        icon: CheckCircle2,
+        label: "Active"
+      },
+      published: {
+        bg: "bg-orange-50 dark:bg-orange-950/30",
+        text: "text-orange-700 dark:text-orange-400",
+        icon: CheckCircle2,
+        label: "Published"
+      },
+      draft: {
+        bg: "bg-amber-50 dark:bg-amber-950/30",
+        text: "text-amber-700 dark:text-amber-400",
+        icon: Clock,
+        label: "Draft"
+      },
+      archived: {
+        bg: "bg-gray-50 dark:bg-gray-900/30",
+        text: "text-gray-700 dark:text-gray-400",
+        icon: Archive,
+        label: "Archived"
+      },
+      test: {
+        bg: "bg-purple-50 dark:bg-purple-950/30",
+        text: "text-purple-700 dark:text-purple-400",
+        icon: AlertCircle,
+        label: "Test"
+      }
+    };
+    return configs[status] || configs.draft;
   };
 
   return (
-    <div
-      className="mx-auto px-4 py-6 min-h-screen transition-colors duration-300 dark:bg-black"
-      style={{
-        color: "var(--text-primary)",
-      }}
-    >
-      <header className="mb-8">
-        <div className="flex justify-between items-start flex-wrap gap-4">
-          <h1 className="text-2xl font-semibold text-black dark:text-[#CBC9DE]">
-            Surveys <br />
-            <span className="text-base font-normal text-[#5B596A]">
-              Project: {projectId}
-            </span>
-          </h1>
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      {/* Header */}
+      <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+        <div className="mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                Surveys
+              </h1>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Directory: {projectId}
+              </p>
+            </div>
+            
+            <button
+              onClick={handleOpenCreateDialog}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg transition-colors shadow-sm"
+            >
+              <Plus className="w-5 h-5" />
+              Create Survey
+            </button>
+          </div>
 
-          <div className="flex flex-1 items-center justify-end gap-4 flex-wrap sm:flex-nowrap">
-            <div className="w-full sm:w-[80%]">
-              <TextField
-                fullWidth
-                variant="outlined"
-                placeholder="Search surveys by name or duration..."
+          {/* Search Bar */}
+          <div className="mt-6">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search surveys..."
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
-                sx={{
-                  "& .MuiOutlinedInput-root": {
-                    borderRadius: "8px",
-                    backgroundColor: isDarkMode ? "#1A1A1E" : "#ffffff",
-                    color: isDarkMode ? "#CBC9DE" : "#000000",
-                  },
-                  "& .MuiOutlinedInput-notchedOutline": {
-                    borderColor: isDarkMode ? "#2e2e32" : "#e0e0e0",
-                  },
-                  "& .MuiInputAdornment-root, & .MuiSvgIcon-root": {
-                    color: isDarkMode ? "#5B596A" : "#757575",
-                  },
-                  input: {
-                    color: isDarkMode ? "#CBC9DE" : "#000000",
-                  },
-                }}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon />
-                    </InputAdornment>
-                  ),
-                  endAdornment: searchText && (
-                    <InputAdornment position="end">
-                      <IconButton onClick={clearSearch} size="small">
-                        <ClearIcon />
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                }}
+                className="w-full pl-10 pr-10 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
               />
+              {searchText && (
+                <button
+                  onClick={() => setSearchText("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
             </div>
-
-            <Button
-              variant="contained"
-              onClick={handleOpenCreateDialog}
-              className="whitespace-nowrap"
-              size="large"
-              sx={{
-                height: "54px",
-                backgroundColor: "var(--primary)",
-                color: "#ffffff",
-                fontWeight: 600,
-                borderRadius: "8px",
-                textTransform: "none",
-                paddingX: "1.5rem",
-                display: "flex",
-                alignItems: "center",
-                gap: "0.5rem",
-                "&:hover": {
-                  backgroundColor: "var(--primary-hover)",
-                },
-              }}
-            >
-              <FiPlus className="text-2xl" />
-              Create Survey
-            </Button>
           </div>
         </div>
-      </header>
+      </div>
 
-      {/* Create Survey Dialog */}
-      <Dialog 
-        open={showCreateDialog} 
-        onClose={() => setShowCreateDialog(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>
-          <Typography variant="h6" fontWeight={600}>
-            Create New Survey
-          </Typography>
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ mt: 2 }}>
-            <TextField
-              fullWidth
-              label="Survey Name"
-              variant="outlined"
-              value={surveyNameForTemplate}
-              onChange={(e) => setSurveyNameForTemplate(e.target.value)}
-              placeholder="Enter survey name..."
-              autoFocus
-            />
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Choose how you want to start your survey
-            </Typography>
-          </Box>
-        </DialogContent>
-        <DialogActions sx={{ p: 3, gap: 2 }}>
-          <Button
-            onClick={() => setShowCreateDialog(false)}
-            variant="outlined"
-            disabled={loading}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleCreateFromScratch}
-            variant="outlined"
-            disabled={loading || !surveyNameForTemplate.trim()}
-          >
-            {loading ? <FaSpinner className="animate-spin" /> : "Start from Scratch"}
-          </Button>
-          <Button
-            onClick={handleUseTemplate}
-            variant="contained"
-            disabled={loading || !surveyNameForTemplate.trim()}
-            sx={{
-              backgroundColor: "var(--primary)",
-              "&:hover": {
-                backgroundColor: "var(--primary-hover)",
-              },
-            }}
-          >
-            {loading ? <FaSpinner className="animate-spin" /> : "Use Template"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* Main Content */}
+      <div className="mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {surveyLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-orange-600"></div>
+          </div>
+        ) : surveysWithCounts?.length === 0 ? (
+          <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-12 text-center">
+            <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+              No surveys yet
+            </h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-6">
+              Get started by creating your first survey
+            </p>
+            <button
+              onClick={handleOpenCreateDialog}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg transition-colors"
+            >
+              <Plus className="w-5 h-5" />
+              Create Survey
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Table */}
+            <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-800">
+                      {[
+                        { key: "name", label: "Survey Name" },
+                        { key: "survey_id", label: "Survey ID" },
+                        { key: "status", label: "Status" },
+                        { key: "updated_at", label: "Last Modified" },
+                        { key: "actions", label: "Actions" }
+                      ].map((col) => (
+                        <th
+                          key={col.key}
+                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                        >
+                          {col.key !== "actions" ? (
+                            <button
+                              onClick={() => handleRequestSort(col.key)}
+                              className="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-300"
+                            >
+                              {col.label}
+                              {orderBy === col.key && (
+                                order === "asc" ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
+                              )}
+                            </button>
+                          ) : (
+                            col.label
+                          )}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
+                    {paginatedSurveys.map((survey) => {
+                      const statusConfig = getStatusConfig(survey.status);
+                      const StatusIcon = statusConfig.icon;
+                      
+                      return (
+                        <tr
+                          key={survey.surveyId}
+                          className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                        >
+                          <td className="px-6 py-4">
+                            <button
+                              onClick={() => handleClick(survey.surveyId)}
+                              className="flex items-center gap-3 group"
+                            >
+                              <div className="flex-shrink-0 w-10 h-10 bg-orange-50 dark:bg-orange-950/30 rounded-lg flex items-center justify-center">
+                                <FileText className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                              </div>
+                              <div className="text-left">
+                                <div className="font-medium text-gray-900 dark:text-gray-100 group-hover:text-orange-600 dark:group-hover:text-orange-400">
+                                  {survey.name}
+                                </div>
+                              </div>
+                            </button>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-sm text-gray-600 dark:text-gray-400 font-mono">
+                              {survey.surveyId}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig.bg} ${statusConfig.text}`}>
+                              <StatusIcon className="w-3.5 h-3.5" />
+                              {statusConfig.label}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-sm text-gray-600 dark:text-gray-400">
+                              {survey.updated_at
+                                ? formatDistanceToNow(new Date(survey.updated_at), { addSuffix: true })
+                                : "N/A"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="relative">
+                              <button
+                                onClick={() => setOpenMenuId(openMenuId === survey.surveyId ? null : survey.surveyId)}
+                                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                              >
+                                <MoreHorizontal className="w-5 h-5 text-gray-500" />
+                              </button>
+                              
+                              {openMenuId === survey.surveyId && (
+                                <>
+                                  <div
+                                    className="fixed inset-0 z-10"
+                                    onClick={() => setOpenMenuId(null)}
+                                  />
+                                  <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-20">
+                                    <button
+                                      onClick={() => {
+                                        handleClick(survey.surveyId);
+                                        setOpenMenuId(null);
+                                      }}
+                                      className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 flex items-center gap-3"
+                                    >
+                                      <Eye className="w-4 h-4" />
+                                      View Survey
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        handleEdit(survey);
+                                        setOpenMenuId(null);
+                                      }}
+                                      className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 flex items-center gap-3"
+                                    >
+                                      <Edit2 className="w-4 h-4" />
+                                      Edit Details
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(survey.surveyId);
+                                        setOpenMenuId(null);
+                                      }}
+                                      className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 flex items-center gap-3"
+                                    >
+                                      <Copy className="w-4 h-4" />
+                                      Copy Survey ID
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        // Handle share
+                                        setOpenMenuId(null);
+                                      }}
+                                      className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 flex items-center gap-3"
+                                    >
+                                      <Share2 className="w-4 h-4" />
+                                      Share Survey
+                                    </button>
+                                    
+                                    <div className="my-1 border-t border-gray-200 dark:border-gray-700" />
+                                    
+                                    <div className="px-3 py-2">
+                                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Change Status</p>
+                                      {["draft", "published", "archived", "test"].map((status) => (
+                                        survey.status !== status && (
+                                          <button
+                                            key={status}
+                                            onClick={() => {
+                                              updateSurvey(orgId, survey.surveyId, { status });
+                                              setOpenMenuId(null);
+                                            }}
+                                            className="w-full px-3 py-1.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded flex items-center gap-2 mb-1"
+                                          >
+                                            {React.createElement(getStatusConfig(status).icon, { className: "w-3.5 h-3.5" })}
+                                            {getStatusConfig(status).label}
+                                          </button>
+                                        )
+                                      ))}
+                                    </div>
+                                    
+                                    <div className="my-1 border-t border-gray-200 dark:border-gray-700" />
+                                    
+                                    <button
+                                      onClick={() => {
+                                        deleteSurvey(survey.surveyId);
+                                        setOpenMenuId(null);
+                                      }}
+                                      className="w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 flex items-center gap-3"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                      Delete Survey
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
 
-      {/* Template Selection Popup */}
+              {/* Pagination */}
+              <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between">
+                <div className="text-sm text-gray-700 dark:text-gray-300">
+                  Showing {page * rowsPerPage + 1} to {Math.min((page + 1) * rowsPerPage, filteredAndSortedSurveys.length)} of {filteredAndSortedSurveys.length} results
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPage(Math.max(0, page - 1))}
+                    disabled={page === 0}
+                    className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-sm text-gray-700 dark:text-gray-300">
+                    Page {page + 1} of {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
+                    disabled={page >= totalPages - 1}
+                    className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Create Survey Modal */}
+      {showCreateDialog && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-800">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+                Create New Survey
+              </h2>
+            </div>
+            <div className="p-6">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Survey Name
+              </label>
+              <input
+                type="text"
+                value={surveyNameForTemplate}
+                onChange={(e) => setSurveyNameForTemplate(e.target.value)}
+                placeholder="Enter survey name..."
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                autoFocus
+              />
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                Choose how you want to start your survey
+              </p>
+            </div>
+            <div className="px-6 pb-6 flex gap-3">
+              <button
+                onClick={() => setShowCreateDialog(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateFromScratch}
+                className="flex-1 px-4 py-2 border border-orange-600 text-orange-600 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-950/30"
+                disabled={loading || !surveyNameForTemplate.trim()}
+              >
+                From Scratch
+              </button>
+              <button
+                onClick={handleUseTemplate}
+                className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+                disabled={loading || !surveyNameForTemplate.trim()}
+              >
+                Use Template
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Keep existing components */}
       <TemplateSelectionPopup
         isOpen={showTemplatePopup}
         onClose={() => {
           setShowTemplatePopup(false);
-          setShowCreateDialog(true); // Go back to create dialog
+          setShowCreateDialog(true);
         }}
         onSelectTemplate={handleSelectTemplate}
         orgId={orgId}
         projectId={projectId}
-          name={surveyNameForTemplate}   // ADD THIS
-
+        name={surveyNameForTemplate}
       />
 
       <SurveyFormComponent
@@ -525,365 +659,39 @@ console.log(surveyNameForTemplate)
         setTime={setTime}
         loading={loading}
         isEditing={isEditing}
-        handleSubmit={handleSubmit}
-        handleCancel={handleCancel}
+        handleSubmit={async () => {
+          if (!name.trim()) return alert("Please enter a survey name");
+          if (!time.trim()) return alert("Please enter survey duration");
+          setLoading(true);
+          try {
+            if (isEditing && editSurveyId) {
+              await updateSurvey(orgId, editSurveyId, {
+                name,
+                time,
+                updatedBy: uid,
+              });
+              alert("Survey updated!");
+            }
+            setName("");
+            setTime("10 min");
+            setIsEditing(false);
+            setEditSurveyId(null);
+            setShowForm(false);
+          } catch (error) {
+            console.error(error);
+            alert("Something went wrong.");
+          } finally {
+            setLoading(false);
+          }
+        }}
+        handleCancel={() => {
+          setName("");
+          setTime("10 min");
+          setIsEditing(false);
+          setEditSurveyId(null);
+          setShowForm(false);
+        }}
       />
-
-      {surveyLoading ? (
-        <div className="flex justify-center items-center py-12">
-          <FaSpinner className="animate-spin text-orange-500 dark:text-amber-300 text-4xl" />
-        </div>
-      ) : surveysWithCounts?.length === 0 ? (
-        <Paper
-          elevation={0}
-          sx={{
-            p: 4,
-            textAlign: "center",
-            backgroundColor: isDarkMode ? "#1A1A1E" : "#ffffff",
-            borderRadius: "12px",
-          }}
-        >
-          <Typography variant="h6" sx={{ color: "#CBC9DE", mb: 1 }}>
-            No surveys added yet.
-          </Typography>
-          <Typography variant="body2" sx={{ color: "#96949C" }}>
-            Click the "Create Survey" button to get started.
-          </Typography>
-        </Paper>
-      ) : (
-        <Paper
-          elevation={0}
-          sx={{
-            backgroundColor: isDarkMode ? "#1A1A1E" : "#ffffff",
-            borderRadius: "12px",
-            overflow: "hidden",
-          }}
-        >
-          <TableContainer
-            sx={{
-              backgroundColor: isDarkMode ? "#1A1A1E" : "#ffffff",
-              borderRadius: 2,
-              p: 1,
-            }}
-          >
-            <Table>
-              <TableHead>
-                <TableRow>
-                  {[
-                    { key: "name", label: "Survey Name" },
-                    { key: "survey_id", label: "Survey ID" },
-                    { key: "status", label: "Status" },
-                    { key: "updated_at", label: "Last modified" },
-                    { key: "actions", label: "Actions" },
-                  ].map((col, idx) => (
-                    <TableCell
-                      key={col.key}
-                      sx={{
-                        backgroundColor: isDarkMode ? "#1A1A1E" : "#ffffff",
-                        borderBottom: "none",
-                        color: isDarkMode ? "#5B596A" : "#96949C",
-                        fontWeight: 500,
-                        ...(idx === 0 && { minWidth: 200 }),
-                      }}
-                      align={col.key === "actions" ? "center" : "left"}
-                    >
-                      {col.key !== "actions" ? (
-                        <TableSortLabel
-                          active={orderBy === col.key}
-                          direction={orderBy === col.key ? order : "asc"}
-                          onClick={() => handleRequestSort(col.key)}
-                          sx={{
-                            color: isDarkMode ? "#5B596A" : "#96949C",
-                            "&:hover": {
-                              color: isDarkMode ? "#5B596A" : "#96949C",
-                            },
-                            "&.Mui-active": {
-                              color: isDarkMode ? "#ffffff" : "#000000",
-                              "& .MuiTableSortLabel-icon": {
-                                color: isDarkMode ? "#ffffff" : "#000000",
-                              },
-                            },
-                            "& .MuiTableSortLabel-icon": {
-                              color: isDarkMode ? "#5B596A" : "#96949C",
-                            },
-                          }}
-                        >
-                          {col.label}
-                        </TableSortLabel>
-                      ) : (
-                        col.label
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableHead>
-
-              <TableBody>
-                {paginatedSurveys.length > 0 ? (
-                  paginatedSurveys.map((survey, index) => (
-                    <TableRow
-                      key={index}
-                      hover
-                      sx={{
-                        "&:hover": { backgroundColor: "#f9fafb" },
-                      }}
-                    >
-                      <TableCell
-                        sx={{
-                          borderBottom: "none",
-                        }}
-                        onClick={() => handleClick(survey.surveyId)}
-                        className="cursor-pointer"
-                      >
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <div className="p-1.5 rounded-md dark:bg-[#4F3E32] bg-[#FFEEDF]">
-                            <Icon
-                              icon="bx:file"
-                              width="20"
-                              height="20"
-                              className="text-[#CD7323]"
-                              fontSize="small"
-                            />
-                          </div>
-                          <Typography
-                            fontWeight={600}
-                            fontSize={14}
-                            sx={{
-                              color: isDarkMode ? "#96949C" : "text.primary",
-                            }}
-                          >
-                            <span className="hover:underline">
-                              {survey.name}
-                            </span>
-                          </Typography>
-                        </Box>
-                      </TableCell>
-
-                      <TableCell
-                        sx={{
-                          borderBottom: "none",
-                        }}
-                      >
-                        <Typography
-                          fontSize={14}
-                          sx={{
-                            color: isDarkMode ? "#96949C" : "text.secondary",
-                          }}
-                        >
-                          {survey.surveyId}
-                        </Typography>
-                      </TableCell>
-
-                      <TableCell
-                        sx={{
-                          borderBottom: "none",
-                        }}
-                      >
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            survey?.status === "active"
-                              ? "bg-[#DCFCE7] dark:bg-[#2B3336] text-[#1B803D]"
-                              : survey?.status === "completed"
-                              ? "bg-[#1E51B41F] dark:bg-[#1E51B41F] text-[#1E51B4]"
-                              : "bg-[#FFEEDF] dark:bg-[#4F3E32]  text-[#CD7323]"
-                          }`}
-                        >
-                          {survey?.status?.charAt(0).toUpperCase() +
-                            survey?.status?.slice(1)}
-                        </span>
-                      </TableCell>
-
-      
-                      <TableCell
-                        sx={{
-                          borderBottom: "none",
-                        }}
-                      >
-                        <Typography
-                          fontSize={14}
-                          sx={{
-                            color: isDarkMode ? "#96949C" : "text.secondary",
-                          }}
-                        >
-                        <Typography
-  fontSize={14}
-  title={
-    survey.updated_at
-      ? format(new Date(survey.updated_at), "PPpp")
-      : ""
-  }
->
-  {survey.updated_at
-    ? formatDistanceToNow(new Date(survey.updated_at), { addSuffix: true })
-    : "N/A"}
-</Typography>
-
-
-                        </Typography>
-                      </TableCell>
-
-                      <TableCell
-                        sx={{
-                          borderBottom: "none",
-                        }}
-                        align="center"
-                      >
-                        <IconButton
-                          onClick={(e) => openMenuFor(e, survey.surveyId)}
-                        >
-                          <MoreVertIcon className="dark:text-[#CBC9DE]" />
-                        </IconButton>
-                        <Menu
-                          anchorEl={anchorEl}
-                          open={
-                            Boolean(anchorEl) &&
-                            selectedSurveyId === survey.surveyId
-                          }
-                          onClose={closeMenu}
-                          anchorOrigin={{
-                            vertical: "bottom",
-                            horizontal: "right",
-                          }}
-                          transformOrigin={{
-                            vertical: "top",
-                            horizontal: "right",
-                          }}
-                        >
-                          <MenuItem
-                            onClick={() => {
-                              handleClick(survey.surveyId);
-                              closeMenu();
-                            }}
-                          >
-                            <ViewIcon fontSize="small" sx={{ mr: 1 }} /> View
-                            Survey
-                          </MenuItem>
-                          <MenuItem
-                            onClick={() => {
-                              handleEdit(survey);
-                              closeMenu();
-                            }}
-                            disabled={loading}
-                          >
-                            <EditIcon fontSize="small" sx={{ mr: 1 }} /> Edit
-                            Survey
-                          </MenuItem>
-                          {survey.status !== "published" && (
-                            <MenuItem
-                              onClick={() => {
-                                updateSurvey(orgId, survey.surveyId, { status: "published" });
-                              }}
-                              disabled={loading}
-                            >
-                              <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Published
-                            </MenuItem>
-                          )}
-                          {survey.status !== "draft" && (
-                            <MenuItem
-                              onClick={() => {
-                                updateSurvey(orgId, survey.surveyId, { status: "draft" });
-                              }}
-                              disabled={loading}
-                            >
-                              <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Draft
-                            </MenuItem>
-                          )}
-                          {survey.status !== "archived" && (
-                            <MenuItem
-                              onClick={() => {
-                                updateSurvey(orgId, survey.surveyId, { status: "archived" });
-                              }}
-                              disabled={loading}
-                            >
-                              <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Archived
-                            </MenuItem>
-                          )}
-                          {survey.status !== "test" && (
-                            <MenuItem
-                              onClick={() => {
-                                updateSurvey(orgId, survey.surveyId, { status: "test" });
-                              }}
-                              disabled={loading}
-                            >
-                              <EditIcon fontSize="small" sx={{ mr: 1 }} /> Change Status to Test
-                            </MenuItem>
-                          )}
-                          <MenuItem
-                            onClick={() => {
-                              deleteSurvey(survey.surveyId);
-                              closeMenu();
-                            }}
-                            disabled={loading}
-                          >
-                            <DeleteIcon
-                              fontSize="small"
-                              sx={{
-                                mr: 1,
-                                color: isDarkMode ? "#fca5a5" : "#dc2626",
-                              }}
-                            />
-                            <span
-                              style={{
-                                color: isDarkMode ? "#fca5a5" : "#dc2626",
-                              }}
-                            >
-                              Delete
-                            </span>
-                          </MenuItem>
-                        </Menu>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
-                      <Typography
-                        fontSize={14}
-                        sx={{
-                          color: isDarkMode ? "#96949C" : "text.secondary",
-                        }}
-                      >
-                        No surveys found.
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          <TablePagination
-            component="div"
-            count={filteredAndSortedSurveys.length}
-            page={page}
-            onPageChange={handleChangePage}
-            rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={handleChangeRowsPerPage}
-            rowsPerPageOptions={[6, 10, 25, 50]}
-            sx={{
-              backgroundColor: isDarkMode ? "#1A1A1E" : "#ffffff",
-              color: isDarkMode ? "#96949C" : "text.primary",
-              borderTop: isDarkMode ? "1px solid #2e2e32" : "1px solid #e0e0e0",
-              "& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows":
-                {
-                  color: isDarkMode ? "#96949C" : "text.secondary",
-                },
-              "& .MuiTablePagination-select": {
-                color: isDarkMode ? "#96949C" : "text.primary",
-              },
-              "& .MuiIconButton-root": {
-                color: isDarkMode ? "#96949C" : "text.primary",
-                "&:hover": {
-                  backgroundColor: isDarkMode ? "#2e2e32" : "#f5f5f5",
-                },
-                "&.Mui-disabled": {
-                  color: isDarkMode ? "#3e3e42" : "#bdbdbd",
-                },
-              },
-            }}
-          />
-        </Paper>
-      )}
 
       {openPopup && (
         <SurveyResponsePopup

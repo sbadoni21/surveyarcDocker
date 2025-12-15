@@ -233,7 +233,6 @@ export default function Dist() {
       logic: [],
       projectId,
     };
-
     try {
       setQuestions((prev) => [...prev, optimisticQuestion]);
       setSurvey((prev) => {

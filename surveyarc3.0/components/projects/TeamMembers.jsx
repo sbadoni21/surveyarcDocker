@@ -40,7 +40,7 @@ export function TeamMembers({ members, byUid }) {
               key={idx}
               className="relative group"
             >
-              <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-medium border-2 border-white">
+              <div className="w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center text-xs font-medium border-2 border-white">
                 {avatarText}
               </div>
               

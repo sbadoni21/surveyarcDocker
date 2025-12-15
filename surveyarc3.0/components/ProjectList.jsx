@@ -13,10 +13,11 @@ import { TimelineDialog } from "./projects/TimelineDialog";
 import { Toast } from "@/utils/Toast";
 import { descendingComparator, getComparator, getId, getRole   } from "@/utils/projectUtils";
 import { useGroups } from "@/providers/postGresPorviders/GroupProvider";
+import { FiPlus } from "react-icons/fi";
 
 const ITEMS_PER_PAGE = 10;
 
-export default function ProjectsList({ orgId, projects = [], deleteProject, onEditProject }) {
+export default function ProjectsList({ orgId, projects = [], deleteProject, onEditProject, handleCreateProject, loading }) {
   const router = useRouter();
   const { user, getUsersByIds } = useUser();
   const { organisation } = useOrganisation();
@@ -364,6 +365,7 @@ useEffect(() => {
   };
 
   const handleBulkDelete = async () => {
+    console.log(selectedIds)
     await bulkProjects({ projectIds: Array.from(selectedIds), op: "delete" });
     setSelectedIds(new Set());
     openToast("Deleted selected", "success");
@@ -382,8 +384,10 @@ useEffect(() => {
         onClearSelection={() => setSelectedIds(new Set())}
         onBulkArchive={handleBulkArchive}
         onBulkDelete={handleBulkDelete}
+        loading={loading}
+        handleCreateProject={handleCreateProject}
       />
-
+  
       <ProjectsTable
         rows={rows}
         order={order}

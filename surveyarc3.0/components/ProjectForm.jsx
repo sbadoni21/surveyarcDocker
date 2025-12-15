@@ -20,7 +20,7 @@ export default function ProjectForm({
 
   function handleSubmit() {
     if (!name.trim()) {
-      setError("Project name is required.");
+      setError("Directory name is required.");
       return;
     }
     setError(null);
@@ -33,7 +33,7 @@ export default function ProjectForm({
       <div className="bg-orange-50 dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-auto">
         <div className="flex items-center justify-between p-6 border-b border-orange-200 dark:border-gray-700">
           <h2 className="text-xl font-bold text-gray-900 dark:text-amber-100">
-            {initialData?.project_id || initialData?.projectId ? "Edit Project" : "Create New Project"}
+            {initialData?.project_id || initialData?.projectId ? "Edit Directory" : "Create New Directory"}
           </h2>
           <button
             onClick={onCancel}
@@ -54,7 +54,7 @@ export default function ProjectForm({
           <div className="space-y-4">
             <div>
               <div className="block text-sm font-medium text-gray-900 dark:text-amber-100 mb-2">
-                Project Name
+                Directory Name
               </div>
               <input
                 type="text"
@@ -98,8 +98,8 @@ export default function ProjectForm({
               {loading
                 ? "Saving..."
                 : initialData?.project_id || initialData?.projectId
-                ? "Update Project"
-                : "Create Project"}
+                ? "Update Directory"
+                : "Create Directory"}
             </button>
             <button
               onClick={onCancel}

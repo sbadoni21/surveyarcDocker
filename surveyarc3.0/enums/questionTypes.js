@@ -17,6 +17,8 @@ GABOR_GRANGER: "gabor_granger",
   SEMANTIC_DIFF: 'semantic_diff',   // 👈 NEW
   SLIDER: 'slider',
 LIKERT: "likert",
+AUTO_SUM: "auto_sum",
+
 SMILEY_RATING: "smiley",
 IMAGE_CLICK_RATING: "image_click_rating",
   SEGMENTATION_SELECTOR: "segmentation_selector",
@@ -31,7 +33,6 @@ IMAGE_CLICK_RATING: "image_click_rating",
   OPINION_SCALE: 'opinion_scale',
   RATING: 'rating',
   RANKING: 'ranking',
-  MATRIX: 'matrix',
   OSAT: 'osat',
 
   // 📌 Text & Media

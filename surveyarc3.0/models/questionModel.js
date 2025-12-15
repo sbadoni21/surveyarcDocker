@@ -313,7 +313,125 @@ async updateQuestionTranslation(surveyId, questionId, locale, translationData) {
     );
     return json(res);
   },
+  async uploadTranslationCSV(surveyId, file, dryRun = false) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("dry_run", dryRun.toString());
 
+    const res = await fetch(
+      `${BASE}/surveys/${encodeURIComponent(surveyId)}/translations/upload-csv`,
+      {
+        method: "POST",
+        headers: headersWithUser({ "Content-Type": undefined }), // Let browser set multipart boundary
+        body: formData,
+        cache: "no-store",
+      }
+    );
+
+    return json(res);
+  }, async exportTranslationCSV(surveyId, includeValues = true, locales = null) {
+    const params = new URLSearchParams({
+      include_values: includeValues.toString(),
+    });
+
+    if (locales && locales.length > 0) {
+      params.append("locales", locales.join(","));
+    }
+
+    const res = await fetch(
+      `${BASE}/surveys/${encodeURIComponent(surveyId)}/translations/export-csv?${params}`,
+      {
+        method: "GET",
+        headers: headersWithUser({ "Content-Type": undefined }),
+        cache: "no-store",
+      }
+    );
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Export failed: ${text}`);
+    }
+
+    return res.blob();
+  },
+ async downloadTranslationCSV(surveyId, includeValues = true, locales = null) {
+    const blob = await this.exportTranslationCSV(surveyId, includeValues, locales);
+    
+    // Create download link
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `translations_${surveyId}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    
+    // Cleanup
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+  async validateTranslationCSV(surveyId, file) {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch(
+      `${BASE}/surveys/${encodeURIComponent(surveyId)}/translations/validate-csv`,
+      {
+        method: "POST",
+        headers: headersWithUser({ "Content-Type": undefined }),
+        body: formData,
+        cache: "no-store",
+      }
+    );
+
+    return json(res);
+  },
+ async uploadTranslationCSVWithProgress(surveyId, file, onProgress, dryRun = false) {
+    return new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("dry_run", dryRun.toString());
+
+      const xhr = new XMLHttpRequest();
+      
+      // Track upload progress
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable && onProgress) {
+          const percentComplete = (e.loaded / e.total) * 100;
+          onProgress(percentComplete);
+        }
+      });
+
+      xhr.addEventListener("load", () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const result = JSON.parse(xhr.responseText);
+            resolve(result);
+          } catch (e) {
+            reject(new Error("Failed to parse response"));
+          }
+        } else {
+          reject(new Error(`Upload failed: ${xhr.statusText}`));
+        }
+      });
+
+      xhr.addEventListener("error", () => {
+        reject(new Error("Network error during upload"));
+      });
+
+      xhr.open(
+        "POST",
+        `${BASE}/surveys/${encodeURIComponent(surveyId)}/translations/upload-csv`
+      );
+
+      // Add auth header
+      const userId = getUserIdFromCookie();
+      if (userId) {
+        xhr.setRequestHeader("x-user-id", userId);
+      }
+
+      xhr.send(formData);
+    });
+  },
   async getAllWithLocale(orgId, surveyId, locale) {
     const lang = normalizeLang(locale);
     const res = await fetch(

@@ -131,14 +131,26 @@ export default function QuestionEdritorPanel({
     }
   };
 
-  const onUpdateClick = async (autoMode = false) => {
+const onUpdateClick = async (autoMode = false) => {
     if (!editableQuestion) return;
     if (saving) return;
     try {
       setSaving(true);
       await nextFrame();
+      
+      // Ensure config is properly structured
+      const questionToUpdate = {
+        ...editableQuestion,
+        config: editableQuestion.config || {}
+      };
+      
+      console.log('=== UPDATING QUESTION ===');
+      console.log('Full question data:', JSON.stringify(questionToUpdate, null, 2));
+      console.log('Config object:', questionToUpdate.config);
+      console.log('=========================');
+      
       await Promise.resolve(
-        handleUpdateQuestion(editableQuestion.questionId, editableQuestion)
+        handleUpdateQuestion(editableQuestion.questionId, questionToUpdate)
       );
       setEditableQuestion(null);
       setSelectedQuestionIndex(null);

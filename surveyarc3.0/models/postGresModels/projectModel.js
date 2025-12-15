@@ -328,15 +328,26 @@ async deleteProject(orgId, projectId) {
     });
     return await toJson(res);
   },
-  async bulk(orgId, body) {
-    const res = await fetch(`${BASE}/org/${orgId}/bulk`, {
-      method: "POST",
+async bulk(orgId, body) {
+  if (!body?.op) {
+    throw new Error("Bulk op is required");
+  }
+  const changeBody = camelToSnake(body)
+  const method = body.op === "delete" ? "DELETE" : "POST";
+
+  const res = await fetch(
+    `/api/post-gres-apis/projects/org/${orgId}/bulk`,
+    {
+      method,
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
-      body: JSON.stringify(body || {}),
-    });
-    return await toJson(res);
-  },
+      body: JSON.stringify(changeBody),
+    }
+  );
+
+  return await toJson(res);
+}
+,
   async listFavorites(orgId, userId) {
     const res = await fetch(`${BASE}/org/${orgId}/favorites/${userId}`, { cache: "no-store" });
     return await toJson(res);

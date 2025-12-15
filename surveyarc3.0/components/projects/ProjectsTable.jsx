@@ -46,7 +46,7 @@ export function ProjectsTable({
         className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900"
       >
         {children}
-        <ArrowUpDown className={`w-4 h-4 ${isActive ? "text-blue-600" : "text-gray-400"}`} />
+        <ArrowUpDown className={`w-4 h-4 ${isActive ? "text-orange-600" : "text-gray-400"}`} />
       </button>
     );
   };
@@ -65,11 +65,11 @@ export function ProjectsTable({
                     if (el) el.indeterminate = someSelected;
                   }}
                   onChange={(e) => onSelectAll(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                  className="w-4 h-4 text-orange-600 rounded focus:ring-2 focus:ring-orange-500"
                 />
               </th>
               <th className="px-4 py-3 text-left">
-                <SortButton property="name">Project</SortButton>
+                <SortButton property="name">Directory</SortButton>
               </th>
               <th className="px-4 py-3 text-left">
                 <span className="font-semibold text-gray-700">Tags</span>
@@ -110,7 +110,7 @@ export function ProjectsTable({
                       type="checkbox"
                       checked={selectedIds.has(pid)}
                       onChange={() => onToggleSelect(pid)}
-                      className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                      className="w-4 h-4 text-orange-600 rounded focus:ring-2 focus:ring-orange-500"
                     />
                   </td>
 
@@ -143,12 +143,15 @@ export function ProjectsTable({
                         {(effective.tags || []).map((t) => (
                           <span
                             key={t}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded"
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-orange-50 text-orange-700 text-xs rounded"
                           >
                             {t}
                             <button
-                              onClick={() => onRemoveTag(pid, t)}
-                              className="hover:text-blue-900"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                onRemoveTag(pid, t);
+                              }}
+                              className="hover:text-orange-900"
                             >
                               <X className="w-3 h-3" />
                             </button>
@@ -168,7 +171,7 @@ export function ProjectsTable({
                           onBlur={onStopEditTags}
                           autoFocus
                           placeholder="Add tag..."
-                          className="w-32 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                          className="w-32 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-orange-500"
                         />
                       </div>
                     ) : (

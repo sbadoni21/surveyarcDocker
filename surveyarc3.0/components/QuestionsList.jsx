@@ -93,7 +93,7 @@ const SortableItem = ({ q, index, onDelete, onSelect }) => {
               >
                 <div>{ICONS_MAP[q.type.toUpperCase()]}</div>
                 <div className="text-black dark:text-[#96949C]">
-                  {index + 1}
+                  {displayLabel}
                 </div>
               </div>
             )}

@@ -156,37 +156,11 @@ export default function ProjectPage() {
       <header className="flex items-center justify-between gap-10 py-4 mb-8 w-full">
         <div className="px-4 py-2 w-[30%]">
           <h1 className="text-[24px] font-semibold m-0 dark:text-[#CBC9DE]">
-            Survey Management
+            Survey Directories
           </h1>
         </div>
 
-        <div className="relative w-[50%]">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-            <IoSearch className="text-xl" />
-          </span>
-          <input
-            type="search"
-            placeholder="Search projects..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 h-12 rounded-lg bg-white dark:bg-[#121214] border border-white dark:border-[#1A1A1E] text-[14px] text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all"
-          />
-        </div>
-
-        <div className="flex items-center w-[20%]">
-          <button
-            onClick={handleCreateProject}
-            disabled={loading}
-            className={`px-4 h-12 rounded-md flex justify-center items-center gap-2 font-semibold text-white transition-all duration-300 
-        ${
-          loading
-            ? "bg-gray-400 cursor-not-allowed"
-            : "bg-[#ED7A13] shadow-md shadow-orange-500/25 hover:scale-105"
-        }`}
-          >
-            <FiPlus className="text-xl" /> Create New Project
-          </button>
-        </div>
+     
       </header>
 
       {toggle && (
@@ -203,20 +177,14 @@ export default function ProjectPage() {
           <div className="flex justify-center items-center py-12">
             <FaSpinner className="animate-spin text-orange-500 dark:text-amber-300 text-4xl" />
           </div>
-        ) : filteredProjects?.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-gray-500 dark:text-gray-400">
-              {searchQuery 
-                ? "No projects found matching your search."
-                : "No projects available. You don't have access to any projects yet."}
-            </p>
-          </div>
-        ) : (
+        )  : (
           <ProjectsList
             orgId={orgId}
             projects={filteredProjects}
             deleteProject={handleDeleteProject}
             onEditProject={handleEditProject}
+            handleCreateProject={handleCreateProject}
+            loading={loading}
           />
         )}
       </section>

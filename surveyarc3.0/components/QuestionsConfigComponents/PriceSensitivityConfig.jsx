@@ -1,56 +1,60 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 
 export default function PriceSensitivityConfig({ config = {}, updateConfig }) {
-  const [currency, setCurrency] = useState(config.currency || "₹");
-  const [tooCheapLabel, setTooCheapLabel] = useState(
-    config.tooCheapLabel || "Too cheap"
-  );
-  const [cheapLabel, setCheapLabel] = useState(
-    config.cheapLabel || "Cheap / good value"
-  );
-  const [expensiveLabel, setExpensiveLabel] = useState(
-    config.expensiveLabel || "Expensive but still acceptable"
-  );
-  const [tooExpensiveLabel, setTooExpensiveLabel] = useState(
-    config.tooExpensiveLabel || "Too expensive"
-  );
-  const [min, setMin] = useState(config.min ?? 0);
-  const [max, setMax] = useState(config.max ?? "");
-  const [step, setStep] = useState(config.step ?? 1);
-  const [showHelperText, setShowHelperText] = useState(
-    config.showHelperText ?? true
-  );
+  /* --------------------------------------------------
+     DERIVED CONFIG VALUES
+  -------------------------------------------------- */
+  const currency = config.currency ?? "₹";
 
+  const tooCheapLabel = config.tooCheapLabel ?? "Too cheap";
+  const cheapLabel = config.cheapLabel ?? "Cheap / good value";
+  const expensiveLabel =
+    config.expensiveLabel ?? "Expensive but still acceptable";
+  const tooExpensiveLabel = config.tooExpensiveLabel ?? "Too expensive";
+
+  const min = config.min ?? 0;
+  const max = config.max ?? null;
+  const step = config.step ?? 1;
+
+  const showHelperText = config.showHelperText ?? true;
+
+  /* --------------------------------------------------
+     INITIALIZE DEFAULTS (CRITICAL)
+     Ensures config exists on FIRST SAVE
+  -------------------------------------------------- */
   useEffect(() => {
-    updateConfig({
-      ...config,
-      currency,
-      tooCheapLabel,
-      cheapLabel,
-      expensiveLabel,
-      tooExpensiveLabel,
-      min,
-      max: max === "" ? null : max,
-      step,
-      showHelperText,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    currency,
-    tooCheapLabel,
-    cheapLabel,
-    expensiveLabel,
-    tooExpensiveLabel,
-    min,
-    max,
-    step,
-    showHelperText,
-  ]);
+    if (!("currency" in config)) updateConfig("currency", "₹");
 
+    if (!("tooCheapLabel" in config))
+      updateConfig("tooCheapLabel", "Too cheap");
+
+    if (!("cheapLabel" in config))
+      updateConfig("cheapLabel", "Cheap / good value");
+
+    if (!("expensiveLabel" in config))
+      updateConfig(
+        "expensiveLabel",
+        "Expensive but still acceptable"
+      );
+
+    if (!("tooExpensiveLabel" in config))
+      updateConfig("tooExpensiveLabel", "Too expensive");
+
+    if (!("min" in config)) updateConfig("min", 0);
+    if (!("max" in config)) updateConfig("max", null);
+    if (!("step" in config)) updateConfig("step", 1);
+    if (!("showHelperText" in config))
+      updateConfig("showHelperText", true);
+  }, []);
+
+  /* --------------------------------------------------
+     RENDER
+  -------------------------------------------------- */
   return (
     <div className="space-y-4 p-3">
-      <div className="flex gap-4">
+      {/* Numeric controls */}
+      <div className="flex flex-wrap gap-4">
         <div>
           <label className="block text-sm mb-1 dark:text-[#96949C]">
             Currency symbol
@@ -60,32 +64,44 @@ export default function PriceSensitivityConfig({ config = {}, updateConfig }) {
             className="w-16 px-3 py-2 rounded-lg border dark:bg-[#1A1A1E] dark:text-[#CBC9DE]"
             maxLength={3}
             value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
+            onChange={(e) =>
+              updateConfig("currency", e.target.value)
+            }
           />
         </div>
 
         <div>
           <label className="block text-sm mb-1 dark:text-[#96949C]">
-            Min value (optional)
+            Min value
           </label>
           <input
             type="number"
             className="w-24 px-3 py-2 rounded-lg border dark:bg-[#1A1A1E] dark:text-[#CBC9DE]"
             value={min}
-            onChange={(e) => setMin(e.target.value === "" ? 0 : Number(e.target.value))}
+            onChange={(e) =>
+              updateConfig(
+                "min",
+                e.target.value === "" ? 0 : Number(e.target.value)
+              )
+            }
           />
         </div>
 
         <div>
           <label className="block text-sm mb-1 dark:text-[#96949C]">
-            Max value (optional)
+            Max value
           </label>
           <input
             type="number"
             className="w-24 px-3 py-2 rounded-lg border dark:bg-[#1A1A1E] dark:text-[#CBC9DE]"
-            value={max}
+            value={max ?? ""}
             onChange={(e) =>
-              setMax(e.target.value === "" ? "" : Number(e.target.value))
+              updateConfig(
+                "max",
+                e.target.value === ""
+                  ? null
+                  : Number(e.target.value)
+              )
             }
           />
         </div>
@@ -96,62 +112,67 @@ export default function PriceSensitivityConfig({ config = {}, updateConfig }) {
           </label>
           <input
             type="number"
-            className="w-20 px-3 py-2 rounded-lg border dark:bg-[#1A1A1E] dark:text-[#CBC9DE]"
-            value={step}
             min={0.01}
             step={0.01}
-            onChange={(e) => setStep(Number(e.target.value) || 1)}
+            className="w-20 px-3 py-2 rounded-lg border dark:bg-[#1A1A1E] dark:text-[#CBC9DE]"
+            value={step}
+            onChange={(e) =>
+              updateConfig("step", Number(e.target.value) || 1)
+            }
           />
         </div>
       </div>
 
+      {/* Labels */}
       <div className="space-y-2">
         <label className="block text-xs dark:text-[#96949C]">
           Question row labels
         </label>
 
         <input
-          type="text"
-          className="w-full px-3 py-2 rounded-lg border dark:bg-[#1A1A1E] dark:text-[#CBC9DE] mb-2"
+          className="w-full px-3 py-2 rounded-lg border dark:bg-[#1A1A1E] dark:text-[#CBC9DE]"
           value={tooCheapLabel}
-          onChange={(e) => setTooCheapLabel(e.target.value)}
-          placeholder="Too cheap"
+          onChange={(e) =>
+            updateConfig("tooCheapLabel", e.target.value)
+          }
         />
+
         <input
-          type="text"
-          className="w-full px-3 py-2 rounded-lg border dark:bg-[#1A1A1E] dark:text-[#CBC9DE] mb-2"
+          className="w-full px-3 py-2 rounded-lg border dark:bg-[#1A1A1E] dark:text-[#CBC9DE]"
           value={cheapLabel}
-          onChange={(e) => setCheapLabel(e.target.value)}
-          placeholder="Cheap / good value"
+          onChange={(e) =>
+            updateConfig("cheapLabel", e.target.value)
+          }
         />
+
         <input
-          type="text"
-          className="w-full px-3 py-2 rounded-lg border dark:bg-[#1A1A1E] dark:text-[#CBC9DE] mb-2"
+          className="w-full px-3 py-2 rounded-lg border dark:bg-[#1A1A1E] dark:text-[#CBC9DE]"
           value={expensiveLabel}
-          onChange={(e) => setExpensiveLabel(e.target.value)}
-          placeholder="Expensive but still acceptable"
+          onChange={(e) =>
+            updateConfig("expensiveLabel", e.target.value)
+          }
         />
+
         <input
-          type="text"
           className="w-full px-3 py-2 rounded-lg border dark:bg-[#1A1A1E] dark:text-[#CBC9DE]"
           value={tooExpensiveLabel}
-          onChange={(e) => setTooExpensiveLabel(e.target.value)}
-          placeholder="Too expensive"
+          onChange={(e) =>
+            updateConfig("tooExpensiveLabel", e.target.value)
+          }
         />
       </div>
 
-      <div className="flex items-center gap-3">
+      {/* Helper text toggle */}
+      <label className="flex items-center gap-3 text-sm dark:text-[#96949C]">
         <input
-          id="vw_helper"
           type="checkbox"
-          className="h-4 w-4"
           checked={showHelperText}
-          onChange={(e) => setShowHelperText(e.target.checked)}
+          onChange={(e) =>
+            updateConfig("showHelperText", e.target.checked)
+          }
         />
-        <label htmlFor="vw_helper" className="text-sm dark:text-[#96949C]">
-          Show helper text under question
-        </label>
-      </div>
+        Show helper text under question
+      </label>
     </div>
   );
 }

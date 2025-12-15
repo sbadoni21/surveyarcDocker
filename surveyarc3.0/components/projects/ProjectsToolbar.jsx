@@ -1,5 +1,6 @@
 import React from "react";
 import { Search, X, Archive, Trash2, Users } from "lucide-react";
+import { FiPlus } from "react-icons/fi";
 
 export function ProjectsToolbar({
   search,
@@ -12,15 +13,30 @@ export function ProjectsToolbar({
   onClearSelection,
   onBulkArchive,
   onBulkDelete,
+  handleCreateProject,
+  loading
 }) {
   return (
     <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <Users className="w-6 h-6 text-blue-600" />
-          <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
+          <Users className="w-6 h-6 text-orange-600" />
+          <h1 className="text-2xl font-bold text-gray-900">Directories</h1>
         </div>
-
+ {selectedCount > 0 ? <></>:<><div className="flex items-center ">
+          <button
+            onClick={handleCreateProject}
+            disabled={loading}
+            className={`px-2 h-8 rounded-md flex justify-center items-center gap-2  text-white transition-all duration-300  text-sm
+        ${
+          loading
+            ? "bg-gray-400 cursor-not-allowed"
+            : "bg-[#ED7A13] shadow-md shadow-orange-500/25 hover:scale-105"
+        }`}
+          >
+            <FiPlus className="text-md" /> Create New Directory
+          </button>
+        </div></>}
         {selectedCount > 0 && (
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">
@@ -58,7 +74,7 @@ export function ProjectsToolbar({
             placeholder="Search projects..."
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
           />
           {search && (
             <button
@@ -73,7 +89,7 @@ export function ProjectsToolbar({
         <select
           value={statusFilter}
           onChange={(e) => onStatusFilterChange(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[150px]"
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent min-w-[150px]"
         >
           <option value="all">All Status</option>
           <option value="active">Active Only</option>
@@ -85,9 +101,9 @@ export function ProjectsToolbar({
             type="checkbox"
             checked={onlyMine}
             onChange={(e) => onOnlyMineChange(e.target.checked)}
-            className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+            className="w-4 h-4 text-orange-600 rounded focus:ring-2 focus:ring-orange-500"
           />
-          <span className="text-sm font-medium text-gray-700">My Projects</span>
+          <span className="text-sm font-medium text-gray-700">My Directories</span>
         </label>
       </div>
     </div>

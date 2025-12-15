@@ -1567,6 +1567,136 @@ case QUESTION_TYPES.FORCED_EXPOSURE: {
           ))}
         </div>
       );
+case QUESTION_TYPES.AUTO_SUM: {
+  const {
+    items = [],
+    total = 100,
+    showRemaining = true,
+    allowDecimals = false,
+    minValue = 0,
+    maxValue = null,
+    requireTotal = true,
+    allowNegative = false,
+    decimalPlaces = 2,
+    showPercentages = false,
+  } = config;
+
+  const values = value || {};
+
+  const sum = items.reduce(
+    (acc, _, i) => acc + Number(values[i] || 0),
+    0
+  );
+
+  const remaining = total - sum;
+
+  const step = allowDecimals
+    ? Number(`0.${"0".repeat(decimalPlaces - 1)}1`)
+    : 1;
+
+  const hasError =
+    (requireTotal && remaining !== 0) ||
+    Object.values(values).some((v) => {
+      if (!allowNegative && v < 0) return true;
+      if (v < minValue) return true;
+      if (maxValue !== null && v > maxValue) return true;
+      return false;
+    });
+
+  return (
+    <div className="space-y-4">
+      {/* Instructions */}
+      <p className="text-xs text-gray-500">
+        Allocate <b>{total}</b> points across the items below.
+        {requireTotal && " The total must equal exactly " + total + "."}
+      </p>
+
+      {/* Items */}
+      <div className="space-y-3">
+        {items.map((item, i) => {
+          const val = Number(values[i] || 0);
+          const percent =
+            total > 0 ? Math.round((val / total) * 100) : 0;
+
+          return (
+            <div
+              key={i}
+              className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-3"
+            >
+              {/* Label */}
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-800">
+                  {item}
+                </p>
+                {showPercentages && (
+                  <p className="text-[10px] text-gray-400">
+                    {percent}% of total
+                  </p>
+                )}
+              </div>
+
+              {/* Input */}
+              <input
+                type="number"
+                step={step}
+                min={allowNegative ? undefined : minValue}
+                max={maxValue ?? undefined}
+                value={values[i] ?? ""}
+                onChange={(e) => {
+                  const num = e.target.value === ""
+                    ? ""
+                    : Number(e.target.value);
+
+                  onChange({
+                    ...values,
+                    [i]: num,
+                  });
+                }}
+                className={`w-24 px-3 py-2 text-right rounded-lg border text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none ${
+                  (!allowNegative && val < 0) ||
+                  val < minValue ||
+                  (maxValue !== null && val > maxValue)
+                    ? "border-red-400"
+                    : "border-gray-300"
+                }`}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Remaining / Validation */}
+      {showRemaining && (
+        <div
+          className={`flex items-center justify-between rounded-lg px-4 py-2 text-xs font-medium ${
+            remaining === 0
+              ? "bg-green-50 text-green-700 border border-green-200"
+              : hasError
+              ? "bg-red-50 text-red-700 border border-red-200"
+              : "bg-gray-50 text-gray-700 border border-gray-200"
+          }`}
+        >
+          <span>
+            Remaining: <b>{remaining}</b>
+          </span>
+          {showPercentages && (
+            <span>
+              {Math.round((sum / total) * 100)}% allocated
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Hard validation hint */}
+      {requireTotal && remaining !== 0 && (
+        <div className="text-[11px] text-red-600">
+          ⚠ Please allocate exactly {total} points to continue.
+        </div>
+      )}
+    </div>
+  );
+}
+
 
     case QUESTION_TYPES.OSAT: {
       const min = config.min || 1;

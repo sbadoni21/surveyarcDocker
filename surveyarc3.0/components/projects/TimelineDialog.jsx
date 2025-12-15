@@ -52,7 +52,7 @@ export function TimelineDialog({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">Project Timeline</h2>
+            <h2 className="text-xl font-bold text-gray-900">Directory Timeline</h2>
             {project && (
               <p className="text-sm text-gray-600 mt-1">{project.name}</p>
             )}
