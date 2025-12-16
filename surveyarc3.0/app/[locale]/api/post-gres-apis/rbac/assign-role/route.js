@@ -9,7 +9,9 @@ const ENC = process.env.ENCRYPT_SURVEYS === "1";
 export async function POST(req) {
   try {
     const body = await req.json();
-
+    console.log(body)
+    const user_uid = body["user_uid"]
+    console.log(user_uid)
     const required = ["user_uid", "role_name", "scope", "resource_id"];
     for (const k of required) {
       if (!body[k]) {
@@ -23,7 +25,8 @@ export async function POST(req) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(ENC ? { "x-encrypted": "1" } : {}),
+          'x-user-id':user_uid
+      
       },
       body: JSON.stringify(payload),
       cache: "no-store",

@@ -124,7 +124,8 @@ const InviteSection = ({ inviteLink, isOwner, onCopy, copied, onOpenCreateModal,
         </div>
         
         {/* Protected Copy Button */}
-        <ProtectedAction permission="team.invite" orgId={orgId} scope="org">
+        <ProtectedAction permission="team.invite" orgId={orgId} scope="org"         resourceId={orgId}
+>
           <button
             onClick={onCopy}
             className={`px-6 py-3 rounded-xl font-semibold flex items-center gap-2 text-white transition-all ${
@@ -193,7 +194,8 @@ const UserCard = ({ member, index, isOwner, ownerUID, busyUid, onChangeRole, onT
             </div>
             
             {/* Protected Permissions Button */}
-            <ProtectedAction permission="rbac.view_assignments" orgId={orgId} scope="org">
+            <ProtectedAction permission="rbac.view_assignments" orgId={orgId} scope="org"         resourceId={orgId}
+>
               <button
                 onClick={() => onOpenPermissions(member)}
                 className="px-3 py-2 rounded-lg text-xs font-semibold border border-slate-300 text-slate-700 bg-slate-50 hover:bg-slate-100 transition-all"
@@ -225,7 +227,9 @@ const UserCard = ({ member, index, isOwner, ownerUID, busyUid, onChangeRole, onT
           {/* Protected Role Dropdown */}
           <ProtectedAction 
             permission="rbac.assign_role" 
-            orgId={orgId} 
+            orgId={orgId}
+                    resourceId={orgId}
+
             scope="org"
             fallback={
               <div className="text-xs text-gray-400 flex items-center gap-1">
@@ -253,7 +257,7 @@ const UserCard = ({ member, index, isOwner, ownerUID, busyUid, onChangeRole, onT
           </ProtectedAction>
 
           {/* Protected Suspend/Activate Button */}
-          <ProtectedAction permission="team.manage_status" orgId={orgId} scope="org">
+          <ProtectedAction permission="team.manage_status" orgId={orgId} scope="org" resourceId={orgId}>
             <button
               onClick={() => onToggleStatus(member)}
               disabled={!canEdit || isBusy}
@@ -281,7 +285,7 @@ const UserCard = ({ member, index, isOwner, ownerUID, busyUid, onChangeRole, onT
           </ProtectedAction>
 
           {/* Protected Remove Button */}
-          <ProtectedAction permission="team.remove_member" orgId={orgId} scope="org">
+          <ProtectedAction permission="team.remove_member" orgId={orgId} scope="org" resourceId={orgId}>
             <button
               onClick={() => onRemove(member)}
               disabled={!canEdit || isBusy}
@@ -544,7 +548,7 @@ function UsersPageInner() {
                 </button>
               </div>
               <div className="p-4">
-                <UserRoleManager userUid={permissionUser.uid} orgId={orgId} />
+                <UserRoleManager userId={permissionUser.uid} orgId={orgId} />
               </div>
             </div>
           </div>

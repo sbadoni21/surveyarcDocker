@@ -40,15 +40,20 @@ const UserRoleManager = ({ userId, orgId }) => {
       loadRoles();
     }
   }, [userId, orgId]);
+const loadRoles = async () => {
+  try {
+    const data = await listUserRoles(userId, orgId);
 
-  const loadRoles = async () => {
-    try {
-      const data = await listUserRoles(userId, orgId);
-      setRoles(data || []);
-    } catch (error) {
-      showToast("Failed to load roles", "error");
-    }
-  };
+    // 👇 Normalize permission response → UI-safe array
+    const normalized = Array.isArray(data)
+      ? data
+      : normalizePermissionsToRoles(data, orgId);
+
+    setRoles(normalized);
+  } catch (error) {
+    showToast("Failed to load roles", "error");
+  }
+};
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
@@ -102,17 +107,49 @@ const UserRoleManager = ({ userId, orgId }) => {
       showToast("Failed to remove role", "error");
     }
   };
+function normalizePermissionsToRoles(data, orgId) {
+  if (!data || !data.permissions) return [];
 
-  const availableRolesToAssign = AVAILABLE_ROLES.filter(
-    (ar) =>
-      selectedScope === ar.scope &&
-      !roles.some(
+  const roles = [];
+
+  // ORG scope
+  const orgPerms = data.permissions.org?.[orgId];
+  if (Array.isArray(orgPerms) && orgPerms.length > 0) {
+    roles.push({
+      role_name: "derived-org-role",
+      scope: "org",
+      resource_id: orgId,
+      permissions: orgPerms,
+    });
+  }
+
+  // GROUP / TEAM / PROJECT (future-proof)
+  ["group", "team", "project"].forEach((scope) => {
+    const scopeData = data.permissions[scope] || {};
+    Object.entries(scopeData).forEach(([resourceId, perms]) => {
+      roles.push({
+        role_name: `derived-${scope}-role`,
+        scope,
+        resource_id: resourceId,
+        permissions: perms,
+      });
+    });
+  });
+
+  return roles;
+}
+const availableRolesToAssign = AVAILABLE_ROLES.filter(
+  (ar) =>
+    selectedScope === ar.scope &&
+    !(
+      Array.isArray(roles) &&
+      roles.some(
         (r) =>
-          r.role_name === ar.name &&
           r.scope === selectedScope &&
           r.resource_id === (selectedScope === "org" ? orgId : resourceId)
       )
-  );
+    )
+);
 
   return (
     <div className="space-y-4">

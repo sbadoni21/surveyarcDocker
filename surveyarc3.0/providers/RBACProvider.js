@@ -50,8 +50,8 @@ export const RBACProvider = ({ children }) => {
       if (!res.ok) {
         throw new Error(`Failed to load roles: ${res.statusText}`);
       }
-
       const roles = await res.json();
+      console.log(roles)
       cacheRef.current.set(key, roles);
       setUserRoles(roles);
       return roles;
@@ -69,6 +69,7 @@ export const RBACProvider = ({ children }) => {
   const assignRole = useCallback(async (data) => {
     setLoading(true);
     try {
+      console.log(data)
       const body = {
         user_uid: data.userId,
         role_name: data.roleName,
@@ -163,7 +164,7 @@ export const RBACProvider = ({ children }) => {
         scope: scope || 'org',
         resource_id: resourceId || '',
       });
-console.log(params)
+console.log(userId, permissionCode, orgId, scope, resourceId)
       const res = await fetch(
         `/api/post-gres-apis/rbac/check-permission?${params}`,
         { cache: "no-store" }

@@ -19,11 +19,11 @@ async function forceDecryptResponse(res) {
     return NextResponse.json({ raw: text }, { status: res.status });
   }
 }
-
-// GET /api/post-gres-apis/rbac/check-permission
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
+
+    const userId = searchParams.get("user_id"); // ✅ FIX
 
     const qs = new URLSearchParams(searchParams);
 
@@ -31,6 +31,9 @@ export async function GET(req) {
       `${BASE}/rbac/check-permission?${qs.toString()}`,
       {
         cache: "no-store",
+        headers: {
+          "x-user-id": userId, // ✅ FIX
+        },
         signal: AbortSignal.timeout(30000),
       }
     );

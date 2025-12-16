@@ -7,7 +7,6 @@ import { useRBAC } from "@/providers/RBACProvider";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
 
 export const usePermission = (permissionCode, orgId, scope = "org", resourceId) => {
-    console.log(resourceId)
   const { hasPermission } = useRBAC();
   const { user } = useUser();
   const [allowed, setAllowed] = useState(false);
