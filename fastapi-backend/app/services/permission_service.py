@@ -2,6 +2,7 @@ from typing import Optional, Dict, Set, List
 from sqlalchemy.orm import Session
 from enum import Enum
 import json
+from sqlalchemy import text
 
 from app.models.rbac.permission import (
     Role,
@@ -34,32 +35,124 @@ class PermissionService:
     # =====================================================
     # PUBLIC API
     # =====================================================
+# app/services/permission_service.py
     def has_permission(
         self,
         user_uid: str,
         permission_code: str,
-        *,
         org_id: Optional[str] = None,
-        scope: Optional[str] = None,
+        scope: str = "org",
         resource_id: Optional[str] = None,
     ) -> bool:
-
-        # 🔥 OWNER OVERRIDE (org scope only)
-        if org_id and self._is_owner(user_uid, org_id):
-            return True
-
-        perms = self._get_effective_permissions(
-            user_uid=user_uid,
-            org_id=org_id,
-        )
-
-        # ❌ Explicit deny wins
-        if self._is_explicitly_denied(perms, permission_code, scope, resource_id):
+        """Check if user has permission"""
+        
+        print(f"\n{'='*60}")
+        print(f"[PermissionService] DETAILED DEBUG:")
+        print(f"  user_uid: {user_uid}")
+        print(f"  permission_code: {permission_code}")
+        print(f"  org_id: {org_id}")
+        print(f"  scope: {scope}")
+        print(f"  resource_id: {resource_id}")
+        
+        # ✅ FIXED: For org scope, resource_id IS the org_id
+        if scope == "org" and org_id and not resource_id:
+            resource_id = org_id
+            print(f"  [FIX] Setting resource_id = org_id = {resource_id}")
+        
+        cache_key = f"perm:{user_uid}:{org_id}"
+        print(f"  cache_key: {cache_key}")
+        
+        # ✅ Query user_role_assignments (no org_id column, use scope + resource_id)
+        query = text("""
+            SELECT DISTINCT p.code, ura.scope, ura.resource_id
+            FROM user_role_assignments ura
+            JOIN role_permissions rp ON ura.role_id = rp.role_id
+            JOIN permissions p ON rp.permission_id = p.id
+            WHERE ura.user_uid = :user_uid
+            AND ura.scope = :scope
+            AND ura.resource_id = :resource_id
+        """)
+        
+        params = {
+            "user_uid": user_uid,
+            "scope": scope,
+            "resource_id": resource_id or org_id  # Fallback to org_id
+        }
+        
+        print(f"  SQL Query params: {params}")
+        
+        try:
+            result = self.db.execute(query, params)
+            permissions = result.fetchall()
+            
+            print(f"  Found {len(permissions)} permission assignments:")
+            for perm in permissions:
+                print(f"    - code: {perm[0]}, scope: {perm[1]}, resource: {perm[2]}")
+            
+            # Check for explicit denies first
+            if self._check_deny(user_uid, permission_code, org_id, scope, resource_id):
+                print(f"  ❌ PERMISSION EXPLICITLY DENIED")
+                print(f"{'='*60}\n")
+                return False
+            
+            # Check if the specific permission exists
+            for perm_row in permissions:
+                perm_code = perm_row[0]
+                perm_scope = perm_row[1]
+                perm_resource_id = perm_row[2]
+                
+                if perm_code == permission_code:
+                    print(f"  ✅ Found matching permission: {perm_code}")
+                    print(f"     Scope: {perm_scope}, Resource: {perm_resource_id}")
+                    print(f"  ✅ PERMISSION GRANTED")
+                    print(f"{'='*60}\n")
+                    return True
+            
+            print(f"  ❌ PERMISSION DENIED - No matching permission found")
+            print(f"  Available permissions: {[p[0] for p in permissions]}")
+            print(f"{'='*60}\n")
             return False
-
-        # ✅ Allow?
-        return self._is_allowed(perms, permission_code, scope, resource_id)
-
+            
+        except Exception as e:
+            print(f"  ❌ ERROR in permission check: {e}")
+            import traceback
+            traceback.print_exc()
+            print(f"{'='*60}\n")
+            return False
+    
+    def _check_deny(
+        self,
+        user_uid: str,
+        permission_code: str,
+        org_id: Optional[str],
+        scope: str,
+        resource_id: Optional[str]
+    ) -> bool:
+        """Check if permission is explicitly denied"""
+        try:
+            deny_query = text("""
+                SELECT 1
+                FROM permission_denies pd
+                WHERE pd.user_uid = :user_uid
+                AND pd.permission_code = :permission_code
+                AND pd.scope = :scope
+                AND pd.resource_id = :resource_id
+                LIMIT 1
+            """)
+            
+            deny_params = {
+                "user_uid": user_uid,
+                "permission_code": permission_code,
+                "scope": scope,
+                "resource_id": resource_id or org_id
+            }
+            
+            deny_result = self.db.execute(deny_query, deny_params)
+            return deny_result.fetchone() is not None
+        except Exception as e:
+            # If permission_denies table doesn't exist, just return False
+            print(f"  [WARN] Could not check denies: {e}")
+            return False
     # =====================================================
     # OWNER CHECK
     # =====================================================

@@ -20,48 +20,41 @@ def require_permission(
     scope: AssignmentScope,
     resource_param: Optional[str] = None,
     org_param: str = "org_id",
-    allow_self: bool = False,  # Allow users to access their own resources
+    allow_self: bool = False,
 ) -> Callable:
     """
     FastAPI dependency for RBAC enforcement
-
-    Args:
-        permission_code: The permission to check (e.g., "rbac.view_assignments")
-        scope: The scope level (org, group, etc.)
-        resource_param: Path parameter name for resource_id (e.g., "group_id")
-        org_param: Query parameter name for org_id (default: "org_id")
-        allow_self: If True, allow users to access their own user_uid resources
-
-    Example:
-        Depends(require_permission(
-            "support.group.update",
-            scope=AssignmentScope.group,
-            resource_param="group_id"
-        ))
     """
 
     async def _permission_guard(
-        request: Request,  # Access to full request
+        request: Request,
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
         org_id: Optional[str] = Query(None),
     ):
-        """
-        Inner guard function that FastAPI will call
-        """
+        """Inner guard function that FastAPI will call"""
         
-        # Get user_uid from current_user (handle both dict and object)
+        # Get user_uid from current_user
         user_uid = current_user.uid if hasattr(current_user, 'uid') else current_user.get('uid')
         
-        # -------------------------------------
-        # Extract resource_id from path params
-        # -------------------------------------
-        resource_id = None
+        # ✅ AUTO-EXTRACT org_id from current_user if not provided
+        if not org_id:
+            if isinstance(current_user, dict):
+                org_id = current_user.get('org_id')
+            else:
+                org_id = getattr(current_user, 'org_id', None)
         
+        # ✅ DEBUG LOGGING
+        print(f"[RBAC] Permission Check:")
+        print(f"  user_uid: {user_uid}")
+        print(f"  permission: {permission_code}")
+        print(f"  org_id: {org_id}")
+        print(f"  scope: {scope.value}")
+        
+        # Extract resource_id from path params
+        resource_id = None
         if resource_param:
-            # Get resource_id from path parameters
             resource_id = request.path_params.get(resource_param)
-            
             if not resource_id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -72,31 +65,29 @@ def require_permission(
         if allow_self and resource_param == "user_uid":
             target_user_uid = request.path_params.get("user_uid")
             if target_user_uid == user_uid:
-                # User is accessing their own resource
+                print(f"[RBAC] Allowing self-access")
                 return True
         
-        # -------------------------------------
         # Validate scope requirements
-        # -------------------------------------
         if scope != AssignmentScope.org and not resource_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Missing resource identifier for scope '{scope.value}'",
             )
 
-        # -------------------------------------
         # Permission check
-        # -------------------------------------
         perm_service = PermissionService(db)
 
         try:
-            allowed =  perm_service.has_permission(
+            allowed = perm_service.has_permission(
                 user_uid=user_uid,
                 permission_code=permission_code,
                 org_id=org_id,
                 scope=scope.value,
                 resource_id=resource_id,
             )
+            
+            print(f"[RBAC] Permission result: {allowed}")
 
             if not allowed:
                 raise HTTPException(
@@ -118,7 +109,6 @@ def require_permission(
             )
 
     return _permission_guard
-
 
 # =====================================================
 # Specialized dependency for viewing user permissions

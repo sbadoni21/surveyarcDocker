@@ -15,6 +15,7 @@ import CreateUserModal from "@/components/team/CreateUser";
 import UserRoleManager from "@/components/rbac/UserRoleManager";
 import { RBACProvider, useRBAC } from "@/providers/RBACProvider";
 import { ProtectedAction } from "@/components/rbac/ProtectedAction";
+import PermissionManager from "@/components/rbac/PermissionManager";
 
 // ==================== Constants ====================
 const USERS_PER_PAGE = 6;
@@ -111,7 +112,6 @@ const InviteSection = ({ inviteLink, isOwner, onCopy, copied, onOpenCreateModal,
         </div>
         <p className="text-md font-semibold dark:text-[#CBC9DE]">Invite Team Member</p>
       </div>
-      
       <div className="flex items-center gap-3 mb-4">
         <div className="relative flex-1">
           <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8C8A97]" />
@@ -360,8 +360,7 @@ function UsersPageInner() {
   const pathname = usePathname();
   const orgId = pathname.split("/")[3];
   const { organisation, update: updateOrg } = useOrganisation();
-  const { user: currentUser, updateUser, deleteUser } = useUser();
-
+  const { user: currentUser, updateUser, deleteUser, uid } = useUser();
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
   const [copied, setCopied] = useState(false);
@@ -567,6 +566,7 @@ function UsersPageInner() {
           onOpenCreateModal={() => setIsModalOpen(true)}
           orgId={orgId}
         />
+      <PermissionManager orgId={orgId} />
 
         <div className="bg-white dark:bg-[#1A1A1E] rounded-lg px-4 py-6 shadow-sm">
           <div className="flex items-center gap-2 mb-6">
