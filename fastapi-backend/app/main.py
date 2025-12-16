@@ -13,6 +13,7 @@ import logging
 # Import Redis client and utilities
 from app.core.redis_client import redis_client
 from app.utils.redis_utils import RedisHealthCheck, RedisProjectAnalytics, RedisKeyManager
+from app.routes.rbac.assignments import router as rbac_router
 
 # Import outbox processor
 from app.services.outbox_processor import run_forever as run_outbox_processor
@@ -418,4 +419,5 @@ app.include_router(salesforce_campaign_routes.router)
 app.include_router(salesforce_sync_routes.router)
 app.include_router(group.router)
 app.include_router(participant_sources.router)
+app.include_router(rbac_router)
 

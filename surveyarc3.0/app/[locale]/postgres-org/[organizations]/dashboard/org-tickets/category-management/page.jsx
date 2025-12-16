@@ -21,6 +21,7 @@ import {
 import TicketCategoryModel from "@/models/postGresModels/ticketCategoryModel";
 import TaxonomyModel from "@/models/postGresModels/ticketTaxonomyModel";
 import { usePathname } from "next/navigation";
+import TagsPage from "@/components/tags/TagsPage";
 
 export default function CategoryManagement() {
   const path = usePathname();
@@ -69,6 +70,7 @@ export default function CategoryManagement() {
     { id: "features", label: "Features / Functions", icon: Puzzle, count: stats.features },
     { id: "impacts", label: "Impact Areas", icon: Briefcase, count: stats.impacts },
     { id: "rootCauses", label: "Root Causes", icon: AlertTriangle, count: stats.rootCauses },
+    { id: "tagsPage", label: "Tags", icon: AlertTriangle },
   ];
 
   return (
@@ -132,6 +134,7 @@ export default function CategoryManagement() {
             {activeTab === "features" && <FeaturesTab orgId={orgId} onUpdate={loadStats} />}
             {activeTab === "impacts" && <ImpactsTab orgId={orgId} onUpdate={loadStats} />}
             {activeTab === "rootCauses" && <RootCausesTab orgId={orgId} onUpdate={loadStats} />}
+            {activeTab === "tagsPage" && <TagsPage />}
           </div>
         </div>
       </div>

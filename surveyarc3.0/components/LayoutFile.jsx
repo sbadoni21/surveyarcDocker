@@ -5,6 +5,7 @@ import { UserProvider } from "@/providers/postGresPorviders/UserProvider";
 import { OrganisationProvider } from "@/providers/postGresPorviders/organisationProvider";
 import { SurveyProvider } from "@/providers/surveyPProvider";
 import { ProjectProvider } from "@/providers/projectPProvider";
+import { RBACProvider } from "@/providers/RBACProvider";
 export default function LayoutFile({ children }) {
   return (
     <div>
@@ -13,7 +14,9 @@ export default function LayoutFile({ children }) {
           <OrganisationProvider>
             <SurveyProvider>
               <ProjectProvider>
+                <RBACProvider>
               {children}
+              </RBACProvider>
               </ProjectProvider>
             </SurveyProvider>
           </OrganisationProvider>

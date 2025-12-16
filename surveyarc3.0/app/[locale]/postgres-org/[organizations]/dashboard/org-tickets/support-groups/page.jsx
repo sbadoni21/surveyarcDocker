@@ -86,7 +86,7 @@ const StatsCard = ({ icon: Icon, label, value, color = "blue", loading = false }
   <div className={`bg-gradient-to-br from-${color}-50 to-${color}-100 dark:from-${color}-900/20 dark:to-${color}-800/20 rounded-2xl p-6 border-2 border-${color}-200 dark:border-${color}-700`}>
     <div className="flex items-center gap-4">
       <div className={`w-14 h-14 bg-${color}-600 rounded-xl flex items-center justify-center shadow-lg`}>
-        <Icon className="w-7 h-7 text-white" />
+        <Icon className="w-7 h-7 text-black" />
       </div>
       <div>
         {loading ? (
@@ -520,336 +520,358 @@ export default function SupportGroupsPage() {
         />
       )}
 
-      <div className=" mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Header */}
-        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-2xl p-6 border-2 border-blue-200 dark:border-blue-700">
-          <div className="flex items-center justify-between">
+   <div className="mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+  {/* Header */}
+  <div className="bg-white border-b border-gray-200 pb-6">
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-4">
+        <div className="w-12 h-12 bg-slate-700 rounded-md flex items-center justify-center">
+          <Users className="w-6 h-6 text-white" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">
+            Support Groups
+          </h1>
+          <p className="text-sm text-gray-600 mt-0.5">
+            Manage organizational groups, teams, and personnel
+          </p>
+        </div>
+      </div>
+      <button
+        onClick={() => setGroupModal({ isOpen: true, group: null })}
+        className="flex items-center gap-2 px-5 py-2.5 bg-slate-700 text-white rounded-md hover:bg-slate-800 transition-colors font-medium text-sm"
+      >
+        <Plus className="w-4 h-4" />
+        New Group
+      </button>
+    </div>
+  </div>
+
+  {/* Stats */}
+  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <StatsCard 
+      icon={Building2} 
+      label="Groups" 
+      value={stats.groups} 
+      color="slate" 
+      loading={loading} 
+    />
+    <StatsCard 
+      icon={Group} 
+      label="Teams" 
+      value={stats.teams} 
+      color="slate" 
+      loading={loading} 
+    />
+    <StatsCard 
+      icon={Users} 
+      label="Members" 
+      value={stats.members} 
+      color="slate" 
+      loading={loading} 
+    />
+  </div>
+
+  {/* Search */}
+  <div className="bg-white border border-gray-200 rounded-md p-4">
+    <div className="relative">
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+      <input
+        type="text"
+        placeholder="Search by group name, description, or email address..."
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+        className="pl-10 pr-4 py-2.5 w-full bg-white border border-gray-300 rounded-md focus:ring-2 focus:ring-slate-500 focus:border-slate-500 text-sm transition-colors"
+      />
+    </div>
+  </div>
+
+  {/* Groups */}
+  <div className="space-y-4">
+    {filteredGroups.map((group) => {
+      const constraints = validateGroupConstraints(groupMembers[group.groupId]);
+      const groupTeamsCount = teams[group.groupId]?.length || 0;
+      const isExpanded = expandedGroups.has(group.groupId);
+
+      return (
+        <div
+          key={group.groupId}
+          className="bg-white border border-gray-200 rounded-md hover:border-gray-300 transition-all overflow-hidden"
+        >
+          {/* Group header */}
+          <div className="p-5 bg-gray-50">
             <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
-                <Users className="w-9 h-9 text-white" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                  Support Groups
-                </h1>
-                <p className="text-gray-600 dark:text-gray-400 mt-1 font-medium">
-                  Manage support groups, teams, and their members
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setGroupModal({ isOpen: true, group: null })}
-              className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/30 hover:shadow-xl hover:shadow-blue-600/40 font-semibold"
-            >
-              <Plus className="w-5 h-5" />
-              New Group
-            </button>
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <StatsCard icon={Building2} label="Groups" value={stats.groups} color="blue" loading={loading} />
-          <StatsCard icon={Group} label="Teams" value={stats.teams} color="indigo" loading={loading} />
-          <StatsCard icon={Users} label="Members" value={stats.members} color="purple" loading={loading} />
-        </div>
-
-        {/* Search */}
-        <div className="bg-white dark:bg-[#242428] rounded-2xl p-4 border-2 border-gray-200 dark:border-gray-700">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search groups by name, description, or email..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-12 pr-4 py-3 w-full bg-gray-50 dark:bg-[#1A1A1E] border-2 border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white transition-all"
-            />
-          </div>
-        </div>
-
-        {/* Groups */}
-        <div className="space-y-4">
-          {filteredGroups.map((group) => {
-            const constraints = validateGroupConstraints(groupMembers[group.groupId]);
-            const groupTeamsCount = teams[group.groupId]?.length || 0;
-            const isExpanded = expandedGroups.has(group.groupId);
-
-            return (
-              <div
-                key={group.groupId}
-                className="bg-white dark:bg-[#242428] rounded-2xl border-2 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 transition-all shadow-sm hover:shadow-lg overflow-hidden"
+              <button
+                onClick={() => toggleGroupExpanded(group.groupId)}
+                className="p-2 hover:bg-gray-200 rounded-md transition-colors"
               >
-                {/* Group header */}
-                <div className="p-5">
-                  <div className="flex items-center gap-4">
-                    <button
-                      onClick={() => toggleGroupExpanded(group.groupId)}
-                      className="p-2.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-all"
-                    >
-                      {isExpanded ? (
-                        <ChevronDown className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                      ) : (
-                        <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                      )}
-                    </button>
+                {isExpanded ? (
+                  <ChevronDown className="w-5 h-5 text-gray-600" />
+                ) : (
+                  <ChevronRight className="w-5 h-5 text-gray-600" />
+                )}
+              </button>
 
-                    <div className="w-14 h-14 bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 rounded-xl flex items-center justify-center border-2 border-blue-200 dark:border-blue-700">
-                      <Building2 className="w-7 h-7 text-blue-600 dark:text-blue-400" />
-                    </div>
+              <div className="w-10 h-10 bg-slate-100 rounded-md flex items-center justify-center border border-slate-200">
+                <Building2 className="w-5 h-5 text-slate-600" />
+              </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-                          {group.name}
-                        </h3>
-                        {!constraints.hasMembers && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 text-xs font-semibold rounded-lg">
-                            <AlertCircle className="w-3.5 h-3.5" />
-                            No Members
-                          </span>
-                        )}
-                      </div>
-                      {group.description && (
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                          {group.description}
-                        </p>
-                      )}
-                      {group.email && (
-                        <p className="text-xs text-gray-500 dark:text-gray-500">
-                          {group.email}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          <Group className="w-4 h-4" />
-                          {groupTeamsCount} teams
-                        </div>
-                        <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          <Users className="w-4 h-4" />
-                          {constraints.memberCount} members
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setGroupModal({ isOpen: true, group })}
-                        className="p-2.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-xl transition-all"
-                        title="Edit group"
-                      >
-                        <Edit className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteGroup(group.groupId)}
-                        className={`p-2.5 rounded-xl transition-all ${
-                          (constraints.hasMembers || groupTeamsCount > 0)
-                            ? "text-gray-400 dark:text-gray-600 cursor-not-allowed"
-                            : "text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30"
-                        }`}
-                        title="Delete group"
-                        disabled={constraints.hasMembers || groupTeamsCount > 0}
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {group.name}
+                  </h3>
+                  {!constraints.hasMembers && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium rounded">
+                      <AlertCircle className="w-3 h-3" />
+                      No Members
+                    </span>
+                  )}
                 </div>
-
-                {/* Expanded content */}
-                {isExpanded && (
-                  <div className="px-5 pb-5 space-y-6 border-t-2 border-gray-200 dark:border-gray-700 pt-5">
-                    {/* Group members */}
-                    <div>
-                      <div className="flex items-center justify-between mb-4">
-                        <h4 className="font-bold text-lg text-gray-900 dark:text-white flex items-center gap-2">
-                          <Users className="w-5 h-5 text-blue-600" />
-                          Group Members ({constraints.memberCount})
-                          {!constraints.hasMembers && (
-                            <span className="text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-2.5 py-1 rounded-lg font-semibold">
-                              Required: At least 1 member
-                            </span>
-                          )}
-                        </h4>
-                        <button
-                          onClick={() =>
-                            setMemberModal({
-                              isOpen: true,
-                              member: null,
-                              type: "group",
-                              parentId: group.groupId,
-                            })
-                          }
-                          className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all font-semibold shadow-lg shadow-blue-600/30"
-                        >
-                          <UserPlus className="w-4 h-4" />
-                          Add Member
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {Array.isArray(groupMembers[group.groupId]) &&
-                          groupMembers[group.groupId].map((member) => {
-                            const info = getUserDisplayInfo(member.user_id);
-                            const canRemove = constraints.memberCount > 1;
-
-                            return (
-                              <div
-                                key={member.user_id}
-                                className="p-4 bg-gray-50 dark:bg-[#1A1A1E] border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-blue-300 dark:hover:border-blue-700 transition-all"
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="flex-1 min-w-0">
-                                    <p className="font-semibold text-sm text-gray-900 dark:text-white truncate">
-                                      {info.displayName}
-                                    </p>
-                                    {info.email && info.displayName !== info.email && (
-                                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                        {info.email}
-                                      </p>
-                                    )}
-                                    <div className="flex items-center gap-2 mt-2">
-                                      <span
-                                        className={`text-xs px-2 py-1 rounded-lg font-semibold ${
-                                          member.role === "lead"
-                                            ? "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400"
-                                            : member.role === "agent"
-                                            ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
-                                            : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                                        }`}
-                                      >
-                                        {MEMBER_ROLES[member.role] || member.role}
-                                      </span>
-                                      <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-                                        {PROFICIENCY_LEVELS[member.proficiency] || member.proficiency}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      onClick={() =>
-                                        setMemberModal({
-                                          isOpen: true,
-                                          member,
-                                          type: "group",
-                                          parentId: group.groupId,
-                                        })
-                                      }
-                                      className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-all"
-                                      title="Edit member"
-                                    >
-                                      <Edit className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={() => handleRemoveMember(member.user_id, group.groupId, "group")}
-                                      className={`p-1.5 rounded-lg transition-all ${
-                                        canRemove
-                                          ? "text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30"
-                                          : "text-gray-400 dark:text-gray-600 cursor-not-allowed"
-                                      }`}
-                                      title={
-                                        canRemove
-                                          ? "Remove member"
-                                          : "Cannot remove: group must have at least one member"
-                                      }
-                                      disabled={!canRemove}
-                                    >
-                                      <X className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                      </div>
-                    </div>
-
-                    {/* Teams */}
-                    <div>
-                      <div className="flex items-center justify-between mb-4">
-                        <h4 className="font-bold text-lg text-gray-900 dark:text-white flex items-center gap-2">
-                          <Group className="w-5 h-5 text-indigo-600" />
-                          Teams ({groupTeamsCount})
-                        </h4>
-                        <button
-                          onClick={() =>
-                            setTeamModal({
-                              isOpen: true,
-                              team: null,
-                              groupId: group.groupId,
-                            })
-                          }
-                          className="flex items-center gap-2 px-4 py-2 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-semibold shadow-lg shadow-indigo-600/30"
-                        >
-                          <Plus className="w-4 h-4" />
-                          Add Team
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                        {(teams[group.groupId] || []).map((team) => (
-                          <TeamStatsCard
-                            key={team.teamId}
-                            team={team}
-                            members={teamMembers[team.teamId]}
-                            onViewCalendar={handleViewCalendar}
-                            onEditTeam={() => setTeamModal({ isOpen: true, team, groupId: group.groupId })}
-                            getUserDisplayInfo={getUserDisplayInfo}
-                            onDeleteTeam={() => handleDeleteTeam(team.teamId, group.groupId)}
-                            onAddMember={() =>
-                              setMemberModal({
-                                isOpen: true,
-                                member: null,
-                                type: "team",
-                                parentId: team.teamId,
-                              })
-                            }
-                            onEditMember={(m) =>
-                              setMemberModal({
-                                isOpen: true,
-                                member: m,
-                                type: "team",
-                                parentId: team.teamId,
-                              })
-                            }
-                            onRemoveMember={(userId) => handleRemoveMember(userId, team.teamId, "team")}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                {group.description && (
+                  <p className="text-sm text-gray-600 mb-0.5">
+                    {group.description}
+                  </p>
+                )}
+                {group.email && (
+                  <p className="text-xs text-gray-500">
+                    {group.email}
+                  </p>
                 )}
               </div>
-            );
-          })}
-        </div>
 
-        {/* Empty state */}
-        {filteredGroups.length === 0 && (
-          <div className="text-center py-16 bg-white dark:bg-[#242428] rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700">
-            <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Building2 className="w-10 h-10 text-blue-600 dark:text-blue-400" />
+              <div className="flex items-center gap-4">
+                <div className="text-right space-y-1">
+                  <div className="flex items-center justify-end gap-1.5 text-sm text-gray-700">
+                    <Group className="w-4 h-4 text-gray-500" />
+                    <span className="font-medium">{groupTeamsCount}</span>
+                    <span className="text-gray-500">teams</span>
+                  </div>
+                  <div className="flex items-center justify-end gap-1.5 text-sm text-gray-700">
+                    <Users className="w-4 h-4 text-gray-500" />
+                    <span className="font-medium">{constraints.memberCount}</span>
+                    <span className="text-gray-500">members</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 border-l border-gray-300 pl-4">
+                  <button
+                    onClick={() => setGroupModal({ isOpen: true, group })}
+                    className="p-2 text-slate-600 hover:bg-gray-200 rounded-md transition-colors"
+                    title="Edit group"
+                  >
+                    <Edit className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteGroup(group.groupId)}
+                    className={`p-2 rounded-md transition-colors ${
+                      (constraints.hasMembers || groupTeamsCount > 0)
+                        ? "text-gray-400 cursor-not-allowed"
+                        : "text-red-600 hover:bg-red-50"
+                    }`}
+                    title="Delete group"
+                    disabled={constraints.hasMembers || groupTeamsCount > 0}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
             </div>
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-              {searchTerm ? "No groups found" : "No support groups yet"}
-            </h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
-              {searchTerm
-                ? "Try adjusting your search terms"
-                : "Create your first support group to get started"}
-            </p>
-            {!searchTerm && (
-              <button
-                onClick={() => setGroupModal({ isOpen: true, group: null })}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all font-semibold shadow-lg shadow-blue-600/30"
-              >
-                <Plus className="w-5 h-5" />
-                Create First Group
-              </button>
-            )}
           </div>
-        )}
+
+          {/* Expanded content */}
+          {isExpanded && (
+            <div className="px-5 pb-5 space-y-6 border-t border-gray-200 pt-5 bg-white">
+              {/* Group members */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-semibold text-base text-gray-900 flex items-center gap-2">
+                    <Users className="w-4 h-4 text-slate-600" />
+                    Group Members ({constraints.memberCount})
+                    {!constraints.hasMembers && (
+                      <span className="text-xs bg-red-50 border border-red-200 text-red-700 px-2 py-0.5 rounded font-medium">
+                        Required: Minimum 1 member
+                      </span>
+                    )}
+                  </h4>
+                  <button
+                    onClick={() =>
+                      setMemberModal({
+                        isOpen: true,
+                        member: null,
+                        type: "group",
+                        parentId: group.groupId,
+                      })
+                    }
+                    className="flex items-center gap-2 px-4 py-2 text-sm bg-slate-700 text-white rounded-md hover:bg-slate-800 transition-colors font-medium"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    Add Member
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {Array.isArray(groupMembers[group.groupId]) &&
+                    groupMembers[group.groupId].map((member) => {
+                      const info = getUserDisplayInfo(member.user_id);
+                      const canRemove = constraints.memberCount > 1;
+
+                      return (
+                        <div
+                          key={member.user_id}
+                          className="p-4 bg-gray-50 border border-gray-200 rounded-md hover:border-gray-300 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm text-gray-900 truncate">
+                                {info.displayName}
+                              </p>
+                              {info.email && info.displayName !== info.email && (
+                                <p className="text-xs text-gray-500 truncate mt-0.5">
+                                  {info.email}
+                                </p>
+                              )}
+                              <div className="flex items-center gap-2 mt-2">
+                                <span
+                                  className={`text-xs px-2 py-0.5 rounded font-medium border ${
+                                    member.role === "lead"
+                                      ? "bg-indigo-50 border-indigo-200 text-indigo-700"
+                                      : member.role === "agent"
+                                      ? "bg-blue-50 border-blue-200 text-blue-700"
+                                      : "bg-gray-100 border-gray-200 text-gray-700"
+                                  }`}
+                                >
+                                  {MEMBER_ROLES[member.role] || member.role}
+                                </span>
+                                <span className="text-xs text-gray-600">
+                                  {PROFICIENCY_LEVELS[member.proficiency] || member.proficiency}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() =>
+                                  setMemberModal({
+                                    isOpen: true,
+                                    member,
+                                    type: "group",
+                                    parentId: group.groupId,
+                                  })
+                                }
+                                className="p-1.5 text-slate-600 hover:bg-gray-200 rounded transition-colors"
+                                title="Edit member"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleRemoveMember(member.user_id, group.groupId, "group")}
+                                className={`p-1.5 rounded transition-colors ${
+                                  canRemove
+                                    ? "text-red-600 hover:bg-red-50"
+                                    : "text-gray-400 cursor-not-allowed"
+                                }`}
+                                title={
+                                  canRemove
+                                    ? "Remove member"
+                                    : "Cannot remove: group requires at least one member"
+                                }
+                                disabled={!canRemove}
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* Teams */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-semibold text-base text-gray-900 flex items-center gap-2">
+                    <Group className="w-4 h-4 text-slate-600" />
+                    Teams ({groupTeamsCount})
+                  </h4>
+                  <button
+                    onClick={() =>
+                      setTeamModal({
+                        isOpen: true,
+                        team: null,
+                        groupId: group.groupId,
+                      })
+                    }
+                    className="flex items-center gap-2 px-4 py-2 text-sm bg-slate-700 text-white rounded-md hover:bg-slate-800 transition-colors font-medium"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Team
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {(teams[group.groupId] || []).map((team) => (
+                    <TeamStatsCard
+                      key={team.teamId}
+                      team={team}
+                      members={teamMembers[team.teamId]}
+                      onViewCalendar={handleViewCalendar}
+                      onEditTeam={() => setTeamModal({ isOpen: true, team, groupId: group.groupId })}
+                      getUserDisplayInfo={getUserDisplayInfo}
+                      onDeleteTeam={() => handleDeleteTeam(team.teamId, group.groupId)}
+                      onAddMember={() =>
+                        setMemberModal({
+                          isOpen: true,
+                          member: null,
+                          type: "team",
+                          parentId: team.teamId,
+                        })
+                      }
+                      onEditMember={(m) =>
+                        setMemberModal({
+                          isOpen: true,
+                          member: m,
+                          type: "team",
+                          parentId: team.teamId,
+                        })
+                      }
+                      onRemoveMember={(userId) => handleRemoveMember(userId, team.teamId, "team")}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    })}
+  </div>
+
+  {/* Empty state */}
+  {filteredGroups.length === 0 && (
+    <div className="text-center py-20 bg-white border-2 border-dashed border-gray-300 rounded-md">
+      <div className="w-16 h-16 bg-gray-100 rounded-md flex items-center justify-center mx-auto mb-4">
+        <Building2 className="w-8 h-8 text-gray-400" />
       </div>
+      <h3 className="text-lg font-semibold text-gray-900 mb-1">
+        {searchTerm ? "No groups found" : "No support groups"}
+      </h3>
+      <p className="text-sm text-gray-600 mb-6">
+        {searchTerm
+          ? "Adjust your search criteria and try again"
+          : "Create your first support group to begin"}
+      </p>
+      {!searchTerm && (
+        <button
+          onClick={() => setGroupModal({ isOpen: true, group: null })}
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-700 text-white rounded-md hover:bg-slate-800 transition-colors font-medium text-sm"
+        >
+          <Plus className="w-4 h-4" />
+          Create Group
+        </button>
+      )}
+    </div>
+  )}
+</div>
 
       {/* Modals */}
       <GroupFormModal
