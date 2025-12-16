@@ -2,25 +2,6 @@
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import { useEffect, useState } from "react";
 
-const PROFICIENCY_LEVELS = {
-  l1: "Level 1",
-  l2: "Level 2", 
-  l3: "Level 3",
-  specialist: "Specialist"
-};
-
-const MEMBER_ROLES = {
-  agent: "Agent",
-  lead: "Team Lead",
-  viewer: "Viewer"
-};
-
-const ROUTING_TARGETS = {
-  group: "Group",
-  team: "Team"
-};
-
-// Enhanced Group Form Modal with UserProvider Integration
 export default function GroupFormModal  ({ isOpen, onClose, onSave, group, orgId }) {
   const { getActiveUsersByOrg } = useUser();
   const [availableUsers, setAvailableUsers] = useState([]);

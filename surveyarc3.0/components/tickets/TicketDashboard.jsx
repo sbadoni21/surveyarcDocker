@@ -441,7 +441,7 @@ export default function EnterpriseTicketDashboard() {
         <div className="flex items-center gap-3 text-gray-600">
           <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
           <div className="text-center">
-            <p className="font-semibold">Loading Enterprise Dashboard</p>
+            <p className="font-semibold">Loading Dashboard</p>
             <p className="text-sm text-gray-500">Analyzing ticket data...</p>
           </div>
         </div>
