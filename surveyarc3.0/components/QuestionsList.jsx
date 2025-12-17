@@ -68,7 +68,7 @@ const SortableItem = ({ q, index, onDelete, onSelect }) => {
     useSortable({ id: q.questionId });
 
   const style = { transform: CSS.Transform.toString(transform), transition };
-  const displayLabel = q.serial_label || q.label || "1";
+  const displayLabel = q.serial_label ||"";
 
   return (
     <div

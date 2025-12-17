@@ -23,21 +23,21 @@ def get_translatable_config_fields(question_type: str) -> list:
         # =========================
         "welcome_screen": ["title", "description"],
         "end_screen": ["title", "description"],
-        "statement": ["text"],
-        "redirect": ["buttonText"],
-        "auto_sum":["itemDescriptions","description","label","items"],
+        "statement": ["text","title","description"],
+        "redirect": ["buttonText","title","description"],
+        "auto_sum":["itemDescriptions","title","description","label","items"],
 
         # =========================
         # BASIC INPUTS
         # =========================
-        "long_text": ["placeholder"],
-        "short_text": ["placeholder"],
-        "number": ["placeholder"],
-        "date": ["placeholder"],
-        "contact_email": ["placeholder"],
-        "contact_phone": ["placeholder"],
-        "contact_address": ["placeholder"],
-        "contact_website": ["placeholder"],
+        "long_text": ["placeholder","title","description"],
+        "short_text": ["placeholder","title","description"],
+        "number": ["placeholder","title","description"],
+        "date": ["placeholder","title","description"],
+        "contact_email": ["placeholder","title","description"],
+        "contact_phone": ["placeholder","title","description"],
+        "contact_address": ["placeholder","title","description"],
+        "contact_website": ["placeholder","title","description"],
 
         # =========================
         # CHOICE BASED
@@ -45,37 +45,38 @@ def get_translatable_config_fields(question_type: str) -> list:
         "multiple_choice": ["options", "choices", "placeholder"],
         "checkbox": ["options", "placeholder","description","label"],
         "dropdown": ["options", "placeholder", "description","label"],
-        "picture_choice": ["images"],
-        "yes_no": ["yesLabel", "noLabel"],
-        "legal": ["statement"],
+        "picture_choice": ["images","title","description"],
+        "yes_no": ["yesLabel", "noLabel","title","description"],
+        "legal": ["statement","title","description"],
 
         # =========================
         # SCALES & RATINGS
         # =========================
-        "nps": ["minLabel", "maxLabel"],
-        "rating": [],  # only top label
-        "likert": ["labels"],
-        "smiley_rating": ["labels"],
-        "opinion_scale": ["minLabel", "maxLabel"],
-        "slider": ["prefix", "suffix", "anchors"],
+        "nps": ["minLabel", "maxLabel","title","description"],
+        "rating": ["title","description"],  # only top label
+        "likert": ["labels","title","description"],
+        "smiley_rating": ["labels","title","description"],
+        "opinion_scale": ["minLabel", "maxLabel","title","description"],
+        "slider": ["prefix", "suffix", "anchors","title","description"],
 
         # =========================
         # GRIDS
         # =========================
-        "table_grid": ["rows", "columns"],
-        "multi_grid": ["rows", "columns"],
+        "table_grid": ["rows", "columns","title","description"],
+        "multi_grid": ["rows", "columns","title","description"],
         "matrix_rating": [
             "rows",
             "columns",
             "lowLabel",
             "highLabel",
             "neutralLabel",
+            "title","description"
         ],
 
         # =========================
         # ADVANCED
         # =========================
-        "semantic_diff": ["items"],
+        "semantic_diff": ["items","title","description"],
         "side_by_side": [
             "leftLabel",
             "rightLabel",
@@ -83,17 +84,18 @@ def get_translatable_config_fields(question_type: str) -> list:
             "leftBiasLabel",
             "rightBiasLabel",
             "neutralLabel",
+            "title","description"
         ],
-        "comparison_grid": ["attributes", "brands", "noneLabel"],
-        "segmentation_selector": ["segments"],
-        "persona_quiz": ["personas", "items"],
+        "comparison_grid": ["attributes", "brands", "noneLabel","title","description"],
+        "segmentation_selector": ["segments","title","description"],
+        "persona_quiz": ["personas", "items","title","description"],
 
         # =========================
         # MONADIC / CONCEPT
         # =========================
-        "monadic_test": ["stimulusLabel"],
-        "sequential_monadic": ["stimulusLabel"],
-        "forced_exposure": ["instruction"],
+        "monadic_test": ["stimulusLabel","title","description"],
+        "sequential_monadic": ["stimulusLabel","title","description"],
+        "forced_exposure": ["instruction","title","description"],
 
         # =========================
         # RESEARCH
@@ -102,7 +104,7 @@ def get_translatable_config_fields(question_type: str) -> list:
             "productName",
             "likertOptions",
             "yesLabel",
-            "noLabel",
+            "noLabel","title","description"
         ],
         "price_sensitivity": ["description","label",
             "tooCheapLabel",
@@ -112,9 +114,9 @@ def get_translatable_config_fields(question_type: str) -> list:
         ],
         "conjoint": ["attributes", "description","label"],
         "maxdiff": ["items", "description","label"],
-        "turf": ["items"],
-        "ranking": ["items"],
-        "weighted_multi": ["options"],
+        "turf": ["items","title","description"],
+        "ranking": ["items","title","description"],
+        "weighted_multi": ["options","title","description"],
     }.get(question_type, [])
 
 # ============================================================

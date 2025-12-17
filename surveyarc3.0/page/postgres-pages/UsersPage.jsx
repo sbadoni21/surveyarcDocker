@@ -16,6 +16,7 @@ import UserRoleManager from "@/components/rbac/UserRoleManager";
 import { RBACProvider, useRBAC } from "@/providers/RBACProvider";
 import { ProtectedAction } from "@/components/rbac/ProtectedAction";
 import PermissionManager from "@/components/rbac/PermissionManager";
+import UserPermissionsManager from "@/components/rbac/UserPermissionsManager";
 
 // ==================== Constants ====================
 const USERS_PER_PAGE = 6;
@@ -567,7 +568,7 @@ function UsersPageInner() {
           orgId={orgId}
         />
       <PermissionManager orgId={orgId} />
-
+<UserPermissionsManager orgId={orgId} />
         <div className="bg-white dark:bg-[#1A1A1E] rounded-lg px-4 py-6 shadow-sm">
           <div className="flex items-center gap-2 mb-6">
             <div className="p-2 bg-[#ED7A13] rounded-lg text-white">

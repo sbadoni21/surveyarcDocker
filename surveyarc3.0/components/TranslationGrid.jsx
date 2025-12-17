@@ -1,9 +1,188 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { Search, Languages, Save, X, Loader2, Plus, Download, Upload } from 'lucide-react';
+import { Search, Languages, Save, X, Loader2, Plus, Download, Upload, Check } from 'lucide-react';
 import { useQuestion } from '@/providers/questionPProvider';
 import { AVAILABLE_LANGUAGES } from '@/utils/availableLanguages';
 import { usePathname } from 'next/navigation';
+
+// ============================================
+// LANGUAGE SELECTION MODAL COMPONENT
+// ============================================
+function LanguageSelectionModal({ isOpen, onClose, availableLanguages, onDownload }) {
+  const [selectedLanguages, setSelectedLanguages] = useState(new Set(availableLanguages));
+  const [format, setFormat] = useState('csv');
+
+  useEffect(() => {
+    // Reset selections when modal opens
+    if (isOpen) {
+      setSelectedLanguages(new Set(availableLanguages));
+    }
+  }, [isOpen, availableLanguages]);
+
+  if (!isOpen) return null;
+
+  const toggleLanguage = (lang) => {
+    setSelectedLanguages(prev => {
+      const updated = new Set(prev);
+      if (updated.has(lang)) {
+        updated.delete(lang);
+      } else {
+        updated.add(lang);
+      }
+      return updated;
+    });
+  };
+
+  const selectAll = () => {
+    setSelectedLanguages(new Set(availableLanguages));
+  };
+
+  const deselectAll = () => {
+    setSelectedLanguages(new Set());
+  };
+
+  const handleDownload = () => {
+    if (selectedLanguages.size === 0) {
+      alert('Please select at least one language');
+      return;
+    }
+    onDownload(Array.from(selectedLanguages), format);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-gray-900">Download Translations</h2>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="px-6 py-4 overflow-y-auto flex-1">
+          {/* Format Selection */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Export Format
+            </label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  value="csv"
+                  checked={format === 'csv'}
+                  onChange={(e) => setFormat(e.target.value)}
+                  className="w-4 h-4 text-blue-600"
+                />
+                <span className="text-sm">CSV (Recommended for Excel/Google Sheets)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  value="json"
+                  checked={format === 'json'}
+                  onChange={(e) => setFormat(e.target.value)}
+                  className="w-4 h-4 text-blue-600"
+                />
+                <span className="text-sm">JSON</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Language Selection */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <label className="block text-sm font-medium text-gray-700">
+                Select Languages to Export
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={selectAll}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  Select All
+                </button>
+                <span className="text-gray-400">|</span>
+                <button
+                  onClick={deselectAll}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  Deselect All
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-4">
+              {availableLanguages.map(lang => {
+                const langInfo = AVAILABLE_LANGUAGES.find(l => l.code === lang) || { 
+                  flag: '🏴', 
+                  name: lang 
+                };
+                const isSelected = selectedLanguages.has(lang);
+
+                return (
+                  <label
+                    key={lang}
+                    className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                      isSelected 
+                        ? 'border-blue-500 bg-blue-50' 
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleLanguage(lang)}
+                      className="w-4 h-4 text-blue-600 rounded"
+                    />
+                    <span className="text-2xl">{langInfo.flag}</span>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium text-gray-900">{langInfo.name}</div>
+                      <div className="text-xs text-gray-500">{lang}</div>
+                    </div>
+                    {isSelected && (
+                      <Check className="w-4 h-4 text-blue-600" />
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 text-sm text-gray-600">
+              {selectedLanguages.size} {selectedLanguages.size === 1 ? 'language' : 'languages'} selected
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleDownload}
+            disabled={selectedLanguages.size === 0}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            <Download className="w-4 h-4" />
+            Download {format.toUpperCase()}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function TranslationUI() {
   const { 
@@ -22,6 +201,7 @@ export default function TranslationUI() {
   const [savingCells, setSavingCells] = useState(new Set());
   const [expandedQuestions, setExpandedQuestions] = useState(new Set());
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
 
   useEffect(() => {
     if (surveyId && orgId) {
@@ -132,12 +312,6 @@ const getTranslationValue = (question, field, subfield, locale) => {
   return translation?.[field] || '';
 };
 
- // Helper to get flattened config fields (including nested options)
- // ============================================
-// UPDATED getFlattenedConfigFields function
-// Add this to replace your existing function
-// ============================================
-
 const getFlattenedConfigFields = (config) => {
   const fields = [];
   
@@ -152,6 +326,7 @@ const getFlattenedConfigFields = (config) => {
     'step',
     'rows',
     'cols',
+    'scale',
     'min',
     'layout',
     'noColor',
@@ -478,19 +653,26 @@ const handleSave = async (questionId, field, subfield, locale) => {
   };
 
   // ============================================
-  // DOWNLOAD TRANSLATIONS AS CSV
+  // DOWNLOAD TRANSLATIONS WITH LANGUAGE SELECTION
   // ============================================
-  const downloadTranslationsCSV = () => {
-    const rows = getResourceRows();
-    const languages = availableLanguages;
+  const handleDownloadRequest = (selectedLanguages, format) => {
+    if (format === 'csv') {
+      downloadTranslationsCSV(selectedLanguages);
+    } else {
+      downloadTranslationsJSON(selectedLanguages);
+    }
+  };
 
-    // Create CSV header
-    const header = ['Resource', 'Type', ...languages].join(',');
+  const downloadTranslationsCSV = (selectedLanguages) => {
+    const rows = getResourceRows();
+
+    // Create CSV header with selected languages only
+    const header = ['Resource', 'Type', ...selectedLanguages].join(',');
     
     // Create CSV rows
     const csvRows = rows.map(row => {
       const question = questions.find(q => q.questionId === row.questionId);
-      const values = languages.map(locale => {
+      const values = selectedLanguages.map(locale => {
         const value = getTranslationValue(question, row.field, row.subfield, locale);
         let displayValue = formatValueForDisplay(value);
         
@@ -517,17 +699,17 @@ const handleSave = async (questionId, field, subfield, locale) => {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `translations_${surveyId}_${new Date().toISOString().split('T')[0]}.csv`);
+    const languageSuffix = selectedLanguages.length === availableLanguages.length 
+      ? 'all' 
+      : selectedLanguages.join('-');
+    link.setAttribute('download', `translations_${surveyId}_${languageSuffix}_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // ============================================
-  // DOWNLOAD TRANSLATIONS AS JSON
-  // ============================================
-  const downloadTranslationsJSON = () => {
+  const downloadTranslationsJSON = (selectedLanguages) => {
     const translations = {};
     
     questions.forEach(question => {
@@ -538,28 +720,20 @@ const handleSave = async (questionId, field, subfield, locale) => {
         config: {}
       };
 
-      availableLanguages.forEach(locale => {
+      selectedLanguages.forEach(locale => {
         translations[question.questionId].label[locale] = 
           getTranslationValue(question, 'label', null, locale);
         translations[question.questionId].description[locale] = 
           getTranslationValue(question, 'description', null, locale);
 
         // Get all config keys
-        const allConfigKeys = new Set();
-        if (question.config) {
-          Object.keys(question.config).forEach(key => {
-            if (!isComplexValue(question.config[key])) {
-              allConfigKeys.add(key);
-            }
-          });
-        }
-
-        allConfigKeys.forEach(configKey => {
-          if (!translations[question.questionId].config[configKey]) {
-            translations[question.questionId].config[configKey] = {};
+        const configFields = getFlattenedConfigFields(question.config);
+        configFields.forEach(({ key }) => {
+          if (!translations[question.questionId].config[key]) {
+            translations[question.questionId].config[key] = {};
           }
-          translations[question.questionId].config[configKey][locale] = 
-            getTranslationValue(question, 'config', configKey, locale);
+          translations[question.questionId].config[key][locale] = 
+            getTranslationValue(question, 'config', key, locale);
         });
       });
     });
@@ -570,7 +744,10 @@ const handleSave = async (questionId, field, subfield, locale) => {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `translations_${surveyId}_${new Date().toISOString().split('T')[0]}.json`);
+    const languageSuffix = selectedLanguages.length === availableLanguages.length 
+      ? 'all' 
+      : selectedLanguages.join('-');
+    link.setAttribute('download', `translations_${surveyId}_${languageSuffix}_${new Date().toISOString().split('T')[0]}.json`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -654,9 +831,15 @@ const handleSave = async (questionId, field, subfield, locale) => {
           continue;
         }
         
-        const [field, subfield] = fieldPath.includes('.') 
-          ? fieldPath.split('.') 
-          : [fieldPath, null];
+        // Parse field and subfield
+        let field, subfield;
+        if (fieldPath.startsWith('config.')) {
+          field = 'config';
+          subfield = fieldPath.substring(7); // Remove 'config.' prefix
+        } else {
+          field = fieldPath;
+          subfield = null;
+        }
 
         // Get translations for each language
         for (let j = 0; j < languageColumns.length; j++) {
@@ -711,13 +894,10 @@ const handleSave = async (questionId, field, subfield, locale) => {
 
           const existingTranslation = question.translations?.[update.locale] || {};
 
-          // Merge config
-          const mergedConfig = {};
-          if (question.config) {
-            Object.keys(question.config).forEach(key => {
-              mergedConfig[key] = question.config[key];
-            });
-          }
+          // Deep clone config to avoid mutations
+          const mergedConfig = JSON.parse(JSON.stringify(question.config || {}));
+          
+          // Merge existing translation config
           if (existingTranslation.config) {
             Object.keys(existingTranslation.config).forEach(key => {
               mergedConfig[key] = existingTranslation.config[key];
@@ -730,10 +910,49 @@ const handleSave = async (questionId, field, subfield, locale) => {
             config: mergedConfig
           };
 
-          // Update the specific field
+          // Update the specific field - HANDLE NESTED PATHS
           if (update.subfield) {
-            translationData.config[update.subfield] = update.value;
+            // Handle array notation: items[0] or options[0].label
+            const arrayMatch = update.subfield.match(/^(\w+)\[(\d+)\](?:\.(\w+))?$/);
+            if (arrayMatch) {
+              const [, arrayName, index, prop] = arrayMatch;
+              const idx = parseInt(index);
+              
+              // Ensure array exists
+              if (!translationData.config[arrayName]) {
+                translationData.config[arrayName] = [];
+              }
+              
+              // Ensure array is large enough
+              while (translationData.config[arrayName].length <= idx) {
+                translationData.config[arrayName].push(prop ? {} : '');
+              }
+              
+              if (prop) {
+                // Array of objects: options[0].label
+                if (typeof translationData.config[arrayName][idx] !== 'object') {
+                  translationData.config[arrayName][idx] = {};
+                }
+                translationData.config[arrayName][idx][prop] = update.value;
+              } else {
+                // Array of strings: items[0]
+                translationData.config[arrayName][idx] = update.value;
+              }
+            }
+            // Handle nested objects: anchors.min
+            else if (update.subfield.includes('.')) {
+              const [parentKey, childKey] = update.subfield.split('.');
+              if (!translationData.config[parentKey]) {
+                translationData.config[parentKey] = {};
+              }
+              translationData.config[parentKey][childKey] = update.value;
+            }
+            // Simple config field: placeholder
+            else {
+              translationData.config[update.subfield] = update.value;
+            }
           } else {
+            // Top-level field: label or description
             translationData[update.field] = update.value;
           }
 
@@ -809,27 +1028,57 @@ const handleSave = async (questionId, field, subfield, locale) => {
           try {
             const existingTranslation = question.translations?.[locale] || {};
 
+            // Deep clone config
+            const mergedConfig = JSON.parse(JSON.stringify(question.config || {}));
+            
+            // Merge existing translation config
+            if (existingTranslation.config) {
+              Object.keys(existingTranslation.config).forEach(key => {
+                mergedConfig[key] = existingTranslation.config[key];
+              });
+            }
+
             const translationData = {
               label: questionData.label?.[locale] || existingTranslation.label || question.label || '',
               description: questionData.description?.[locale] || existingTranslation.description || question.description || '',
-              config: {}
+              config: mergedConfig
             };
 
-            // Merge config fields
-            if (question.config) {
-              Object.keys(question.config).forEach(key => {
-                translationData.config[key] = question.config[key];
-              });
-            }
-            if (existingTranslation.config) {
-              Object.keys(existingTranslation.config).forEach(key => {
-                translationData.config[key] = existingTranslation.config[key];
-              });
-            }
+            // Merge config fields from JSON
             if (questionData.config) {
               Object.entries(questionData.config).forEach(([key, value]) => {
                 if (typeof value === 'object' && value[locale]) {
-                  translationData.config[key] = value[locale];
+                  // Handle nested structures properly
+                  const arrayMatch = key.match(/^(\w+)\[(\d+)\](?:\.(\w+))?$/);
+                  if (arrayMatch) {
+                    const [, arrayName, index, prop] = arrayMatch;
+                    const idx = parseInt(index);
+                    
+                    if (!translationData.config[arrayName]) {
+                      translationData.config[arrayName] = [];
+                    }
+                    
+                    while (translationData.config[arrayName].length <= idx) {
+                      translationData.config[arrayName].push(prop ? {} : '');
+                    }
+                    
+                    if (prop) {
+                      if (typeof translationData.config[arrayName][idx] !== 'object') {
+                        translationData.config[arrayName][idx] = {};
+                      }
+                      translationData.config[arrayName][idx][prop] = value[locale];
+                    } else {
+                      translationData.config[arrayName][idx] = value[locale];
+                    }
+                  } else if (key.includes('.')) {
+                    const [parentKey, childKey] = key.split('.');
+                    if (!translationData.config[parentKey]) {
+                      translationData.config[parentKey] = {};
+                    }
+                    translationData.config[parentKey][childKey] = value[locale];
+                  } else {
+                    translationData.config[key] = value[locale];
+                  }
                 }
               });
             }
@@ -867,6 +1116,14 @@ const handleSave = async (questionId, field, subfield, locale) => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Language Selection Modal */}
+      <LanguageSelectionModal
+        isOpen={showLanguageModal}
+        onClose={() => setShowLanguageModal(false)}
+        availableLanguages={availableLanguages}
+        onDownload={handleDownloadRequest}
+      />
+
       {/* Header */}
       <div className="bg-white border-b">
         <div className=" mx-auto px-6 py-4">
@@ -875,27 +1132,14 @@ const handleSave = async (questionId, field, subfield, locale) => {
             
             {/* Download/Upload buttons */}
             <div className="flex items-center gap-2">
-              <div className="relative group">
-                <button
-                  onClick={downloadTranslationsCSV}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  disabled={questions.length === 0}
-                >
-                  <Download className="w-4 h-4" />
-                  Download CSV
-                </button>
-              </div>
-
-              <div className="relative group">
-                <button
-                  onClick={downloadTranslationsJSON}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                  disabled={questions.length === 0}
-                >
-                  <Download className="w-4 h-4" />
-                  Download JSON
-                </button>
-              </div>
+              <button
+                onClick={() => setShowLanguageModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                disabled={questions.length === 0}
+              >
+                <Download className="w-4 h-4" />
+                Download Translations
+              </button>
 
               <div className="relative">
                 <input
