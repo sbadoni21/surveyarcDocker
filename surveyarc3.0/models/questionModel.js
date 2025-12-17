@@ -75,24 +75,30 @@ const QuestionModel = {
   // ==========================================================
 
   async create(orgId, surveyId, data) {
+    console.log("first", data);
+    const payload = {
+      org_id: orgId,
+      survey_id: surveyId,
+      project_id: data.projectId,
+      question_id: data.questionId,
+      type: data.type,
+      label: data.label,
+      serial_label: data.serial_label,
+      required: data.required ?? true,
+      description: data.description || "",
+      config: data.config || {},
+      logic: data.logic || [],
+    };
+    // if (data.serial_label && data.serial_label.trim()) {
+    //   payload.serial_label = data.serial_label.trim();
+    // }
+
+    console.log("target",payload);
+
     const res = await fetch(`${BASE}`, {
       method: "POST",
       headers: headersWithUser(),
-      body: JSON.stringify({
-        org_id: orgId,
-        survey_id: surveyId,
-        project_id: data.projectId,
-        question_id: data.questionId,
-        type: data.type,
-          serial_label: data.serial_label
-,
-
-        label: data.label,
-        required: data.required ?? true,
-        description: data.description || "",
-        config: data.config || {},
-        logic: data.logic || [],
-      }),
+      body: JSON.stringify(payload),
       cache: "no-store",
     });
 
@@ -148,21 +154,19 @@ const QuestionModel = {
     });
     return (await json(res)).map(toCamel);
   },
-// QuestionModel.js
+  // QuestionModel.js
 
-async resyncSurveyTranslations(surveyId) {
-  const res = await fetch(
-    `${BASE}/surveys/${encodeURIComponent(
-      surveyId
-    )}/translations/resync`,
-    {
-      method: "POST",
-      headers: headersWithUser(),
-      cache: "no-store",
-    }
-  );
-  return json(res);
-},
+  async resyncSurveyTranslations(surveyId) {
+    const res = await fetch(
+      `${BASE}/surveys/${encodeURIComponent(surveyId)}/translations/resync`,
+      {
+        method: "POST",
+        headers: headersWithUser(),
+        cache: "no-store",
+      }
+    );
+    return json(res);
+  },
 
   // ==========================================================
   // SINGLE QUESTION TRANSLATION
@@ -179,7 +183,9 @@ async resyncSurveyTranslations(surveyId) {
   async getQuestionTranslation(surveyId, questionId, locale) {
     const lang = normalizeLang(locale);
     const res = await fetch(
-      `${BASE}/${encodeURIComponent(questionId)}/translations/${encodeURIComponent(lang)}`,
+      `${BASE}/${encodeURIComponent(
+        questionId
+      )}/translations/${encodeURIComponent(lang)}`,
       { cache: "no-store" }
     );
     return json(res);
@@ -188,7 +194,9 @@ async resyncSurveyTranslations(surveyId) {
   async getQuestionWithTranslation(surveyId, questionId, locale) {
     const lang = normalizeLang(locale);
     const res = await fetch(
-      `${BASE}/${encodeURIComponent(questionId)}/translated?lang=${encodeURIComponent(lang)}`,
+      `${BASE}/${encodeURIComponent(
+        questionId
+      )}/translated?lang=${encodeURIComponent(lang)}`,
       { cache: "no-store" }
     );
     return json(res);
@@ -197,40 +205,50 @@ async resyncSurveyTranslations(surveyId) {
   async getBlankTranslationStructure(surveyId, questionId, locale) {
     const lang = normalizeLang(locale);
     const res = await fetch(
-      `${BASE}/${encodeURIComponent(questionId)}/translations/blank/${encodeURIComponent(lang)}`,
+      `${BASE}/${encodeURIComponent(
+        questionId
+      )}/translations/blank/${encodeURIComponent(lang)}`,
       { cache: "no-store" }
     );
     return json(res);
   },
 
-async updateQuestionTranslation(surveyId, questionId, locale, translationData) {
+  async updateQuestionTranslation(
+    surveyId,
+    questionId,
+    locale,
+    translationData
+  ) {
     const lang = normalizeLang(locale);
-    const url = `${BASE}/${encodeURIComponent(questionId)}/translations/${encodeURIComponent(lang)}`;
-    console.log('🔍 Calling API:', {
+    const url = `${BASE}/${encodeURIComponent(
+      questionId
+    )}/translations/${encodeURIComponent(lang)}`;
+    console.log("🔍 Calling API:", {
       url,
-      method: 'PUT',
+      method: "PUT",
       questionId,
       locale: lang,
-      body: { locale: lang, ...translationData }
+      body: { locale: lang, ...translationData },
     });
-    
+
     const res = await fetch(url, {
       method: "PUT",
       headers: headersWithUser(),
       body: JSON.stringify({ locale: lang, ...translationData }),
       cache: "no-store",
     });
-    
-    console.log('📡 Response:', res.status, res.statusText);
-    
+
+    console.log("📡 Response:", res.status, res.statusText);
+
     return json(res);
   },
-
 
   async deleteQuestionTranslation(surveyId, questionId, locale) {
     const lang = normalizeLang(locale);
     const res = await fetch(
-      `${BASE}/${encodeURIComponent(questionId)}/translations/${encodeURIComponent(lang)}`,
+      `${BASE}/${encodeURIComponent(
+        questionId
+      )}/translations/${encodeURIComponent(lang)}`,
       {
         method: "DELETE",
         headers: headersWithUser({ "Content-Type": undefined }),
@@ -304,7 +322,9 @@ async updateQuestionTranslation(surveyId, questionId, locale, translationData) {
   async deleteTranslation(surveyId, locale) {
     const lang = normalizeLang(locale);
     const res = await fetch(
-      `${BASE}/surveys/${encodeURIComponent(surveyId)}/translations/${encodeURIComponent(lang)}`,
+      `${BASE}/surveys/${encodeURIComponent(
+        surveyId
+      )}/translations/${encodeURIComponent(lang)}`,
       {
         method: "DELETE",
         headers: headersWithUser({ "Content-Type": undefined }),
@@ -329,7 +349,8 @@ async updateQuestionTranslation(surveyId, questionId, locale, translationData) {
     );
 
     return json(res);
-  }, async exportTranslationCSV(surveyId, includeValues = true, locales = null) {
+  },
+  async exportTranslationCSV(surveyId, includeValues = true, locales = null) {
     const params = new URLSearchParams({
       include_values: includeValues.toString(),
     });
@@ -339,7 +360,9 @@ async updateQuestionTranslation(surveyId, questionId, locale, translationData) {
     }
 
     const res = await fetch(
-      `${BASE}/surveys/${encodeURIComponent(surveyId)}/translations/export-csv?${params}`,
+      `${BASE}/surveys/${encodeURIComponent(
+        surveyId
+      )}/translations/export-csv?${params}`,
       {
         method: "GET",
         headers: headersWithUser({ "Content-Type": undefined }),
@@ -354,9 +377,13 @@ async updateQuestionTranslation(surveyId, questionId, locale, translationData) {
 
     return res.blob();
   },
- async downloadTranslationCSV(surveyId, includeValues = true, locales = null) {
-    const blob = await this.exportTranslationCSV(surveyId, includeValues, locales);
-    
+  async downloadTranslationCSV(surveyId, includeValues = true, locales = null) {
+    const blob = await this.exportTranslationCSV(
+      surveyId,
+      includeValues,
+      locales
+    );
+
     // Create download link
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -364,7 +391,7 @@ async updateQuestionTranslation(surveyId, questionId, locale, translationData) {
     a.download = `translations_${surveyId}.csv`;
     document.body.appendChild(a);
     a.click();
-    
+
     // Cleanup
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
@@ -374,7 +401,9 @@ async updateQuestionTranslation(surveyId, questionId, locale, translationData) {
     formData.append("file", file);
 
     const res = await fetch(
-      `${BASE}/surveys/${encodeURIComponent(surveyId)}/translations/validate-csv`,
+      `${BASE}/surveys/${encodeURIComponent(
+        surveyId
+      )}/translations/validate-csv`,
       {
         method: "POST",
         headers: headersWithUser({ "Content-Type": undefined }),
@@ -385,14 +414,19 @@ async updateQuestionTranslation(surveyId, questionId, locale, translationData) {
 
     return json(res);
   },
- async uploadTranslationCSVWithProgress(surveyId, file, onProgress, dryRun = false) {
+  async uploadTranslationCSVWithProgress(
+    surveyId,
+    file,
+    onProgress,
+    dryRun = false
+  ) {
     return new Promise((resolve, reject) => {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("dry_run", dryRun.toString());
 
       const xhr = new XMLHttpRequest();
-      
+
       // Track upload progress
       xhr.upload.addEventListener("progress", (e) => {
         if (e.lengthComputable && onProgress) {
@@ -420,7 +454,9 @@ async updateQuestionTranslation(surveyId, questionId, locale, translationData) {
 
       xhr.open(
         "POST",
-        `${BASE}/surveys/${encodeURIComponent(surveyId)}/translations/upload-csv`
+        `${BASE}/surveys/${encodeURIComponent(
+          surveyId
+        )}/translations/upload-csv`
       );
 
       // Add auth header
@@ -435,7 +471,9 @@ async updateQuestionTranslation(surveyId, questionId, locale, translationData) {
   async getAllWithLocale(orgId, surveyId, locale) {
     const lang = normalizeLang(locale);
     const res = await fetch(
-      `${BASE}/surveys/${encodeURIComponent(surveyId)}/questions?lang=${encodeURIComponent(lang)}`,
+      `${BASE}/surveys/${encodeURIComponent(
+        surveyId
+      )}/questions?lang=${encodeURIComponent(lang)}`,
       { cache: "no-store" }
     );
     return (await json(res)).map(toCamel);

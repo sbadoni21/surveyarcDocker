@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field
 from fastapi import UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from io import BytesIO
+from ..services.question_label_service import generate_next_serial_label
+import re
 
 from ..db import get_db
 from ..models.questions import Question
@@ -211,16 +213,49 @@ def create_question(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    q = Question(**data.dict(exclude_unset=True))
+    payload = data.dict(exclude_unset=True)
+    serial = payload.get("serial_label")
+
+    # 🔥 NORMALIZE EMPTY / UNDEFINED
+    if serial is not None:
+        serial = str(serial).strip()
+       
+
+    if serial is "":
+        payload["serial_label"] = generate_next_serial_label(
+            db=db,
+            survey_id=payload["survey_id"],
+            prefix="Q",  
+        )
+    else:
+        payload["serial_label"] = serial
+
+        exists = (
+            db.query(Question)
+            .filter(
+                Question.survey_id == payload["survey_id"],
+                Question.serial_label == serial,
+            )
+            .first()
+        )
+        if exists:
+            raise HTTPException(
+                status_code=409,
+                detail="serial_label already exists in this survey",
+            )
+
+    q = Question(**payload)
     db.add(q)
     db.commit()
     db.refresh(q)
 
+    # ------------------------------------------------
+    # CACHE INVALIDATION
+    # ------------------------------------------------
     RedisQuestionService.invalidate_question(q.survey_id, q.question_id)
     RedisQuestionService.remove_from_list(q.survey_id)
 
     return q.to_dict()
-
 
 @router.get("/{question_id}", response_model=QuestionOut)
 def get_question(
@@ -248,10 +283,38 @@ def update_question(
 ):
     q = db.query(Question).filter(Question.question_id == question_id).first()
     if not q:
-        raise HTTPException(404, "Question not found")
+        raise HTTPException(status_code=404, detail="Question not found")
 
-    for k, v in data.dict(exclude_unset=True).items():
+    updates = data.dict(exclude_unset=True)
+    if "serial_label" in updates:
+        serial = updates["serial_label"]
+
+        if not serial or not serial.strip():
+            updates["serial_label"] = None
+        else:
+            serial = serial.strip()
+
+            exists = (
+            db.query(Question)
+            .filter(
+                Question.survey_id == q.survey_id,
+                Question.serial_label == serial,
+                Question.question_id != q.question_id,
+            )
+            .first()
+            )
+
+            if exists:
+                raise HTTPException(
+                status_code=409,
+                detail="serial_label already exists in this survey",
+               )
+
+            updates["serial_label"] = serial
+
+    for k, v in updates.items():
         setattr(q, k, v)
+
 
     q.updated_at = datetime.now(timezone.utc)
     db.commit()

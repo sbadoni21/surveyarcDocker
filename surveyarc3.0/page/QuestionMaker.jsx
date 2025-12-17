@@ -34,6 +34,7 @@ export default function Dist() {
   const [selectedType, setSelectedType] = useState(null);
   const [newQuestionData, setNewQuestionData] = useState({
     label: "",
+    serial_label: "",
     description: "",
     config: {},
   });
@@ -226,7 +227,7 @@ export default function Dist() {
       questionId,
       type: selectedType,
       label: labelToSave,
-      serial_label: newQuestionData.serial_label,
+      serial_label: newQuestionData.serial_label || "",
       description: newQuestionData.description || "",
       config: newQuestionData.config || {},
       required: true,
@@ -459,15 +460,13 @@ export default function Dist() {
       console.error("Failed to update status", err);
     }
   };
-console.log(questions)
+  console.log(questions);
   if (loading) return <Loading />;
   return (
-<div className="flex flex-col h-screen overflow-hidden">
-      <TopTabsNavbar activeTab={activeTab} setActiveTab={handleSetActiveTab}  />
-     
-      <>
-    
+    <div className="flex flex-col h-screen overflow-hidden">
+      <TopTabsNavbar activeTab={activeTab} setActiveTab={handleSetActiveTab} />
 
+      <>
         <TemplateSelectionPopup
           isOpen={showTemplatePopup}
           onClose={() => setShowTemplatePopup(false)}
@@ -476,8 +475,14 @@ console.log(questions)
           projectId={projectId}
         />
       </>
-<div className="flex justify-end items-end">     <QuickActions survey={survey} loading={loading} handleToggleStatus={handleToggleStatus}/>
-</div>
+      <div className="flex justify-end items-end">
+        {" "}
+        <QuickActions
+          survey={survey}
+          loading={loading}
+          handleToggleStatus={handleToggleStatus}
+        />
+      </div>
 
       <div className="flex-1 overflow-auto bg-[#f5f5f5] dark:bg-[#121214] p-4">
         {activeTab === "questions" && (

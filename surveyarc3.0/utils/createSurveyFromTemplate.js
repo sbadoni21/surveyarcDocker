@@ -55,6 +55,7 @@ export async function createSurveyFromTemplate(
         projectId,
         type: questionTemplate.type,
         label: questionTemplate.label,
+        serial_label: questionTemplate.serial_label,
         required: questionTemplate.required ?? true,
         description: questionTemplate.description || '',
         config: questionTemplate.config || {},

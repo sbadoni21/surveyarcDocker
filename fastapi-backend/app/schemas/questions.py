@@ -14,7 +14,7 @@ class QuestionBase(BaseModel):
     survey_id: str
     type: str
     label: str
-    serial_label: Optional[str] = None   # ✅ NEW
+    serial_label: str  # ✅ NEW
     required: Optional[bool] = True
     description: Optional[str] = ""
     config: Dict[str, Any] = Field(default_factory=dict)

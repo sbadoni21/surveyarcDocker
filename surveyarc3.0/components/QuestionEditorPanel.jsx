@@ -131,24 +131,27 @@ export default function QuestionEdritorPanel({
     }
   };
 
-const onUpdateClick = async (autoMode = false) => {
+  const onUpdateClick = async (autoMode = false) => {
     if (!editableQuestion) return;
     if (saving) return;
     try {
       setSaving(true);
       await nextFrame();
-      
+
       // Ensure config is properly structured
       const questionToUpdate = {
         ...editableQuestion,
-        config: editableQuestion.config || {}
+        config: editableQuestion.config || {},
       };
-      
-      console.log('=== UPDATING QUESTION ===');
-      console.log('Full question data:', JSON.stringify(questionToUpdate, null, 2));
-      console.log('Config object:', questionToUpdate.config);
-      console.log('=========================');
-      
+
+      console.log("=== UPDATING QUESTION ===");
+      console.log(
+        "Full question data:",
+        JSON.stringify(questionToUpdate, null, 2)
+      );
+      console.log("Config object:", questionToUpdate.config);
+      console.log("=========================");
+
       await Promise.resolve(
         handleUpdateQuestion(editableQuestion.questionId, questionToUpdate)
       );
@@ -223,17 +226,20 @@ const onUpdateClick = async (autoMode = false) => {
   };
 
   const onSerialLabelChange = (value) => {
+    const clean = value ?? "";
+
     if (isEditMode) {
       setEditableQuestion((prev) => ({
         ...prev,
-        serial_label: value,
+        serial_label: clean,
       }));
     } else {
       setNewQuestionData((prev) => ({
         ...prev,
-        serial_label: value,
+        serial_label: clean,
       }));
     }
+
     setDirty(true);
   };
 
