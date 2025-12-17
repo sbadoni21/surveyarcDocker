@@ -21,6 +21,22 @@ const makeDeterministicId = (label, index) => {
   return `opt_${index}${safe ? `_${safe}` : ""}`;
 };
 
+const SERIAL_REGEX = /^([A-Za-z]+)(\d+)$/;
+
+const generateNextOptionSerial = (options, prefix = "A") => {
+  const nums = options
+    .map((o) => o.serial_label)
+    .filter(Boolean)
+    .map((s) => {
+      const m = SERIAL_REGEX.exec(s);
+      return m && m[1] === prefix ? parseInt(m[2], 10) : null;
+    })
+    .filter((n) => n != null);
+
+  const next = nums.length ? Math.max(...nums) + 1 : 1;
+  return `${prefix}${next}`;
+};
+
 const normalizeIncoming = (incoming = []) => {
   return (incoming || [])
     .map((o, idx) => {
@@ -32,6 +48,7 @@ const normalizeIncoming = (incoming = []) => {
       return {
         id,
         label: o.label ?? "",
+        serial_label: o.serial_label ?? null,
         isOther: !!o.isOther,
         isNone: !!o.isNone,
       };
@@ -118,7 +135,16 @@ export default function OptionsConfig({
     engageWriteLock();
     setOptions((prev) => {
       const i = prev.length;
-      return [...prev, { id: makeDeterministicId("", i), label: "" }];
+      const nextSerial = generateNextOptionSerial(prev, "A");
+
+      return [
+        ...prev,
+        {
+          id: makeDeterministicId("", i),
+          label: "",
+          serial_label: nextSerial,
+        },
+      ];
     });
   };
 
@@ -390,40 +416,41 @@ export default function OptionsConfig({
         <div className="space-y-2 max-h-64 overflow-auto mt-2">
           {visibleOptions.map((opt, i) => (
             <div key={opt.id} className="flex items-center gap-3">
+              {/* Serial Label */}
               <input
-                className="border border-[#8C8A97] dark:bg-[#1A1A1E] py-1 px-3 rounded flex-grow"
+                className="w-20 border px-2 py-1 rounded text-xs text-center"
+                value={opt.serial_label || ""}
+                placeholder="A1"
+                onChange={(e) => {
+                  const value = e.target.value.trim();
+                  setOptions((prev) => {
+                    const copy = [...prev];
+
+                    // 🔒 uniqueness check
+                    if (
+                      value &&
+                      copy.some(
+                        (o, idx) => idx !== i && o.serial_label === value
+                      )
+                    ) {
+                      alert("Option serial label must be unique");
+                      return prev;
+                    }
+
+                    copy[i] = { ...copy[i], serial_label: value || null };
+                    return copy;
+                  });
+                }}
+              />
+
+              {/* Option Label */}
+              <input
+                className="border flex-grow px-3 py-1 rounded"
                 value={opt.label}
                 onChange={(e) =>
                   setOptionLabel(options.indexOf(opt), e.target.value)
                 }
-                placeholder={
-                  opt.isOther
-                    ? "Other (user supplied)"
-                    : opt.isNone
-                    ? "None (exclusive)"
-                    : `Option ${i + 1}`
-                }
               />
-              <div className="flex items-center gap-2">
-                {opt.isOther && (
-                  <span className="text-xs px-2 py-1 bg-yellow-100 rounded text-yellow-800">
-                    Other
-                  </span>
-                )}
-                {opt.isNone && (
-                  <span className="text-xs px-2 py-1 bg-red-100 rounded text-red-800">
-                    None
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => removeOption(opt.id)}
-                  className="text-red-500 p-1"
-                  title="Remove option"
-                >
-                  <RiDeleteBin6Line size={18} />
-                </button>
-              </div>
             </div>
           ))}
 
