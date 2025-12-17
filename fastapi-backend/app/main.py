@@ -13,6 +13,7 @@ import logging
 # Import Redis client and utilities
 from app.core.redis_client import redis_client
 from app.utils.redis_utils import RedisHealthCheck, RedisProjectAnalytics, RedisKeyManager
+from app.routes.rbac.assignments import router as rbac_router
 
 # Import outbox processor
 from app.services.outbox_processor import run_forever as run_outbox_processor
@@ -32,9 +33,8 @@ from app.routes import (
     support_groups, support_teams, support_routing, slas, business_calendars, tags, 
     ticket_categories, ticket_sla, ticket_taxonomies, audit_events, contact_emails, campaign_results,
     contact_lists, list_members, contact_phone, contact_socials, ticket_templates, audience_files,
-    themes, campaigns, scheduler_routes, salesforce_routes, salesforce_campaign_routes, salesforce_sync_routes, group, participant_sources
+    themes, campaigns, scheduler_routes, salesforce_routes, salesforce_campaign_routes, salesforce_sync_routes, group, participant_sources,assignments, rbac_permissions
 )
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -418,4 +418,6 @@ app.include_router(salesforce_campaign_routes.router)
 app.include_router(salesforce_sync_routes.router)
 app.include_router(group.router)
 app.include_router(participant_sources.router)
+app.include_router(assignments.router)
+app.include_router(rbac_permissions.router)
 

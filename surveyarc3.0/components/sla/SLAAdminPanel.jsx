@@ -1,39 +1,23 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import {
-  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
-  FormControlLabel, Checkbox, Grid, IconButton, LinearProgress, Link,
-  MenuItem, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField,
-  Tooltip, Typography
-} from "@mui/material";
 import { Pencil, Trash2 } from "lucide-react";
-
-import {
-  Delete as DeleteIcon, Edit as EditIcon, Add as AddIcon, ContentCopy as CopyIcon, Bolt as BoltIcon,
-  LibraryAdd as BulkIcon, UploadFile as ImportIcon, Download as ExportIcon,
-  PublishedWithChanges as PublishIcon, Archive as ArchiveIcon,
-  Science as TestIcon, Update as VersionIcon, Info as InfoIcon, CleaningServices as CleanupIcon
-} from "@mui/icons-material";
 import { useMakingSLA } from "@/providers/slaMakingProivder";
 import { SLAFormDialog } from "./SLADialogForm";
 import { SLATable } from "./SLATable";
-import ObjectivesDialog from "./SLAObjectiveForm";
-import CreditRulesDialog from "./SLA_CreditRuleForm";
-
-const PRIORITIES = ["low", "normal", "high", "urgent"];
-const SEVERITIES = ["sev4", "sev3", "sev2", "sev1"];
-const DIMENSIONS = [
-  { value: "first_response", label: "First Response" },
-  { value: "resolution", label: "Resolution" },
-  { value: "update_cadence", label: "Update Cadence" },
-  { value: "custom", label: "Custom" },
-];
-const BREACH_GRADES = ["minor", "major", "critical"];
-const CREDIT_UNITS = [
-  { value: "percent_fee", label: "% of Fee" },
-  { value: "fixed_usd", label: "Fixed USD" },
-  { value: "service_days", label: "Service Days" },
-];
+// import ObjectivesDialog from "./SLAObjectiveForm";
+// import CreditRulesDialog from "./SLA_CreditRuleForm";
+// const DIMENSIONS = [
+//   { value: "first_response", label: "First Response" },
+//   { value: "resolution", label: "Resolution" },
+//   { value: "update_cadence", label: "Update Cadence" },
+//   { value: "custom", label: "Custom" },
+// ];
+// const BREACH_GRADES = ["minor", "major", "critical"];
+// const CREDIT_UNITS = [
+//   { value: "percent_fee", label: "% of Fee" },
+//   { value: "fixed_usd", label: "Fixed USD" },
+//   { value: "service_days", label: "Service Days" },
+// ];
 
 export default function SLAAdminPanel({ orgId }) {
   const {
@@ -51,7 +35,7 @@ export default function SLAAdminPanel({ orgId }) {
     // org tools
     match, simulate, effective, stats, compliance, exportSlas, importSlas, cleanup,
   } = useMakingSLA();
-
+const [serverError, setServerError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
   const [activeOnly, setActiveOnly] = useState(true);
@@ -67,8 +51,14 @@ export default function SLAAdminPanel({ orgId }) {
     resolution_minutes: "",
     rules: { priority_map: {}, severity_map: {} },
   });
-  const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-
+const update = (k, v) => {
+  if (k === '_clearServerError') {
+    setServerError(null);
+  } else {
+    setServerError(null); // Clear error on any field change
+    setForm((f) => ({ ...f, [k]: v }));
+  }
+};
   // dialogs: objectives / credits (CRUD)
   const [openObjective, setOpenObjective] = useState(false);
   const [editingObjective, setEditingObjective] = useState(null);
@@ -128,6 +118,7 @@ export default function SLAAdminPanel({ orgId }) {
   // ---------------- SLA CRUD ----------------
   const handleOpenCreate = () => {
     setEditing(null);
+    setServerError(null);
     setForm({
       name: "",
       slug: "",
@@ -141,6 +132,7 @@ export default function SLAAdminPanel({ orgId }) {
   };
   const handleOpenEdit = (s) => {
     setEditing(s);
+    setServerError(null);
     setForm({
       name: s.name || "",
       slug: s.slug || "",
@@ -154,7 +146,8 @@ export default function SLAAdminPanel({ orgId }) {
   };
   const saveSla = async () => {
     setBusy(true);
-    const payload = {
+    setServerError(null);
+    try{ const payload = {
       org_id: orgId,
       name: form.name.trim(),
       slug: form.slug?.trim() || null,
@@ -166,8 +159,26 @@ export default function SLAAdminPanel({ orgId }) {
     };
     if (editing) await updateSla(editing.sla_id, payload);
     else await createSla(payload);
+  
+      setOpenSla(false);
+}catch (error) {
+    console.error("Failed to save SLA:", error);
+    
+    let errorMessage = "Failed to save SLA. Please try again.";
+    
+    if (error.response?.data?.message) {
+      errorMessage = error.response.data.message;
+    } else if (error.response?.data?.error) {
+      errorMessage = error.response.data.error;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    setServerError(errorMessage);
+  } finally {
     setBusy(false);
-    setOpenSla(false);
+  }
+    setBusy(false);
   };
   const onDuplicate = async (s) => { await duplicateSla(s.sla_id, { name: `${s.name} (Copy)`, slug: "" }); };
   const onActivateToggle = async (s) => { s.active ? await deactivateSla(s.sla_id) : await activateSla(s.sla_id); };
@@ -216,108 +227,108 @@ const editObjective = (sla, obj) => {
   setOpenObjective(true);
 };
 
-// Save objective — accepts payload from the dialog (first arg) and sla (second arg)
-const saveObjective = async (payloadFromDialog, slaFromDialog) => {
-  // debugging: inspect what we received from the dialog
-  console.info("saveObjective called. payloadFromDialog:", payloadFromDialog, "slaFromDialog:", slaFromDialog, "editingObjective:", editingObjective);
+// // Save objective — accepts payload from the dialog (first arg) and sla (second arg)
+// const saveObjective = async (payloadFromDialog, slaFromDialog) => {
+//   // debugging: inspect what we received from the dialog
+//   console.info("saveObjective called. payloadFromDialog:", payloadFromDialog, "slaFromDialog:", slaFromDialog, "editingObjective:", editingObjective);
 
-  // if dialog didn't pass anything (back-compat), try to fallback to parent state
-  const sla = slaFromDialog || editingObjective?.sla;
-  if (!sla) {
-    console.error("No SLA provided for objective save.");
-    return;
-  }
+//   // if dialog didn't pass anything (back-compat), try to fallback to parent state
+//   const sla = slaFromDialog || editingObjective?.sla;
+//   if (!sla) {
+//     console.error("No SLA provided for objective save.");
+//     return;
+//   }
 
-  // If payloadFromDialog is not provided for some reason, build it from parent's objectiveForm
-  let payload = payloadFromDialog;
-  if (!payload) {
-    // normalize parent objectiveForm to expected shape
-    const normalizedBreach = Object.fromEntries(
-      Object.entries(objectiveForm.breach_grades || {})
-        .map(([k, v]) => {
-          if (v === "" || v === null || v === undefined) return [k, undefined];
-          const n = Number(v);
-          return [k, Number.isFinite(n) ? n : undefined];
-        })
-        .filter(([, v]) => v !== undefined)
-    );
+//   // If payloadFromDialog is not provided for some reason, build it from parent's objectiveForm
+//   let payload = payloadFromDialog;
+//   if (!payload) {
+//     // normalize parent objectiveForm to expected shape
+//     const normalizedBreach = Object.fromEntries(
+//       Object.entries(objectiveForm.breach_grades || {})
+//         .map(([k, v]) => {
+//           if (v === "" || v === null || v === undefined) return [k, undefined];
+//           const n = Number(v);
+//           return [k, Number.isFinite(n) ? n : undefined];
+//         })
+//         .filter(([, v]) => v !== undefined)
+//     );
 
-    payload = {
-      objective: objectiveForm.objective,
-      target_minutes: Number(objectiveForm.target_minutes),
-      match: objectiveForm.match || {},
-      breach_grades: normalizedBreach,
-      active: !!objectiveForm.active,
-    };
-  }
+//     payload = {
+//       objective: objectiveForm.objective,
+//       target_minutes: Number(objectiveForm.target_minutes),
+//       match: objectiveForm.match || {},
+//       breach_grades: normalizedBreach,
+//       active: !!objectiveForm.active,
+//     };
+//   }
 
-  // debug again: what we'll actually send to the model
-  console.info("Final objective payload ->", payload, "orgId:", orgId, "slaId:", sla.sla_id);
+//   // debug again: what we'll actually send to the model
+//   console.info("Final objective payload ->", payload, "orgId:", orgId, "slaId:", sla.sla_id);
 
-  try {
-    const { obj } = editingObjective || {}; // existing objective if editing
-    if (!obj) {
-      // createObjective(orgId, slaId, payload)
-      await createObjective( sla.sla_id, payload);
-    } else {
-      // updateObjective(orgId, objectiveId, patch)
-      await updateObjective(obj.objective_id, payload);
-    }
+//   try {
+//     const { obj } = editingObjective || {}; // existing objective if editing
+//     if (!obj) {
+//       // createObjective(orgId, slaId, payload)
+//       await createObjective( sla.sla_id, payload);
+//     } else {
+//       // updateObjective(orgId, objectiveId, patch)
+//       await updateObjective(obj.objective_id, payload);
+//     }
 
-    // refresh the list (model expects orgId, slaId)
-    await listObjectives( sla.sla_id);
-    setOpenObjective(false);
-  } catch (err) {
-    console.error("Failed saving objective:", err);
-    // show a toast/alert if you want
-  }
-};
-
-
-const deleteObjective = async (slaId, objectiveId) => {
-  if (!confirm("Delete this objective?")) return;
-  try {
-    // removeObjective(orgId, objectiveId)
-    await removeObjective( objectiveId);
-    await listObjectives( slaId);
-  } catch (err) {
-    console.error("Failed to delete objective:", err);
-  }
-};
+//     // refresh the list (model expects orgId, slaId)
+//     await listObjectives( sla.sla_id);
+//     setOpenObjective(false);
+//   } catch (err) {
+//     console.error("Failed saving objective:", err);
+//     // show a toast/alert if you want
+//   }
+// };
 
 
-  // --------------- Credit Rules ---------------
-  const openCreditFor = async (sla) => {
-    setEditingCredit({ sla });
-    setCreditForm({ objective: "resolution", grade: "major", credit_unit: "percent_fee", credit_value: 10, cap_per_period: "", period_days: "", active: true });
-    await listCreditRules(sla.sla_id);
-    setOpenCredit(true);
-  };
-  const editCredit = (sla, rule) => {
-    setEditingCredit({ sla, rule });
-    setCreditForm({
-      objective: rule.objective, grade: rule.grade, credit_unit: rule.credit_unit, credit_value: rule.credit_value,
-      cap_per_period: rule.cap_per_period ?? "", period_days: rule.period_days ?? "", active: rule.active !== false,
-    });
-    setOpenCredit(true);
-  };
-const saveCredit = async (payloadFromDialog, slaFromDialog) => {
-  const sla = slaFromDialog || editingCredit?.sla;
-  if (!sla) { console.error("No SLA for saving credit"); return; }
-  const { rule } = editingCredit || {};
-  try {
-    if (!rule) await createCreditRule(orgId, sla.sla_id, payloadFromDialog);
-    else await updateCreditRule(orgId, rule.rule_id, payloadFromDialog);
-    await listCreditRules(orgId, sla.sla_id);
-    setOpenCredit(false);
-  } catch (err) { console.error(err); }
-};
+// const deleteObjective = async (slaId, objectiveId) => {
+//   if (!confirm("Delete this objective?")) return;
+//   try {
+//     // removeObjective(orgId, objectiveId)
+//     await removeObjective( objectiveId);
+//     await listObjectives( slaId);
+//   } catch (err) {
+//     console.error("Failed to delete objective:", err);
+//   }
+// };
 
-  const deleteCredit = async (slaId, ruleId) => {
-    if (!confirm("Delete this credit rule?")) return;
-    await removeCreditRule(ruleId);
-    await listCreditRules(slaId);
-  };
+
+//   // --------------- Credit Rules ---------------
+//   const openCreditFor = async (sla) => {
+//     setEditingCredit({ sla });
+//     setCreditForm({ objective: "resolution", grade: "major", credit_unit: "percent_fee", credit_value: 10, cap_per_period: "", period_days: "", active: true });
+//     await listCreditRules(sla.sla_id);
+//     setOpenCredit(true);
+//   };
+//   const editCredit = (sla, rule) => {
+//     setEditingCredit({ sla, rule });
+//     setCreditForm({
+//       objective: rule.objective, grade: rule.grade, credit_unit: rule.credit_unit, credit_value: rule.credit_value,
+//       cap_per_period: rule.cap_per_period ?? "", period_days: rule.period_days ?? "", active: rule.active !== false,
+//     });
+//     setOpenCredit(true);
+//   };
+// const saveCredit = async (payloadFromDialog, slaFromDialog) => {
+//   const sla = slaFromDialog || editingCredit?.sla;
+//   if (!sla) { console.error("No SLA for saving credit"); return; }
+//   const { rule } = editingCredit || {};
+//   try {
+//     if (!rule) await createCreditRule(orgId, sla.sla_id, payloadFromDialog);
+//     else await updateCreditRule(orgId, rule.rule_id, payloadFromDialog);
+//     await listCreditRules(orgId, sla.sla_id);
+//     setOpenCredit(false);
+//   } catch (err) { console.error(err); }
+// };
+
+//   const deleteCredit = async (slaId, ruleId) => {
+//     if (!confirm("Delete this credit rule?")) return;
+//     await removeCreditRule(ruleId);
+//     await listCreditRules(slaId);
+//   };
 
   // --------------- Export / Import / Bulk / Cleanup ---------------
   const doExport = async () => {
@@ -389,7 +400,7 @@ const saveCredit = async (payloadFromDialog, slaFromDialog) => {
 
   
 return (
-  <div className="space-y-6">
+  <div className="">
     {/* Top toolbar */}
     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
       <div>
@@ -489,12 +500,8 @@ return (
     )}
 
     {/* Table card */}
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-      <div className="border-b border-gray-100 px-4 py-2.5">
-        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-          SLA list
-        </p>
-      </div>
+    <div className="overflow-hidden relative rounded-2xl  bg-white shadow-sm">
+  
       <div className="px-3 py-3">
         <SLATable
           slas={filtered}
@@ -505,12 +512,12 @@ return (
             delete: onDeleteSLA,
             publish: doPublish,
             archive: doArchive,
-            validate: doValidate,
-            versions: openVersionList,
-            newVersion: makeNewVersion,
-            dependencies: openDepsDialog,
-            objectives: openObjectiveFor,
-            creditRules: openCreditFor,
+            // validate: doValidate,
+            // versions: openVersionList,
+            // newVersion: makeNewVersion,
+            // dependencies: openDepsDialog,
+            // objectives: openObjectiveFor,
+            // creditRules: openCreditFor,
           }}
         />
       </div>
@@ -525,8 +532,10 @@ return (
       onUpdate={update}
       onSave={saveSla}
       busy={busy}
-    />
+        serverError={serverError} // Add this
 
+    />
+{/* 
     <ObjectivesDialog
       open={openObjective}
       onClose={() => setOpenObjective(false)}
@@ -537,9 +546,9 @@ return (
       onEditObjective={editObjective}
       onDeleteObjective={deleteObjective}
       onSaveObjective={saveObjective}
-    />
+    /> */}
 
-    <CreditRulesDialog
+    {/* <CreditRulesDialog
       open={openCredit}
       onClose={() => setOpenCredit(false)}
       editingCredit={editingCredit}
@@ -550,7 +559,7 @@ return (
       onEditCredit={editCredit}
       onDeleteCredit={deleteCredit}
       onSaveCredit={saveCredit}
-    />
+    /> */}
 
     {/* Import dialog */}
     {openImport && (

@@ -52,7 +52,7 @@ export function ProjectsTable({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+    <div className="bg-white rounded-lg shadow-sm relative">
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-200">
@@ -224,7 +224,7 @@ export function ProjectsTable({
                     </span>
                   </td>
 
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-4 py-3 text-right  z-20" onClick={(e) => e.stopPropagation()}>
                     <ProjectActionsMenu
                       project={effective}
                       canManage={canManage}

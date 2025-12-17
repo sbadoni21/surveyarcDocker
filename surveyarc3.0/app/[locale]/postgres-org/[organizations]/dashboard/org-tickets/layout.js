@@ -19,7 +19,6 @@ const ALL_TABS = [
   { name: 'My Group Tickets',   path: 'my-group-tickets',   roles: [ 'admin', 'manager'] },
   { name: 'SLA',                path: 'sla',                roles: ['owner', 'admin'] },
   { name: 'Support Groups',     path: 'support-groups',     roles: ['owner', 'admin'] },
-  { name: 'Tags',               path: 'tags',               roles: ['owner', 'admin', 'manager'] },
   { name: 'External Apis',      path: 'create-apis',        roles: ['owner', 'admin', 'manager'] },
   { name: 'Agent Tickets',      path: 'agent-tickets',      roles: ['agent'] },
   { name: 'Team Lead',          path: 'team-lead',          roles: [ 'team_lead'] },
@@ -30,8 +29,6 @@ export default function OrgTicketsLayout({ children }) {
   const router = useRouter()
   const { user } = useUser()
   const role = user?.role?.toLowerCase() || null
-
-  // Base path: /[lang]/postgres-org/[orgId]/dashboard
   const basePath = useMemo(() => {
     const segments = pathname.split('/').filter(Boolean)
     const dashboardIndex = segments.findIndex(s => s === 'dashboard')
@@ -40,14 +37,10 @@ export default function OrgTicketsLayout({ children }) {
     }
     return ''
   }, [pathname])
-
-  // Tabs allowed for this role
   const visibleTabs = useMemo(() => {
     if (!role) return []
     return ALL_TABS.filter(tab => tab.roles.includes(role))
   }, [role])
-
-  // Segment after "org-tickets" (the tab key or an id)
   const tabSegment = useMemo(() => {
     const segments = pathname.split('/').filter(Boolean)
     const idx = segments.findIndex(s => s === 'org-tickets')

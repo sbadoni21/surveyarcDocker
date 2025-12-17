@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Calendar, CheckCircle, Clock, Copy, Mail, Shield,
   Users, Trash2, Ban, Undo2, ChevronDown, AlertCircle, UserPlus,
-  Users2
+  Users2, Lock
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
@@ -12,6 +12,11 @@ import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import { Icon } from "@iconify/react";
 import Link from "next/link";
 import CreateUserModal from "@/components/team/CreateUser";
+import UserRoleManager from "@/components/rbac/UserRoleManager";
+import { RBACProvider, useRBAC } from "@/providers/RBACProvider";
+import { ProtectedAction } from "@/components/rbac/ProtectedAction";
+import PermissionManager from "@/components/rbac/PermissionManager";
+import UserPermissionsManager from "@/components/rbac/UserPermissionsManager";
 
 // ==================== Constants ====================
 const USERS_PER_PAGE = 6;
@@ -46,35 +51,21 @@ const ROLES = [
 // ==================== Utility Functions ====================
 const normalizeDate = (dateInput) => {
   if (!dateInput) return null;
-
-  if (typeof dateInput?.toDate === "function") {
-    return dateInput.toDate();
-  }
-
-  if (dateInput?.seconds) {
-    return new Date(dateInput.seconds * 1000);
-  }
-
+  if (typeof dateInput?.toDate === "function") return dateInput.toDate();
+  if (dateInput?.seconds) return new Date(dateInput.seconds * 1000);
   return new Date(dateInput);
 };
 
 const formatDate = (dateInput) => {
   const date = normalizeDate(dateInput);
   if (!date) return "—";
-
   return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric"
+    month: "short", day: "numeric", year: "numeric"
   });
 };
 
 const getAvatarColor = (index) => AVATAR_COLORS[index % AVATAR_COLORS.length];
-
-const getRoleBadgeStyle = (role) => {
-  return ROLE_STYLES[(role || "member").toLowerCase()] || ROLE_STYLES.member;
-};
-
+const getRoleBadgeStyle = (role) => ROLE_STYLES[(role || "member").toLowerCase()] || ROLE_STYLES.member;
 const capitalizeRole = (role) => {
   if (!role) return "Member";
   return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
@@ -98,10 +89,9 @@ const Toast = ({ message, type = "success", onClose }) => {
   );
 };
 
-// ==================== Status Badge Component ====================
+// ==================== Status Badge ====================
 const StatusTag = ({ status }) => {
   const isActive = (status || "").toLowerCase() === "active";
-
   return isActive ? (
     <span className="flex items-center gap-1 bg-[#DCFCE7] text-[#1B803D] dark:bg-green-900 dark:text-green-200 rounded-2xl px-2 py-1 text-[10px] font-medium">
       <CheckCircle size={12} /> Active
@@ -113,8 +103,8 @@ const StatusTag = ({ status }) => {
   );
 };
 
-// ==================== Invite Section Component ====================
-const InviteSection = ({ inviteLink, isOwner, onCopy, copied, onOpenCreateModal }) => {
+// ==================== Invite Section ====================
+const InviteSection = ({ inviteLink, isOwner, onCopy, copied, onOpenCreateModal, orgId }) => {
   return (
     <div className="rounded-2xl py-6 px-10 mb-8 bg-[#FCF0E5] dark:bg-[#4F3E32]">
       <div className="flex items-center gap-2 mb-4">
@@ -133,21 +123,36 @@ const InviteSection = ({ inviteLink, isOwner, onCopy, copied, onOpenCreateModal 
             aria-label="Invite link"
           />
         </div>
-        <button
-          onClick={onCopy}
-          disabled={!isOwner}
-          className={`px-6 py-3 rounded-xl font-semibold flex items-center gap-2 text-white transition-all ${
-            copied ? "bg-green-500" : "bg-[#ED7A13] hover:bg-[#D66A0F]"
-          } disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500`}
-          aria-label={copied ? "Link copied" : "Copy invite link"}
-        >
-          <Copy size={16} />
-          {copied ? "Copied!" : "Copy Link"}
-        </button>
+        
+        {/* Protected Copy Button */}
+        <ProtectedAction permission="team.invite" orgId={orgId} scope="org"         resourceId={orgId}
+>
+          <button
+            onClick={onCopy}
+            className={`px-6 py-3 rounded-xl font-semibold flex items-center gap-2 text-white transition-all ${
+              copied ? "bg-green-500" : "bg-[#ED7A13] hover:bg-[#D66A0F]"
+            } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500`}
+            aria-label={copied ? "Link copied" : "Copy invite link"}
+          >
+            <Copy size={16} />
+            {copied ? "Copied!" : "Copy Link"}
+          </button>
+        </ProtectedAction>
       </div>
       
-      {/* Create User Button */}
-      {isOwner && (
+      {/* Protected Create User Button */}
+      <ProtectedAction 
+        permission="rbac.assign_role" 
+        orgId={orgId} 
+        resourceId={orgId}
+        scope="org"
+        fallback={
+          <div className="w-full bg-gray-100 dark:bg-gray-800 text-gray-400 px-6 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 cursor-not-allowed">
+            <Lock size={18} />
+            Insufficient Permissions
+          </div>
+        }
+      >
         <button
           onClick={onOpenCreateModal}
           className="w-full bg-white dark:bg-[#2A2A2A] text-[#ED7A13] border-2 border-[#ED7A13] px-6 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-[#ED7A13] hover:text-white transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
@@ -155,19 +160,19 @@ const InviteSection = ({ inviteLink, isOwner, onCopy, copied, onOpenCreateModal 
           <UserPlus size={18} />
           Create New User Account
         </button>
-      )}
+      </ProtectedAction>
       
       {!isOwner && (
         <p className="mt-2 text-xs text-[#8C8A97] flex items-center gap-1">
-          <Shield size={12} /> Only the organisation owner can invite or edit members.
+          <Shield size={12} /> Only users with proper permissions can manage members.
         </p>
       )}
     </div>
   );
 };
 
-// ==================== User Card Component ====================
-const UserCard = ({ member, index, isOwner, ownerUID, busyUid, onChangeRole, onToggleStatus, onRemove }) => {
+// ==================== User Card ====================
+const UserCard = ({ member, index, isOwner, ownerUID, busyUid, onChangeRole, onToggleStatus, onRemove, onOpenPermissions, orgId }) => {
   const canEdit = isOwner && member.uid !== ownerUID;
   const isBusy = busyUid === member.uid;
   const isActive = (member.status || "").toLowerCase() === "active";
@@ -188,6 +193,20 @@ const UserCard = ({ member, index, isOwner, ownerUID, busyUid, onChangeRole, onT
               </p>
               <StatusTag status={member.status} />
             </div>
+            
+            {/* Protected Permissions Button */}
+            <ProtectedAction permission="rbac.view_assignments" orgId={orgId} scope="org"         resourceId={orgId}
+>
+              <button
+                onClick={() => onOpenPermissions(member)}
+                className="px-3 py-2 rounded-lg text-xs font-semibold border border-slate-300 text-slate-700 bg-slate-50 hover:bg-slate-100 transition-all"
+                title="Manage roles & permissions"
+              >
+                <Shield className="w-4 h-4 inline mr-1" />
+                Permissions
+              </button>
+            </ProtectedAction>
+
             <div className="flex flex-wrap items-center gap-4 text-[#8C8A97] dark:text-[#5B596A] text-xs">
               <span className="truncate">{member.email}</span>
               <span className="flex items-center gap-1">
@@ -206,72 +225,86 @@ const UserCard = ({ member, index, isOwner, ownerUID, busyUid, onChangeRole, onT
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Role Dropdown */}
-          <div className="relative">
-            <select
-              className={`text-sm border rounded-lg px-3 py-2 pr-8 bg-white dark:bg-[#2A2A2A] dark:text-white dark:border-gray-600 appearance-none ${
-                !canEdit ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:border-orange-500"
-              } focus:outline-none focus:ring-2 focus:ring-orange-500`}
-              value={member.role || "member"}
-              onChange={(e) => onChangeRole(member, e.target.value)}
+          {/* Protected Role Dropdown */}
+          <ProtectedAction 
+            permission="rbac.assign_role" 
+            orgId={orgId}
+                    resourceId={orgId}
+
+            scope="org"
+            fallback={
+              <div className="text-xs text-gray-400 flex items-center gap-1">
+                <Lock size={12} />
+                Locked
+              </div>
+            }
+          >
+            <div className="relative">
+              <select
+                className={`text-sm border rounded-lg px-3 py-2 pr-8 bg-white dark:bg-[#2A2A2A] dark:text-white dark:border-gray-600 appearance-none ${
+                  !canEdit ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:border-orange-500"
+                } focus:outline-none focus:ring-2 focus:ring-orange-500`}
+                value={member.role || "member"}
+                onChange={(e) => onChangeRole(member, e.target.value)}
+                disabled={!canEdit || isBusy}
+                aria-label="Change user role"
+              >
+                {ROLES.map(({ value, label }) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
+            </div>
+          </ProtectedAction>
+
+          {/* Protected Suspend/Activate Button */}
+          <ProtectedAction permission="team.manage_status" orgId={orgId} scope="org" resourceId={orgId}>
+            <button
+              onClick={() => onToggleStatus(member)}
               disabled={!canEdit || isBusy}
-              aria-label="Change user role"
+              className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${
+                isActive
+                  ? "border-yellow-300 text-yellow-700 bg-yellow-50 dark:bg-yellow-900/20 dark:border-yellow-600 dark:text-yellow-300 hover:bg-yellow-100"
+                  : "border-green-300 text-green-700 bg-green-50 dark:bg-green-900/20 dark:border-green-600 dark:text-green-300 hover:bg-green-100"
+              } disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2`}
+              title={isActive ? "Suspend user" : "Activate user"}
             >
-              {ROLES.map(({ value, label }) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-            <ChevronDown className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
-          </div>
+              {isBusy ? (
+                <span className="inline-flex items-center gap-1">
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                </span>
+              ) : isActive ? (
+                <span className="inline-flex items-center gap-1">
+                  <Ban className="w-4 h-4" /> Suspend
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1">
+                  <Undo2 className="w-4 h-4" /> Activate
+                </span>
+              )}
+            </button>
+          </ProtectedAction>
 
-          {/* Suspend/Activate Button */}
-          <button
-            onClick={() => onToggleStatus(member)}
-            disabled={!canEdit || isBusy}
-            className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${
-              isActive
-                ? "border-yellow-300 text-yellow-700 bg-yellow-50 dark:bg-yellow-900/20 dark:border-yellow-600 dark:text-yellow-300 hover:bg-yellow-100"
-                : "border-green-300 text-green-700 bg-green-50 dark:bg-green-900/20 dark:border-green-600 dark:text-green-300 hover:bg-green-100"
-            } disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-              isActive ? "focus:ring-yellow-500" : "focus:ring-green-500"
-            }`}
-            title={isActive ? "Suspend user" : "Activate user"}
-            aria-label={isActive ? "Suspend user" : "Activate user"}
-          >
-            {isBusy ? (
+          {/* Protected Remove Button */}
+          <ProtectedAction permission="team.remove_member" orgId={orgId} scope="org" resourceId={orgId}>
+            <button
+              onClick={() => onRemove(member)}
+              disabled={!canEdit || isBusy}
+              className="px-3 py-2 rounded-lg text-xs font-semibold border border-red-300 text-red-600 bg-red-50 dark:bg-red-900/20 dark:border-red-600 dark:text-red-300 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              title="Remove from organisation"
+            >
               <span className="inline-flex items-center gap-1">
-                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                <Trash2 className="w-4 h-4" /> Remove
               </span>
-            ) : isActive ? (
-              <span className="inline-flex items-center gap-1">
-                <Ban className="w-4 h-4" /> Suspend
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1">
-                <Undo2 className="w-4 h-4" /> Activate
-              </span>
-            )}
-          </button>
-
-          {/* Remove Button */}
-          <button
-            onClick={() => onRemove(member)}
-            disabled={!canEdit || isBusy}
-            className="px-3 py-2 rounded-lg text-xs font-semibold border border-red-300 text-red-600 bg-red-50 dark:bg-red-900/20 dark:border-red-600 dark:text-red-300 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-            title="Remove from organisation"
-            aria-label="Remove user from organisation"
-          >
-            <span className="inline-flex items-center gap-1">
-              <Trash2 className="w-4 h-4" /> Remove
-            </span>
-          </button>
+            </button>
+          </ProtectedAction>
         </div>
       </div>
     </div>
   );
 };
 
-// ==================== Pagination Component ====================
+// ==================== Pagination ====================
 const Pagination = ({ currentPage, totalPages, onPageChange }) => {
   if (totalPages <= 1) return null;
 
@@ -281,7 +314,6 @@ const Pagination = ({ currentPage, totalPages, onPageChange }) => {
         disabled={currentPage === 1}
         onClick={() => onPageChange(currentPage - 1)}
         className="px-4 py-2 rounded-lg bg-gray-100 dark:bg-[#333] dark:text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-[#444] transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500"
-        aria-label="Previous page"
       >
         Previous
       </button>
@@ -294,8 +326,6 @@ const Pagination = ({ currentPage, totalPages, onPageChange }) => {
               ? "bg-orange-500 text-white"
               : "bg-gray-100 dark:bg-[#2A2A2A] text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-[#333]"
           }`}
-          aria-label={`Go to page ${i + 1}`}
-          aria-current={currentPage === i + 1 ? "page" : undefined}
         >
           {i + 1}
         </button>
@@ -304,7 +334,6 @@ const Pagination = ({ currentPage, totalPages, onPageChange }) => {
         disabled={currentPage === totalPages}
         onClick={() => onPageChange(currentPage + 1)}
         className="px-4 py-2 rounded-lg bg-gray-100 dark:bg-[#333] dark:text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-[#444] transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500"
-        aria-label="Next page"
       >
         Next
       </button>
@@ -312,14 +341,13 @@ const Pagination = ({ currentPage, totalPages, onPageChange }) => {
   );
 };
 
-// ==================== Loading Spinner Component ====================
+// ==================== Loading & Empty States ====================
 const LoadingSpinner = () => (
   <div className="flex justify-center items-center py-12">
     <div className="animate-spin rounded-full h-12 w-12 border-4 border-orange-200 border-t-orange-500" />
   </div>
 );
 
-// ==================== Empty State Component ====================
 const EmptyState = () => (
   <div className="text-center py-12 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-[#1A1A1E]">
     <Users size={48} className="mx-auto mb-4 text-gray-400 dark:text-gray-600" />
@@ -328,13 +356,12 @@ const EmptyState = () => (
   </div>
 );
 
-// ==================== Main Component ====================
-export default function UsersPage() {
+// ==================== Main Component (Inner) ====================
+function UsersPageInner() {
   const pathname = usePathname();
   const orgId = pathname.split("/")[3];
   const { organisation, update: updateOrg } = useOrganisation();
-  const { user: currentUser, updateUser, deleteUser } = useUser();
-
+  const { user: currentUser, updateUser, deleteUser, uid } = useUser();
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
   const [copied, setCopied] = useState(false);
@@ -342,26 +369,27 @@ export default function UsersPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [toast, setToast] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [permissionUser, setPermissionUser] = useState(null);
 
   const inviteLink = `${
     typeof window !== "undefined" ? window.location.origin : ""
   }/postgres-register?orgId=${orgId}`;
 
-  // Derive permissions
   const isOwner = useMemo(
     () => !!organisation?.owner_uid && currentUser?.uid === String(organisation.owner_uid),
     [organisation?.owner_uid, currentUser?.uid]
   );
 
   const ownerUID = organisation?.owner_uid;
-
   const totalPages = Math.ceil(users.length / USERS_PER_PAGE);
   const paginatedUsers = useMemo(
     () => users.slice((currentPage - 1) * USERS_PER_PAGE, currentPage * USERS_PER_PAGE),
     [users, currentPage]
   );
 
-  // Load users from organisation.team_members
+  const openPermissions = useCallback((user) => setPermissionUser(user), []);
+  const closePermissions = useCallback(() => setPermissionUser(null), []);
+
   useEffect(() => {
     if (organisation?.team_members) {
       setUsers(organisation.team_members);
@@ -369,7 +397,6 @@ export default function UsersPage() {
     }
   }, [organisation]);
 
-  // Reset to page 1 if current page exceeds total pages
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
       setCurrentPage(1);
@@ -380,9 +407,7 @@ export default function UsersPage() {
     setToast({ message, type });
   }, []);
 
-  const hideToast = useCallback(() => {
-    setToast(null);
-  }, []);
+  const hideToast = useCallback(() => setToast(null), []);
 
   const copyToClipboard = useCallback(() => {
     navigator.clipboard.writeText(inviteLink);
@@ -400,7 +425,6 @@ export default function UsersPage() {
     });
   };
 
-  // When a new user is created via CreateUserModal
   const handleUserCreatedIntoOrg = async (createdUser) => {
     const mapped = {
       uid: createdUser.uid,
@@ -491,17 +515,16 @@ export default function UsersPage() {
   return (
     <div className="min-h-screen p-6 bg-gray-50 dark:bg-[#0A0A0A]">
       <div className="max-w-7xl mx-auto">
-        {/* Toast Notification */}
         {toast && <Toast message={toast.message} type={toast.type} onClose={hideToast} />}
- <Link
-      href="./team/groups"
-      className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
-    >
-      <Users2 size={16} />
-      <span>Groups</span>
-    </Link>
 
-        {/* Create User Modal */}
+        <Link
+          href="./team/groups"
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 mb-4"
+        >
+          <Users2 size={16} />
+          <span>Groups</span>
+        </Link>
+
         <CreateUserModal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
@@ -510,22 +533,42 @@ export default function UsersPage() {
           onUserCreated={handleUserCreatedIntoOrg}
         />
 
-        {/* Header */}
+        {permissionUser && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex justify-end">
+            <div className="w-full max-w-xl bg-white dark:bg-[#1A1A1E] h-full shadow-xl overflow-y-auto">
+              <div className="flex items-center justify-between px-4 py-3 border-b dark:border-gray-700">
+                <h3 className="font-semibold text-lg dark:text-white">
+                  Permissions — {permissionUser.email}
+                </h3>
+                <button
+                  onClick={closePermissions}
+                  className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-4">
+                <UserRoleManager userId={permissionUser.uid} orgId={orgId} />
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="mb-8 space-y-1">
           <h1 className="text-2xl font-semibold dark:text-[#CBC9DE]">Team Members</h1>
           <p className="text-xs text-[#5B596A]">Manage your team and invite new members</p>
         </div>
 
-        {/* Invite Section with Create User Button */}
         <InviteSection
           inviteLink={inviteLink}
           isOwner={isOwner}
           onCopy={copyToClipboard}
           copied={copied}
           onOpenCreateModal={() => setIsModalOpen(true)}
+          orgId={orgId}
         />
-
-        {/* Users List */}
+      <PermissionManager orgId={orgId} />
+<UserPermissionsManager orgId={orgId} />
         <div className="bg-white dark:bg-[#1A1A1E] rounded-lg px-4 py-6 shadow-sm">
           <div className="flex items-center gap-2 mb-6">
             <div className="p-2 bg-[#ED7A13] rounded-lg text-white">
@@ -554,13 +597,14 @@ export default function UsersPage() {
                   onChangeRole={handleChangeRole}
                   onToggleStatus={handleToggleStatus}
                   onRemove={handleRemove}
+                  onOpenPermissions={openPermissions}
+                  orgId={orgId}
                 />
               ))}
             </div>
           )}
         </div>
 
-        {/* Pagination */}
         <Pagination
           currentPage={currentPage}
           totalPages={totalPages}
@@ -568,5 +612,14 @@ export default function UsersPage() {
         />
       </div>
     </div>
+  );
+}
+
+// ==================== Main Export with RBAC Provider ====================
+export default function UsersPage() {
+  return (
+    <RBACProvider>
+      <UsersPageInner />
+    </RBACProvider>
   );
 }

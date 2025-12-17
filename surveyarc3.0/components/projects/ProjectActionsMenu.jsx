@@ -20,7 +20,7 @@ export function ProjectActionsMenu({
   };
 
   return (
-    <div className="relative">
+    <div className="">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="p-2 hover:bg-gray-100 rounded-lg transition-colors"

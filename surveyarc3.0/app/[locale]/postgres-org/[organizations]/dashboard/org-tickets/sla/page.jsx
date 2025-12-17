@@ -1,5 +1,4 @@
 "use client";
-import { Container, Paper, Stack, Typography } from "@mui/material";
 import SLAAdminPanel from "@/components/sla/SLAAdminPanel";
 import { usePathname } from "next/navigation";
 import { SLAMakingProvider } from "@/providers/slaMakingProivder";
@@ -10,14 +9,13 @@ export default function SLASettingsPage() {
 
   return (
     <SLAMakingProvider>
-      <Container maxWidth="lg" sx={{ py: 2 }}>
-        <Stack spacing={2}>
-          <Typography variant="h5">Service Level Aggreements</Typography>
-          <Paper variant="outlined" sx={{ p: 2 }}>
+      <div className="mx-auto">
+        <div className="space-y-4"> 
+          <div className="border border-gray-300 rounded-lg p-4 bg-white">
             <SLAAdminPanel orgId={orgId} />
-          </Paper>
-        </Stack>
-      </Container>
+          </div>
+        </div>
+      </div>
     </SLAMakingProvider>
   );
 }

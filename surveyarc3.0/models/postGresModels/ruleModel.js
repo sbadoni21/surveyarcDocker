@@ -62,7 +62,7 @@ const RuleModel = {
   async update(surveyId, ruleId, updateData) {
     const res = await fetch(`${BASE}/${encodeURIComponent(surveyId)}/${encodeURIComponent(ruleId)}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", },
       body: JSON.stringify(updateData), // snake/camel handled server-side
       cache: "no-store",
     });
