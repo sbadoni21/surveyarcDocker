@@ -107,7 +107,7 @@ export default function Page() {
       const lastCheck = localStorage.getItem("lastSubscriptionCheck");
       const today = new Date().toDateString();
 
-      if (lastCheck === today) return; // only once per day
+      if (lastCheck === today) return;
       localStorage.setItem("lastSubscriptionCheck", today);
 
       const endDate = organisation.subscription.endDate

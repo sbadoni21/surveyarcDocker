@@ -1,21 +1,16 @@
 "use client";
 import React, { useState } from "react";
-
-import EmailPage from "@/components/EmailPage";
 import AnonymousLinkPage from "@/components/AnonymousLinkPage";
 import EmbedPage from "@/components/EmbedPage";
 import SocialPage from "@/components/SocialPage";
-import SmsPage from "@/components/SmsPage";
-import QrCodePage from "@/components/QrCodePage";
-import WhatsappDistributionPage from "./WhatsappDistributionPage";
+import CampaignPage from "./CampaignPage";
+import SurveyQRCodePage from "@/components/QrCodePage";
 
 const distributionMethods = [
   { id: "email", label: "Email" },
   { id: "anonymous", label: "Anonymous Link" },
-  { id: "whatsapp", label: "Whatsapp" },
   { id: "embed", label: "Embed Code" },
-  { id: "social", label: "Social Media" },
-  { id: "sms", label: "SMS" },
+  // { id: "social", label: "Social Media" },
   { id: "qr", label: "QR Code" }
 ];
 
@@ -26,19 +21,19 @@ export default function DistributionPage() {
   const renderDetailPage = () => {
     switch (selectedMethod) {
       case "email":
-        return <EmailPage />;
+        return <CampaignPage />;
       case "anonymous":
         return <AnonymousLinkPage />;
-      case "whatsapp":
-        return <WhatsappDistributionPage />;
+      // case "whatsapp":
+      //   return <WhatsappDistributionPage />;
       case "embed":
         return <EmbedPage />;
-      case "social":
-        return <SocialPage />;
-      case "sms":
-        return <SmsPage />;
+      // case "social":
+      //   return <SocialPage />;
+      // case "sms":
+      //   return <SmsPage />;
       case "qr":
-        return <QrCodePage />;
+        return <SurveyQRCodePage />;
       default:
         return <div>Select a distribution method.</div>;
     }

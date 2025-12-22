@@ -74,23 +74,7 @@ def get_contact(contact_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ---------- ACCOUNTS LIST ----------
-@router.get("/accounts", response_model=SalesforceListResponse)
-def list_accounts(limit: int = Query(50, ge=1, le=500)):
-    try:
-        records = SalesforceService.get_accounts(limit=limit)
-        items: List[SalesforceGenericRecord] = []
-        for r in records:
-            items.append(
-                SalesforceGenericRecord(
-                    id=r.get("Id"),
-                    name=r.get("Name"),
-                    raw=r,
-                )
-            )
-        return SalesforceListResponse(total=len(items), items=items)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/accounts", response_model=SalesforceListResponse)
 def list_accounts_apex(limit: int = Query(50, ge=1, le=500)):

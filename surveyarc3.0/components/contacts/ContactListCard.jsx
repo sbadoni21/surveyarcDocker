@@ -100,6 +100,9 @@ export default function ContactListCard(props) {
 
   const [listMenuOpen, setListMenuOpen] = useState(false);
   const [openContactMenuId, setOpenContactMenuId] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
+
 
   const listContacts = getListContacts(list) || [];
   const page = paginationData.page || 1;
@@ -143,6 +146,45 @@ const handleAddExisting = (e) => {
   // Clear selection visually
   e.target.selectedIndex = -1;
   setListMenuOpen(false);
+};
+const handleSyncSalesforceList = async () => {
+  if (!confirm("Sync this list from Salesforce?")) return;
+
+  setSyncing(true);
+  setSyncResult(null);
+
+  try {
+    const res = await fetch(
+      `/en/api/post-gres-apis/salesforce-campaigns/lists/${list.listId}/sync-salesforce`,
+      {
+        method: "POST",
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data?.message || "Sync failed");
+    }
+
+    setSyncResult({
+      type: "success",
+      message: `Synced ${data.sync_result?.added_to_list ?? 0} new contacts`,
+    });
+
+    // 🔄 refresh list data if parent provides refresh()
+    if (typeof props.refresh === "function") {
+      await props.refresh();
+    }
+  } catch (err) {
+    console.error("Salesforce sync failed:", err);
+    setSyncResult({
+      type: "error",
+      message: err.message,
+    });
+  } finally {
+    setSyncing(false);
+  }
 };
 
 
@@ -345,6 +387,42 @@ className="px-3 py-1 bg-red-600 text-white rounded">
                         : "Archive list"}
                     </span>
                   </button>
+{list?.meta_data?.source === "salesforce" && (
+  <>
+    <button
+      className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50 disabled:opacity-60"
+      onClick={handleSyncSalesforceList}
+      disabled={syncing}
+    >
+      <span className="flex items-center gap-2">
+        <Share2 className="w-4 h-4 text-blue-600" />
+        <span>
+          {syncing ? "Syncing from Salesforce..." : "Sync from Salesforce"}
+        </span>
+      </span>
+    </button>
+
+    {list.meta_data?.last_synced_at && (
+      <div className="px-3 pb-2 text-xs text-gray-500">
+        Last synced:{" "}
+        {new Date(list.meta_data.last_synced_at).toLocaleString()}
+      </div>
+    )}
+
+    <div className="my-2 border-t border-gray-100" />
+  </>
+)}
+{syncResult && (
+  <div
+    className={`mx-6 mb-2 px-3 py-2 rounded text-sm ${
+      syncResult.type === "success"
+        ? "bg-green-100 text-green-700"
+        : "bg-red-100 text-red-700"
+    }`}
+  >
+    {syncResult.message}
+  </div>
+)}
 
                   <button
                     className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50"

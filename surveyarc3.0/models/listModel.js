@@ -11,7 +11,7 @@ const contactToCamel = (c) => ({
   primaryIdentifier: c.primary_identifier,
   contactType: c.contact_type,
   status: c.status,
-  meta: c.meta,
+  meta_data: c.meta_data,
   createdAt: c.created_at,
   updatedAt: c.updated_at,
   deletedAt: c.deleted_at,
@@ -24,6 +24,8 @@ const toCamel = (l) => ({
   listId: l.list_id,
   orgId: l.org_id,
   listName: l.list_name,
+    meta_data: l.meta_data,
+
   status: l.status,
   createdAt: l.created_at,
   updatedAt: l.updated_at,

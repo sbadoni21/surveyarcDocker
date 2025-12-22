@@ -114,6 +114,7 @@ class ContactList(Base):
     __tablename__ = "contact_lists"
     list_id     = Column(String, primary_key=True, index=True)
     org_id      = Column(String, index=True, nullable=False)
+    meta_data   = Column(JSON, nullable=True)   # ✅ ADD THIS
 
     list_name   = Column(String, nullable=False)
     status      = Column(String, default="live")  # live | suspended | archived

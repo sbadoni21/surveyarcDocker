@@ -95,10 +95,13 @@ class ListBase(BaseModel):
     org_id: str
     list_name: str
     status: Optional[str] = "live"
+    meta_data:  dict | None = None
+
 
 class ListCreate(ListBase):
     list_id: Optional[str] = None
     contact_ids: Optional[List[str]] = None
+
 
 class ListUpdate(BaseModel):
     list_name: Optional[str] = None

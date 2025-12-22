@@ -20,8 +20,6 @@ import SurveyFlowView from "@/components/SurveyFlowView";
 import CampaignPage from "./CampaignPage";
 import SurveyResponsesPage from "@/components/SurveyResponsePopup";
 import ThemeManager from "@/components/theme";
-import { Button } from "@mui/material";
-import DummyGeneratorPanel from "@/components/dummydata-generator/DummyGeneratorPanel";
 import PanelManager from "./PanelManager";
 import { createSurveyFromTemplate } from "@/utils/createSurveyFromTemplate";
 import { TemplateSelectionPopup } from "@/components/surveys/TemplateSelectionPopup";
@@ -585,7 +583,7 @@ export default function Dist() {
         )}
         {activeTab === "demo" && <SurveyDemoPage />}
         {activeTab === "distribution" && <DistributionPage />}
-        {activeTab === "campaign" && <CampaignPage />}
+        {activeTab === "campaign" && <DistributionPage />}
         {activeTab === "responses" && <SurveyResponsesPage survey={survey} />}
         {activeTab === "theme" && <ThemeManager />}
         {activeTab === "panel" && <PanelManager />}
