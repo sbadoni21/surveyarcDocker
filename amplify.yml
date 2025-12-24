@@ -1,6 +1,6 @@
 version: 1
 frontend:
-  appRoot: surveyarc3.0
+  appRoot: surveyarcDocker/surveyarc3.0
   phases:
     preBuild:
       commands:
