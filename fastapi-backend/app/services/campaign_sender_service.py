@@ -155,9 +155,9 @@ def create_campaign_results(
             campaign_id=campaign.campaign_id,
             contact_id=contact.contact_id,
             org_id=campaign.org_id,
-            channel_used=channel,
+            channel=channel,
             recipient_address=address,
-            recipient_name=contact.name,
+            contact_name=contact.name,
             tracking_token=tracking_token,
             status=RecipientStatus.queued
         )
@@ -249,7 +249,7 @@ def queue_campaign_sends(
                     continue
             
             # Build payload with reference URL (✅ UPDATED)
-            kind = f"campaign.{result.channel_used.value if hasattr(result.channel_used, 'value') else result.channel_used}"
+            kind = f"campaign.{result.channel.value if hasattr(result.channel, 'value') else result.channel}"
             payload = build_campaign_payload(campaign, result, contact, session)  # Pass session
             
             dedupe_key = f"campaign:{campaign.campaign_id}:{result.result_id}"
@@ -316,7 +316,7 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
     logger.debug("┌─────────────────────────────────────────────┐")
     logger.debug("│  BUILDING CAMPAIGN PAYLOAD (DIRECT URL)    │")
     logger.debug("└─────────────────────────────────────────────┘")
-    logger.debug(f"   - Channel: {result.channel_used.value if hasattr(result.channel_used, 'value') else result.channel_used}")
+    logger.debug(f"   - Channel: {result.channel.value if hasattr(result.channel, 'value') else result.channel}")
     logger.debug(f"   - Contact: {contact.name}")
     logger.debug(f"   - Tracking token: {result.tracking_token}")
     
@@ -338,7 +338,7 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
         "result_id": result.result_id,
         "contact_id": result.contact_id,
         "tracking_token": result.tracking_token,
-        "recipient_name": result.recipient_name or "there",
+        "recipient_name": result.contact_name or "there",
         "survey_link": final_survey_url,   # 🔥 Original URL
         "short_link": final_survey_url,    # 🔥 Also original URL
         "reference_id": None,              # No reference ID anymore
@@ -349,7 +349,7 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
     public_url = final_survey_url  # just for readability in replace_variables calls
 
     # ✅ STEP 3: Build channel-specific payload with variable replacement
-    if result.channel_used == CampaignChannel.email:
+    if result.channel == CampaignChannel.email:
         logger.debug("📧 Building EMAIL payload...")
         
         email_subject = replace_variables(
@@ -379,7 +379,7 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             "reply_to": campaign.email_reply_to,
         }
         
-    elif result.channel_used == CampaignChannel.sms:
+    elif result.channel == CampaignChannel.sms:
         logger.debug("📱 Building SMS payload...")
         
         sms_message = replace_variables(
@@ -397,7 +397,7 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             "message": sms_message,
         }
         
-    elif result.channel_used == CampaignChannel.whatsapp:
+    elif result.channel == CampaignChannel.whatsapp:
         logger.debug("💬 Building WhatsApp payload...")
         
         whatsapp_message = replace_variables(
@@ -416,7 +416,7 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
             "template_id": campaign.whatsapp_template_id,
         }
         
-    elif result.channel_used == CampaignChannel.voice:
+    elif result.channel == CampaignChannel.voice:
         logger.debug("📞 Building VOICE payload...")
         
         voice_script = replace_variables(
@@ -435,7 +435,7 @@ def build_campaign_payload(campaign: Campaign, result: CampaignResult, contact: 
         }
     
     else:
-        logger.warning(f"⚠️  Unknown channel: {result.channel_used.value if hasattr(result.channel_used, 'value') else result.channel_used}")
+        logger.warning(f"⚠️  Unknown channel: {result.channel.value if hasattr(result.channel, 'value') else result.channel}")
         payload = base_payload
     
     logger.debug(f"✅ Payload built with {len(payload)} keys")
@@ -626,7 +626,7 @@ def update_result_from_outbox(
         if not campaign.channel_stats:
             campaign.channel_stats = {}
         
-        channel_key = result.channel_used.value if hasattr(result.channel_used, 'value') else result.channel_used
+        channel_key = result.channel.value if hasattr(result.channel, 'value') else result.channel
         
         if channel_key not in campaign.channel_stats:
             campaign.channel_stats[channel_key] = {

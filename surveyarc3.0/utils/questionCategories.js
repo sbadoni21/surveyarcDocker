@@ -14,10 +14,21 @@ export const QUESTION_CATEGORIES = {
     "LEGAL",
     "CHECKBOX",
   ],
-  "Advanced Methods": ["MAXDIFF", "CONJOINT", "AUTO_SUM", "PRICE_SENSITIVITY","TURF","BAYES_ACQ",   "WEIGHTED_MULTI", "TABLE_GRID", "MULTI_GRID" ,"SEGMENTATION_SELECTOR" ,  "PERSONA_QUIZ",      // 👈 add here
-    "MONADIC_TEST",   // 👈 NEW
-    "SEQUENTIAL_MONADIC",   // 👈 NEW
-    "FORCED_EXPOSURE",      // 👈 NEW
+  "Advanced Methods": [
+    // "MAXDIFF",
+    //  "CONJOINT", 
+     "AUTO_SUM", 
+    //  "PRICE_SENSITIVITY",
+    //  "TURF",
+    //  "BAYES_ACQ",  
+      // "WEIGHTED_MULTI", 
+      "TABLE_GRID",
+       "MULTI_GRID" ,
+    //    "SEGMENTATION_SELECTOR" ,  
+    //    "PERSONA_QUIZ",      // 👈 add here
+    // "MONADIC_TEST",   // 👈 NEW
+    // "SEQUENTIAL_MONADIC",   // 👈 NEW
+    // "FORCED_EXPOSURE",      // 👈 NEW
      // Tabular data input
   // 👈 ADD THIS
 
@@ -30,7 +41,7 @@ export const QUESTION_CATEGORIES = {
     "RANKING",
     "MATRIX",
     "OSAT",
-        "SEMANTIC_DIFF",   // 👈 NEW
+        // "SEMANTIC_DIFF",   // 👈 NEW
             "SLIDER",          // 👈 add here
 "LIKERT",              // e.g., Strongly Disagree → Strongly Agree
 "SMILEY_RATING",       // Emoji faces
@@ -40,13 +51,14 @@ export const QUESTION_CATEGORIES = {
 
   "Text & Media": ["LONG_TEXT", "SHORT_TEXT", "VIDEO"],
 
-  "Data Collection": [
-    "NUMBER",
-    "DATE",
-    "FILE_UPLOAD",
-    "GOOGLE_DRIVE",
-    "CALENDLY",
-  ],"Pricing Research": ["GABOR_GRANGER"],
+  // "Data Collection": [
+  //   "NUMBER",
+  //   "DATE",
+  //   "FILE_UPLOAD",
+  //   "GOOGLE_DRIVE",
+  //   "CALENDLY",
+  // ],
+  // "Pricing Research": ["GABOR_GRANGER"],
 
 
   "Flow & Structure": ["WELCOME", "END_SCREEN", "REDIRECT"],

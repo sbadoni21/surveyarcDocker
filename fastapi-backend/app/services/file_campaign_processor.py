@@ -1,32 +1,30 @@
 # ============================================
-# B2C CAMPAIGN SENDER SERVICE
-# app/services/b2c_campaign_sender_service.py
+# FIXED B2C CAMPAIGN FILE PROCESSOR
+# Replace app/services/file_campaign_processor.py
 # ============================================
 """
-Processes B2C campaigns from audience files (CSV/Excel).
+Process B2C campaigns from CSV/Excel files.
 
-Key differences from B2B:
-❌ No CampaignResult table writes
-✅ Updates CSV directly with status columns
-✅ Smart outbox batching to prevent server overload
-✅ Returns updated file to user for download
+✅ FIXES:
+1. Accepts IDs instead of objects for background tasks
+2. Creates own database session (not tied to request)
+3. Uses audience_file.storage_key instead of hardcoded path
+4. Proper error handling and session cleanup
 """
 
 import os
 import csv
-import tempfile
+import uuid
 import logging
 from datetime import datetime, timezone
-from typing import List, Dict, Optional, Tuple
-from sqlalchemy.orm import Session
-from pathlib import Path
+from typing import Dict, Any, Optional
 
-from ..models.campaigns import Campaign, CampaignChannel, CampaignStatus
+from ..db import SessionLocal  # ✅ Import SessionLocal
+from ..models.campaigns import CampaignStatus
+from ..models.campaigns import Campaign, CampaignChannel, RecipientStatus
 from ..models.audience_file import AudienceFile
 from ..models.outbox import Outbox
-from ..utils.id_generator import generate_id
-from .variable_replacement_service import replace_variables
-import secrets
+from .variable_replacement_service import replace_variables, build_tracking_url
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,643 +33,475 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 UTC = timezone.utc
 
-# ============================================
-# CONFIGURATION
-# ============================================
 
-# Smart batching to prevent server overload
-OUTBOX_BATCH_SIZE = 50  # Max outbox entries per batch
-PROCESSING_DELAY_SECONDS = 2  # Delay between batches
-
-# Required CSV columns for status tracking
-REQUIRED_STATUS_COLUMNS = [
-    "status",           # pending, sent, delivered, failed, bounced
-    "sent_at",          # Timestamp when sent
-    "delivered_at",     # Timestamp when delivered
-    "message_id",       # Provider message ID
-    "error",            # Error message if failed
-    "tracking_token",   # Unique tracking token
-]
+def generate_tracking_token():
+    """Generate unique tracking token"""
+    return f"camp_tracking_{uuid.uuid4().hex[:8]}"
 
 
-# ============================================
-# CSV FILE HANDLING
-# ============================================
-
-def ensure_status_columns(file_path: str) -> List[str]:
+def get_survey_url_for_b2c(campaign: Campaign, row: Dict[str, str], tracking_token: str) -> str:
     """
-    Ensures tracking columns exist in CSV.
-    - Adds only missing columns
-    - Preserves row order
-    - Safe to call multiple times
+    Build survey URL for B2C recipient.
     
-    Returns: List of all column names
+    Since we don't have Contact object, we use CSV row data directly.
     """
-    logger.info(f"📋 Ensuring status columns in {Path(file_path).name}")
+    base_url = os.getenv("SURVEY_BASE_URL", "https://surveyarc-docker.vercel.app/form")
     
-    with open(file_path, newline="", encoding="utf-8") as f:
+    # Build URL with tracking params
+    from urllib.parse import urlencode
+    
+    tracking_params = {
+        'campaign_id': campaign.campaign_id,
+        'survey_id': campaign.survey_id,
+        'tracking_token': tracking_token,
+        'org_id': campaign.org_id,
+        'source': campaign.channel.value,
+        'channel': 'campaign',
+        'utm_source': 'campaign',
+        'utm_medium': campaign.channel.value,
+        'utm_campaign': campaign.campaign_name,
+    }
+    
+    # Add email/phone from CSV if available
+    if row.get('email'):
+        tracking_params['email'] = row['email']
+    if row.get('phone'):
+        tracking_params['phone'] = row['phone']
+    
+    query_string = urlencode(tracking_params)
+    final_url = f"{base_url}?{query_string}"
+    
+    return final_url
+
+
+def replace_variables_from_row(
+    template: str,
+    row: Dict[str, str],
+    campaign: Campaign,
+    survey_url: str,
+    tracking_token: str
+) -> str:
+    """
+    Replace variables in template using CSV row data.
+    
+    Supports:
+    - {{name}}, {{email}}, {{phone}}
+    - {{survey_link}}, {{short_link}}
+    - {{campaign_name}}
+    - Any custom column from CSV (e.g., {{company}}, {{city}})
+    """
+    import re
+    
+    if not template:
+        return ""
+    
+    # Build replacements from CSV columns
+    replacements = {}
+    
+    # Standard fields
+    replacements['name'] = row.get('name', row.get('full_name', 'there'))
+    replacements['first_name'] = replacements['name'].split()[0] if replacements['name'] != 'there' else 'there'
+    replacements['email'] = row.get('email', '')
+    replacements['phone'] = row.get('phone', '')
+    
+    # Campaign info
+    replacements['campaign_name'] = campaign.campaign_name
+    replacements['campaign_id'] = campaign.campaign_id
+    replacements['survey_id'] = campaign.survey_id
+    
+    # Tracking
+    replacements['tracking_token'] = tracking_token
+    replacements['survey_link'] = survey_url
+    replacements['short_link'] = survey_url
+    replacements['link'] = survey_url
+    
+    # Date/time
+    now = datetime.now(UTC)
+    replacements['current_date'] = now.strftime('%B %d, %Y')
+    replacements['current_year'] = now.strftime('%Y')
+    replacements['current_time'] = now.strftime('%I:%M %p')
+    
+    # Add ALL CSV columns as variables (company, city, etc.)
+    for key, value in row.items():
+        if key not in replacements:  # Don't override standard fields
+            replacements[key.lower()] = value
+    
+    # Replace all {{variable}} patterns
+    result_text = template
+    for key, value in replacements.items():
+        pattern = r'\{\{\s*' + re.escape(key) + r'\s*\}\}'
+        result_text = re.sub(pattern, str(value), result_text, flags=re.IGNORECASE)
+    
+    return result_text
+
+
+def prepare_b2c_campaign_file(
+    file_path: str,
+    campaign: Campaign
+) -> str:
+    """
+    Step 1: Read CSV and add tracking columns.
+    
+    Adds:
+    - tracking_token
+    - status (pending)
+    - sent_at
+    - delivered_at
+    - message_id
+    - error
+    
+    Returns: Path to updated file
+    """
+    logger.info("=" * 80)
+    logger.info(f"📋 PREPARING B2C CAMPAIGN FILE")
+    logger.info(f"   Campaign: {campaign.campaign_name}")
+    logger.info(f"   File: {file_path}")
+    logger.info("=" * 80)
+    
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"CSV file not found: {file_path}")
+    
+    # Read original CSV
+    rows = []
+    with open(file_path, 'r', newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
-        existing_columns = reader.fieldnames or []
-    
-    logger.debug(f"   - Existing columns: {len(existing_columns)}")
-    
-    missing = [c for c in REQUIRED_STATUS_COLUMNS if c not in existing_columns]
-    
-    if not missing:
-        logger.debug("   ✅ All status columns present")
-        return existing_columns
-    
-    logger.info(f"   ➕ Adding {len(missing)} missing columns: {missing}")
-    
-    new_columns = existing_columns + missing
-    temp_path = file_path + ".tmp"
-    
-    with open(file_path, newline="", encoding="utf-8") as src, \
-         open(temp_path, "w", newline="", encoding="utf-8") as dst:
-        
-        reader = csv.DictReader(src)
-        writer = csv.DictWriter(dst, fieldnames=new_columns)
-        writer.writeheader()
+        original_fieldnames = reader.fieldnames
         
         for row in reader:
-            # Initialize new columns with empty values
-            for col in missing:
-                row[col] = ""
-            writer.writerow(row)
+            rows.append(row)
     
-    os.replace(temp_path, file_path)
-    logger.info(f"   ✅ Status columns added successfully")
+    logger.info(f"   ✅ Read {len(rows)} rows")
     
-    return new_columns
-
-
-def update_csv_row_status(
-    file_path: str,
-    row_index: int,
-    status: str,
-    message_id: Optional[str] = None,
-    error: Optional[str] = None,
-    sent_at: Optional[datetime] = None,
-    delivered_at: Optional[datetime] = None
-):
-    """
-    Update a specific row in the CSV with status information.
+    # Add tracking columns
+    new_fieldnames = list(original_fieldnames) + [
+        'tracking_token',
+        'status',
+        'sent_at',
+        'delivered_at',
+        'message_id',
+        'error'
+    ]
     
-    Args:
-        file_path: Path to CSV file
-        row_index: 0-based row index (excluding header)
-        status: Status value (pending, sent, delivered, failed, bounced)
-        message_id: Provider message ID
-        error: Error message if failed
-        sent_at: Timestamp when sent
-        delivered_at: Timestamp when delivered
-    """
-    logger.debug(f"📝 Updating CSV row {row_index}: status={status}")
-    
-    temp_path = file_path + ".tmp"
-    
-    with open(file_path, newline="", encoding="utf-8") as src, \
-         open(temp_path, "w", newline="", encoding="utf-8") as dst:
-        
-        reader = csv.DictReader(src)
-        writer = csv.DictWriter(dst, fieldnames=reader.fieldnames)
+    # Write updated CSV
+    with open(file_path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=new_fieldnames)
         writer.writeheader()
         
-        for idx, row in enumerate(reader):
-            if idx == row_index:
-                # Update status fields
-                row["status"] = status
-                
-                if message_id:
-                    row["message_id"] = message_id
-                
-                if error:
-                    row["error"] = error[:500]  # Truncate long errors
-                
-                if sent_at:
-                    row["sent_at"] = sent_at.isoformat()
-                
-                if delivered_at:
-                    row["delivered_at"] = delivered_at.isoformat()
+        for row in rows:
+            # Add tracking columns
+            row['tracking_token'] = generate_tracking_token()
+            row['status'] = 'pending'
+            row['sent_at'] = ''
+            row['delivered_at'] = ''
+            row['message_id'] = ''
+            row['error'] = ''
             
             writer.writerow(row)
     
-    os.replace(temp_path, file_path)
-    logger.debug(f"   ✅ Row {row_index} updated")
+    logger.info(f"   ✅ Added tracking columns")
+    logger.info("=" * 80)
+    
+    return file_path
 
 
-def get_pending_rows(file_path: str) -> List[Tuple[int, Dict]]:
+# ✅ NEW ASYNC VERSION - Accepts IDs, creates own session
+def process_b2c_campaign_async(
+    campaign_id: str,
+    audience_file_id: str
+):
     """
-    Get all pending rows from CSV.
+    Main B2C campaign processor for background tasks.
     
-    Returns: List of (row_index, row_dict) tuples
+    ✅ FIXED:
+    - Accepts IDs instead of objects
+    - Creates own database session
+    - Uses storage_key for file path
+    
+    Flow:
+    1. Create new database session
+    2. Load campaign and audience file
+    3. Validate file exists at storage_key
+    4. Prepare file with tracking columns
+    5. Process batch-by-batch
+    6. Create outbox entries
+    7. Update campaign status
     """
-    logger.info(f"🔍 Reading pending rows from {Path(file_path).name}")
+    logger.info("=" * 80)
+    logger.info(f"🚀 STARTING B2C CAMPAIGN PROCESSING (ASYNC)")
+    logger.info(f"   Campaign ID: {campaign_id}")
+    logger.info(f"   Audience File ID: {audience_file_id}")
+    logger.info("=" * 80)
     
-    pending_rows = []
+    # ✅ Create new session for background task
+    db = SessionLocal()
     
-    with open(file_path, newline="", encoding="utf-8") as f:
+    try:
+        # ✅ Load campaign and audience file
+        campaign = db.query(Campaign).filter(
+            Campaign.campaign_id == campaign_id
+        ).first()
+        
+        if not campaign:
+            raise Exception(f"Campaign {campaign_id} not found")
+        
+        audience_file = db.query(AudienceFile).filter(
+            AudienceFile.id == audience_file_id
+        ).first()
+        
+        if not audience_file:
+            raise Exception(f"Audience file {audience_file_id} not found")
+        
+        logger.info(f"   ✅ Loaded campaign: {campaign.campaign_name}")
+        logger.info(f"   ✅ Loaded file: {audience_file.filename}")
+        
+        # ✅ FIX: Use storage_key from database
+        file_path = audience_file.storage_key
+        
+        if not file_path:
+            raise Exception("Audience file has no storage_key")
+        
+        logger.info(f"   📁 File path: {file_path}")
+        
+        # Validate file exists
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found at: {file_path}")
+        
+        # Prepare file with tracking columns
+        file_path = prepare_b2c_campaign_file(file_path, campaign)
+        
+        # Process all rows
+        queued_count = queue_b2c_campaign_batch(db, campaign, file_path)
+        
+        # Update campaign
+        campaign.total_recipients = queued_count
+        campaign.status = CampaignStatus.sending
+        db.commit()
+        
+        logger.info("=" * 80)
+        logger.info(f"✅ B2C CAMPAIGN PROCESSING COMPLETE")
+        logger.info(f"   Queued: {queued_count} messages")
+        logger.info("=" * 80)
+        
+    except Exception as e:
+        logger.error(f"❌ B2C Campaign processing failed: {e}", exc_info=True)
+        
+        # Update campaign status
+        try:
+            campaign = db.query(Campaign).filter(
+                Campaign.campaign_id == campaign_id
+            ).first()
+            
+            if campaign:
+                campaign.status = CampaignStatus.failed
+                db.commit()
+        except:
+            pass
+        
+        raise
+    
+    finally:
+        # ✅ Always close session
+        db.close()
+
+
+def queue_b2c_campaign_batch(
+    db,  # Session from background task
+    campaign: Campaign,
+    file_path: str,
+    batch_size: int = 100
+) -> int:
+    """
+    Queue B2C campaign messages to outbox.
+    
+    Reads CSV and creates outbox entries for each recipient.
+    """
+    logger.info("=" * 80)
+    logger.info(f"📤 QUEUEING B2C CAMPAIGN BATCH")
+    logger.info(f"   File: {file_path}")
+    logger.info(f"   Batch size: {batch_size}")
+    logger.info("=" * 80)
+    
+    queued_count = 0
+    skipped_count = 0
+    error_count = 0
+    
+    with open(file_path, 'r', newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         
-        for idx, row in enumerate(reader):
-            status = row.get("status", "").strip()
-            
-            # Consider empty or "pending" as pending
-            if not status or status == "pending":
-                pending_rows.append((idx, row))
+        for idx, row in enumerate(reader, 1):
+            try:
+                # Skip if already processed
+                if row.get('status') not in ['pending', '']:
+                    logger.debug(f"⏭️  Row {idx}: Already processed")
+                    skipped_count += 1
+                    continue
+                
+                # Validate email/phone based on channel
+                if campaign.channel == CampaignChannel.email:
+                    if not row.get('email'):
+                        logger.warning(f"⚠️  Row {idx}: Missing email")
+                        skipped_count += 1
+                        continue
+                    recipient_address = row['email']
+                
+                elif campaign.channel in [CampaignChannel.sms, CampaignChannel.whatsapp]:
+                    if not row.get('phone'):
+                        logger.warning(f"⚠️  Row {idx}: Missing phone")
+                        skipped_count += 1
+                        continue
+                    recipient_address = row['phone']
+                
+                else:
+                    logger.warning(f"⚠️  Row {idx}: Unsupported channel")
+                    skipped_count += 1
+                    continue
+                
+                # Get tracking token
+                tracking_token = row.get('tracking_token')
+                if not tracking_token:
+                    tracking_token = generate_tracking_token()
+                
+                # Build survey URL
+                survey_url = get_survey_url_for_b2c(campaign, row, tracking_token)
+                
+                # Build payload
+                payload = build_b2c_payload(
+                    campaign=campaign,
+                    row=row,
+                    tracking_token=tracking_token,
+                    survey_url=survey_url,
+                    recipient_address=recipient_address
+                )
+                
+                # Create outbox entry
+                dedupe_key = f"b2c:{campaign.campaign_id}:{tracking_token}"
+                
+                outbox = Outbox(
+                    kind=f"campaign.{campaign.channel.value}",
+                    dedupe_key=dedupe_key,
+                    payload=payload
+                )
+                
+                db.add(outbox)
+                queued_count += 1
+                
+                if queued_count % 100 == 0:
+                    db.flush()
+                    logger.info(f"   ✅ Queued {queued_count} messages...")
+                
+            except Exception as e:
+                logger.error(f"❌ Row {idx} failed: {e}")
+                error_count += 1
+        
+        db.flush()
     
-    logger.info(f"   ✅ Found {len(pending_rows)} pending rows")
+    logger.info("=" * 80)
+    logger.info(f"📊 BATCH QUEUEING COMPLETE")
+    logger.info(f"   ✅ Queued: {queued_count}")
+    logger.info(f"   ⏭️  Skipped: {skipped_count}")
+    logger.info(f"   ❌ Errors: {error_count}")
+    logger.info("=" * 80)
     
-    return pending_rows
+    return queued_count
 
-
-# ============================================
-# TRACKING TOKEN GENERATION
-# ============================================
-
-def generate_tracking_token() -> str:
-    """Generate unique tracking token for B2C campaigns"""
-    return "b2c_" + secrets.token_hex(6)
-
-
-# ============================================
-# PAYLOAD BUILDING
-# ============================================
 
 def build_b2c_payload(
     campaign: Campaign,
-    row: Dict,
+    row: Dict[str, str],
     tracking_token: str,
-    channel: CampaignChannel
-) -> Dict:
+    survey_url: str,
+    recipient_address: str
+) -> dict:
     """
-    Build payload for outbox from CSV row.
-    
-    Args:
-        campaign: Campaign object
-        row: CSV row dict
-        tracking_token: Unique tracking token
-        channel: Channel to use
-    
-    Returns: Payload dict for outbox
+    Build outbox payload for B2C campaign message.
     """
-    logger.debug(f"🔨 Building B2C payload for channel: {channel.value}")
-    
-    # Extract recipient info from CSV
-    recipient_email = row.get("email", "").strip()
-    recipient_phone = row.get("phone", "").strip()
-    recipient_name = row.get("name", "").strip() or "there"
-    
-    # Get survey URL
-    survey_url = os.getenv(
-        "SURVEY_BASE_URL", 
-        "https://surveyarc-docker.vercel.app/form"
-    )
-    
-    # Build base payload
     base_payload = {
         "campaign_id": campaign.campaign_id,
         "tracking_token": tracking_token,
-        "recipient_name": recipient_name,
+        "recipient_name": row.get('name', row.get('full_name', 'there')),
         "survey_link": survey_url,
         "short_link": survey_url,
-        "b2c_mode": True,  # Flag to indicate B2C processing
+        "b2c_mode": True,  # 🔥 IMPORTANT: Flag for outbox processor
     }
     
-    # Build channel-specific payload
-    if channel == CampaignChannel.email:
-        if not recipient_email:
-            raise ValueError("Email address required for email channel")
+    # Channel-specific payload
+    if campaign.channel == CampaignChannel.email:
+        email_subject = replace_variables_from_row(
+            campaign.email_subject or 'Survey Invitation',
+            row,
+            campaign,
+            survey_url,
+            tracking_token
+        )
         
-        # Simple variable replacement (no contact object needed)
-        email_subject = campaign.email_subject or "Survey Invitation"
-        email_body = campaign.email_body_html or ""
-        
-        # Replace basic variables
-        email_subject = email_subject.replace("{{name}}", recipient_name)
-        email_subject = email_subject.replace("{{survey_link}}", survey_url)
-        
-        email_body = email_body.replace("{{name}}", recipient_name)
-        email_body = email_body.replace("{{survey_link}}", survey_url)
-        email_body = email_body.replace("{{tracking_token}}", tracking_token)
+        email_body = replace_variables_from_row(
+            campaign.email_body_html or '',
+            row,
+            campaign,
+            survey_url,
+            tracking_token
+        )
         
         payload = {
             **base_payload,
-            "to": [recipient_email],
+            "to": [recipient_address],
             "subject": email_subject,
             "html": email_body,
             "from_name": campaign.email_from_name,
             "reply_to": campaign.email_reply_to,
         }
-        
-    elif channel == CampaignChannel.sms:
-        if not recipient_phone:
-            raise ValueError("Phone number required for SMS channel")
-        
-        sms_message = campaign.sms_message or ""
-        sms_message = sms_message.replace("{{name}}", recipient_name)
-        sms_message = sms_message.replace("{{survey_link}}", survey_url)
+    
+    elif campaign.channel == CampaignChannel.sms:
+        sms_message = replace_variables_from_row(
+            campaign.sms_message or '',
+            row,
+            campaign,
+            survey_url,
+            tracking_token
+        )
         
         payload = {
             **base_payload,
-            "to": recipient_phone,
+            "to": recipient_address,
             "message": sms_message,
         }
-        
-    elif channel == CampaignChannel.whatsapp:
-        if not recipient_phone:
-            raise ValueError("Phone number required for WhatsApp channel")
-        
-        whatsapp_message = campaign.whatsapp_message or ""
-        whatsapp_message = whatsapp_message.replace("{{name}}", recipient_name)
-        whatsapp_message = whatsapp_message.replace("{{survey_link}}", survey_url)
+    
+    elif campaign.channel == CampaignChannel.whatsapp:
+        whatsapp_message = replace_variables_from_row(
+            campaign.whatsapp_message or '',
+            row,
+            campaign,
+            survey_url,
+            tracking_token
+        )
         
         payload = {
             **base_payload,
-            "to": recipient_phone,
+            "to": recipient_address,
             "message": whatsapp_message,
             "template_id": campaign.whatsapp_template_id,
         }
     
     else:
-        raise ValueError(f"Unsupported channel: {channel.value}")
-    
-    logger.debug(f"   ✅ Payload built with {len(payload)} keys")
+        payload = base_payload
     
     return payload
 
 
-# ============================================
-# SMART OUTBOX BATCHING
-# ============================================
-
-def queue_b2c_campaign_batch(
-    session: Session,
-    campaign: Campaign,
-    file_path: str,
-    batch_size: int = OUTBOX_BATCH_SIZE
-) -> Dict:
+def get_b2c_campaign_stats(file_path: str) -> Dict[str, int]:
     """
-    Queue a batch of B2C campaign sends to outbox.
+    Get statistics from B2C campaign CSV file.
     
-    Smart batching prevents server overload:
-    - Processes limited rows per call
-    - Updates CSV with tracking tokens
-    - Returns stats for progress tracking
-    
-    Args:
-        session: Database session
-        campaign: Campaign object
-        file_path: Path to CSV file
-        batch_size: Max rows to process (default: 50)
-    
-    Returns: Dict with stats
+    Returns counts of: pending, sent, delivered, failed, etc.
     """
-    logger.info("=" * 80)
-    logger.info("📤 QUEUEING B2C CAMPAIGN BATCH")
-    logger.info("=" * 80)
-    logger.info(f"📋 Campaign: {campaign.campaign_name}")
-    logger.info(f"📁 File: {Path(file_path).name}")
-    logger.info(f"📦 Batch size: {batch_size}")
-    logger.info("")
-    
-    # Ensure status columns exist
-    ensure_status_columns(file_path)
-    
-    # Get pending rows
-    pending_rows = get_pending_rows(file_path)
-    
-    if not pending_rows:
-        logger.info("✅ No pending rows to process")
-        return {
-            "queued": 0,
-            "remaining": 0,
-            "completed": True
-        }
-    
-    logger.info(f"📊 Total pending: {len(pending_rows)}")
-    
-    # Limit to batch size
-    rows_to_process = pending_rows[:batch_size]
-    remaining = len(pending_rows) - len(rows_to_process)
-    
-    logger.info(f"📦 Processing: {len(rows_to_process)} rows")
-    logger.info(f"⏳ Remaining: {remaining} rows")
-    logger.info("")
-    
-    queued_count = 0
-    skipped_count = 0
-    
-    for row_index, row in rows_to_process:
-        try:
-            logger.debug(f"─ Processing row {row_index + 1}")
-            
-            # Generate tracking token
-            tracking_token = generate_tracking_token()
-            
-            # Get channel
-            channel = campaign.channel
-            
-            # Build payload
-            payload = build_b2c_payload(
-                campaign, 
-                row, 
-                tracking_token, 
-                channel
-            )
-            
-            # Create dedupe key
-            dedupe_key = f"b2c:{campaign.campaign_id}:{tracking_token}"
-            
-            # Check for duplicate
-            existing = session.query(Outbox).filter(
-                Outbox.dedupe_key == dedupe_key
-            ).first()
-            
-            if existing:
-                logger.debug(f"   ⚠️  Duplicate - skipping")
-                skipped_count += 1
-                continue
-            
-            # Create outbox entry
-            kind = f"campaign.{channel.value}"
-            
-            outbox = Outbox(
-                kind=kind,
-                dedupe_key=dedupe_key,
-                payload=payload
-            )
-            
-            session.add(outbox)
-            session.flush()
-            
-            logger.debug(f"   ✅ Queued to outbox #{outbox.id}")
-            
-            # Update CSV with tracking token and pending status
-            update_csv_row_status(
-                file_path,
-                row_index,
-                status="pending",
-                sent_at=None
-            )
-            
-            # Store tracking token in CSV (add to row)
-            temp_path = file_path + ".tmp"
-            with open(file_path, newline="", encoding="utf-8") as src, \
-                 open(temp_path, "w", newline="", encoding="utf-8") as dst:
-                
-                reader = csv.DictReader(src)
-                writer = csv.DictWriter(dst, fieldnames=reader.fieldnames)
-                writer.writeheader()
-                
-                for idx, csv_row in enumerate(reader):
-                    if idx == row_index:
-                        csv_row["tracking_token"] = tracking_token
-                    writer.writerow(csv_row)
-            
-            os.replace(temp_path, file_path)
-            
-            queued_count += 1
-            
-        except Exception as e:
-            logger.error(f"❌ Error processing row {row_index}: {e}")
-            
-            # Update CSV with error
-            update_csv_row_status(
-                file_path,
-                row_index,
-                status="failed",
-                error=str(e)[:500]
-            )
-            
-            skipped_count += 1
-    
-    # Commit batch
-    session.commit()
-    
-    logger.info("")
-    logger.info("📊 BATCH SUMMARY:")
-    logger.info(f"   ✅ Queued: {queued_count}")
-    logger.info(f"   ⚠️  Skipped: {skipped_count}")
-    logger.info(f"   ⏳ Remaining: {remaining}")
-    logger.info("")
-    
-    return {
-        "queued": queued_count,
-        "skipped": skipped_count,
-        "remaining": remaining,
-        "completed": remaining == 0
-    }
-
-
-# ============================================
-# B2C CAMPAIGN PROCESSING
-# ============================================
-
-def process_b2c_campaign(
-    session: Session,
-    campaign: Campaign,
-    audience_file: AudienceFile
-) -> Dict:
-    """
-    Process entire B2C campaign in smart batches.
-    
-    Args:
-        session: Database session
-        campaign: Campaign object
-        audience_file: AudienceFile object
-    
-    Returns: Processing stats
-    """
-    logger.info("=" * 80)
-    logger.info("🚀 PROCESSING B2C CAMPAIGN")
-    logger.info("=" * 80)
-    logger.info(f"📋 Campaign: {campaign.campaign_name}")
-    logger.info(f"📁 Audience: {audience_file.audience_name}")
-    logger.info(f"📊 Rows: {audience_file.row_count}")
-    logger.info("")
-    
-    # Download file from storage (assuming Firebase/S3)
-    # For now, assume file is at download_url
-    file_url = audience_file.download_url
-    
-    if not file_url:
-        raise ValueError("Audience file has no download URL")
-    
-    # Download to temp location
-    import httpx
-    
-    temp_dir = tempfile.mkdtemp()
-    file_path = os.path.join(temp_dir, audience_file.filename)
-    
-    logger.info(f"⬇️  Downloading file from: {file_url}")
-    
-    with httpx.Client() as client:
-        response = client.get(file_url)
-        response.raise_for_status()
-        
-        with open(file_path, "wb") as f:
-            f.write(response.content)
-    
-    logger.info(f"   ✅ Downloaded to: {file_path}")
-    logger.info("")
-    
-    # Update campaign status
-    campaign.status = CampaignStatus.sending
-    campaign.started_at = datetime.now(UTC)
-    session.commit()
-    
-    # Process in batches
-    total_queued = 0
-    batch_num = 0
-    
-    while True:
-        batch_num += 1
-        
-        logger.info(f"📦 Processing batch #{batch_num}...")
-        
-        result = queue_b2c_campaign_batch(
-            session,
-            campaign,
-            file_path,
-            batch_size=OUTBOX_BATCH_SIZE
-        )
-        
-        total_queued += result["queued"]
-        
-        if result["completed"]:
-            logger.info("🎉 All rows processed!")
-            break
-        
-        logger.info(f"⏳ {result['remaining']} rows remaining...")
-        
-        # Small delay to prevent overwhelming server
-        import time
-        time.sleep(PROCESSING_DELAY_SECONDS)
-    
-    # Upload updated file back to storage
-    logger.info("")
-    logger.info("⬆️  Uploading updated file...")
-    
-    # TODO: Implement actual upload to Firebase/S3
-    # For now, just log the path
-    logger.info(f"   📁 Updated file at: {file_path}")
-    
-    # Update campaign
-    campaign.total_recipients = total_queued
-    campaign.status = CampaignStatus.completed
-    campaign.completed_at = datetime.now(UTC)
-    session.commit()
-    
-    logger.info("")
-    logger.info("=" * 80)
-    logger.info("✅ B2C CAMPAIGN PROCESSING COMPLETE")
-    logger.info("=" * 80)
-    logger.info(f"📊 Total queued: {total_queued}")
-    logger.info(f"📁 Updated file: {file_path}")
-    logger.info("")
-    
-    return {
-        "success": True,
-        "total_queued": total_queued,
-        "batches_processed": batch_num,
-        "updated_file_path": file_path
-    }
-
-
-# ============================================
-# STATUS UPDATE FROM OUTBOX
-# ============================================
-
-def update_b2c_status_from_outbox(
-    session: Session,
-    campaign_id: str,
-    tracking_token: str,
-    status: str,
-    message_id: Optional[str] = None,
-    error: Optional[str] = None
-):
-    """
-    Update CSV status when outbox message is processed.
-    
-    This is called by the outbox processor after sending.
-    
-    Args:
-        session: Database session
-        campaign_id: Campaign ID
-        tracking_token: Tracking token from payload
-        status: New status (sent, delivered, failed)
-        message_id: Provider message ID
-        error: Error message if failed
-    """
-    logger.debug(f"📝 Updating B2C status: {tracking_token} → {status}")
-    
-    # Get campaign and audience file
-    campaign = session.query(Campaign).filter(
-        Campaign.campaign_id == campaign_id
-    ).first()
-    
-    if not campaign or not campaign.audience_file_id:
-        logger.warning(f"⚠️  Campaign or audience file not found")
-        return
-    
-    audience_file = session.query(AudienceFile).filter(
-        AudienceFile.id == campaign.audience_file_id
-    ).first()
-    
-    if not audience_file:
-        logger.warning(f"⚠️  Audience file not found")
-        return
-    
-    # Get file path (TODO: download from storage if needed)
-    file_path = f"/tmp/{audience_file.filename}"
-    
     if not os.path.exists(file_path):
-        logger.warning(f"⚠️  File not found: {file_path}")
-        return
-    
-    # Find row with matching tracking token
-    temp_path = file_path + ".tmp"
-    
-    with open(file_path, newline="", encoding="utf-8") as src, \
-         open(temp_path, "w", newline="", encoding="utf-8") as dst:
-        
-        reader = csv.DictReader(src)
-        writer = csv.DictWriter(dst, fieldnames=reader.fieldnames)
-        writer.writeheader()
-        
-        for row in reader:
-            if row.get("tracking_token") == tracking_token:
-                # Update this row
-                row["status"] = status
-                
-                if status in ["sent", "delivered"]:
-                    row["sent_at"] = datetime.now(UTC).isoformat()
-                    
-                    if status == "delivered":
-                        row["delivered_at"] = datetime.now(UTC).isoformat()
-                
-                if message_id:
-                    row["message_id"] = message_id
-                
-                if error:
-                    row["error"] = error[:500]
-            
-            writer.writerow(row)
-    
-    os.replace(temp_path, file_path)
-    
-    logger.debug(f"   ✅ CSV updated for token: {tracking_token}")
-    
-    # TODO: Re-upload file to storage
-
-
-# ============================================
-# HELPER FUNCTIONS
-# ============================================
-
-def get_b2c_campaign_stats(file_path: str) -> Dict:
-    """Get campaign statistics from CSV file"""
+        return {
+            "total": 0,
+            "pending": 0,
+            "sent": 0,
+            "delivered": 0,
+            "failed": 0,
+        }
     
     stats = {
         "total": 0,
@@ -679,26 +509,17 @@ def get_b2c_campaign_stats(file_path: str) -> Dict:
         "sent": 0,
         "delivered": 0,
         "failed": 0,
-        "bounced": 0
     }
     
-    with open(file_path, newline="", encoding="utf-8") as f:
+    with open(file_path, 'r', newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         
         for row in reader:
             stats["total"] += 1
             
-            status = row.get("status", "").strip().lower()
+            status = row.get('status', 'pending').lower()
             
-            if not status or status == "pending":
-                stats["pending"] += 1
-            elif status == "sent":
-                stats["sent"] += 1
-            elif status == "delivered":
-                stats["delivered"] += 1
-            elif status == "failed":
-                stats["failed"] += 1
-            elif status == "bounced":
-                stats["bounced"] += 1
+            if status in stats:
+                stats[status] += 1
     
     return stats

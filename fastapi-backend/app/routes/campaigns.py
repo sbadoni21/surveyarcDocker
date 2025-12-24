@@ -1,12 +1,13 @@
 # ============================================
 # CAMPAIGN ROUTES - app/routes/campaign_routes.py
 # ============================================
-
+import os
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, or_
 from typing import List, Optional
 from datetime import datetime, timezone
+from fastapi.responses import FileResponse
 
 from ..db import get_db
 from ..models.campaigns import Campaign, CampaignEvent, CampaignStatus, CampaignChannel, RecipientStatus
@@ -173,6 +174,11 @@ def list_campaigns(
     )
 
 
+# ============================================
+# FIXED CREATE CAMPAIGN ENDPOINT
+# Replace the create_campaign function in app/routes/campaign_routes.py
+# ============================================
+
 @router.post("/", response_model=CampaignSchema, status_code=201)
 def create_campaign(
     campaign_data: CampaignCreate,
@@ -186,13 +192,25 @@ def create_campaign(
     print(f"   User ID: {campaign_data.user_id}")
     print(f"   Survey ID: {campaign_data.survey_id}")
     print(f"   Contact List ID: {campaign_data.contact_list_id}")
-        # 🔹 NEW: enforce that contacts world and B2C audience world don't mix
+    print(f"   Audience File ID: {getattr(campaign_data, 'audience_file_id', None)}")
+    
+    # ✅ FIX: Convert empty strings to None for BOTH fields
+    if campaign_data.contact_list_id == "":
+        campaign_data.contact_list_id = None
+        print("   ℹ️  Converted empty contact_list_id to None")
+    
+    if hasattr(campaign_data, 'audience_file_id') and campaign_data.audience_file_id == "":
+        campaign_data.audience_file_id = None
+        print("   ℹ️  Converted empty audience_file_id to None")
+    
+    # ✅ FIX: Enforce that contacts world and B2C audience world don't mix
     if campaign_data.contact_list_id and getattr(campaign_data, "audience_file_id", None):
         raise HTTPException(
             status_code=400,
             detail="Campaign cannot have both contact_list_id and audience_file_id"
         )
-
+    
+    # ✅ FIX: Require at least one source
     if not campaign_data.contact_list_id and not getattr(campaign_data, "audience_file_id", None):
         raise HTTPException(
             status_code=400,
@@ -207,7 +225,7 @@ def create_campaign(
             detail="Cannot create campaign for different organization"
         )
     
-    # Validate contact list exists if provided
+    # Validate contact list exists if provided (B2B)
     if campaign_data.contact_list_id:
         contact_list = db.query(ContactList).filter(
             ContactList.list_id == campaign_data.contact_list_id,
@@ -216,8 +234,9 @@ def create_campaign(
         if not contact_list:
             raise HTTPException(status_code=404, detail="Contact list not found")
         
-        print(f"   Using contact list: {contact_list.list_name}")
-        # 🔹 NEW: validate audience file if provided (B2C CSV/Excel)
+        print(f"   ✅ Using contact list: {contact_list.list_name} (B2B)")
+    
+    # ✅ Validate audience file if provided (B2C)
     if getattr(campaign_data, "audience_file_id", None):
         audience_file = db.query(AudienceFile).filter(
             AudienceFile.id == campaign_data.audience_file_id,
@@ -225,8 +244,16 @@ def create_campaign(
         ).first()
         if not audience_file:
             raise HTTPException(status_code=404, detail="Audience file not found")
+        
+        # ✅ Validate file exists at storage_key
+        if not audience_file.storage_key or not os.path.exists(audience_file.storage_key):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Audience file not found at storage location. Please re-upload."
+            )
 
-        print(f"   Using audience file: {audience_file.filename}")
+        print(f"   ✅ Using audience file: {audience_file.filename} (B2C)")
+        print(f"   📁 Storage path: {audience_file.storage_key}")
 
     # Create campaign
     campaign = Campaign(
@@ -238,7 +265,8 @@ def create_campaign(
     db.commit()
     db.refresh(campaign)
     
-    print(f"✅ Campaign created: {campaign.campaign_id}")
+    campaign_type = "B2C" if campaign.audience_file_id else "B2B"
+    print(f"✅ Campaign created: {campaign.campaign_id} ({campaign_type})")
     
     # Cache the campaign
     campaign_dict = CampaignSchema.model_validate(campaign).model_dump()
@@ -250,6 +278,7 @@ def create_campaign(
     )
     
     return campaign
+
 
 @router.get("/{campaign_id}", response_model=CampaignSchema)
 def get_campaign(
@@ -342,9 +371,6 @@ def delete_campaign(
     
     return None
 
-
-# ==================== CAMPAIGN ACTIONS ====================
-
 @router.post("/{campaign_id}/send", response_model=CampaignActionResponse)
 def send_campaign(
     campaign_id: str,
@@ -353,7 +379,10 @@ def send_campaign(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    """Send or schedule a campaign"""
+    
+    import logging
+    logger = logging.getLogger(__name__)
+    
     org_id = current_user.get("org_id")
     campaign = get_campaign_or_404(db, campaign_id, org_id)
     
@@ -370,7 +399,115 @@ def send_campaign(
             detail=f"Campaign missing required content for channel: {campaign.channel}"
         )
     
-    # Get recipients
+    # ============================================
+    # DETERMINE CAMPAIGN TYPE: B2B or B2C
+    # ============================================
+    
+    # ✅ FIX: Convert empty strings to None for proper validation
+    audience_file_id = campaign.audience_file_id
+    if audience_file_id == "":
+        audience_file_id = None
+        campaign.audience_file_id = None
+        db.commit()
+    
+    contact_list_id = campaign.contact_list_id
+    if contact_list_id == "":
+        contact_list_id = None
+        campaign.contact_list_id = None
+        db.commit()
+    
+    is_b2c = audience_file_id is not None
+    is_b2b = contact_list_id is not None
+    
+    if not is_b2c and not is_b2b:
+        raise HTTPException(
+            status_code=400,
+            detail="Campaign must have either contact_list_id (B2B) or audience_file_id (B2C)"
+        )
+    
+    if is_b2c and is_b2b:
+        raise HTTPException(
+            status_code=400,
+            detail="Campaign cannot have both contact_list_id and audience_file_id"
+        )
+    
+    # ============================================
+    # B2C CAMPAIGN PROCESSING - READS FROM CSV
+    # ============================================
+    
+    if is_b2c:
+        logger.info(f"🎯 Processing B2C campaign: {campaign.campaign_name}")
+        
+        # ✅ FIX: Import at function level
+        from ..services.file_campaign_processor import process_b2c_campaign_async
+        from ..models.audience_file import AudienceFile
+        
+        # Get audience file record
+        audience_file = db.query(AudienceFile).filter(
+            AudienceFile.id == campaign.audience_file_id,
+            AudienceFile.org_id == org_id
+        ).first()
+        
+        if not audience_file:
+            raise HTTPException(
+                status_code=404,
+                detail="Audience file not found"
+            )
+        
+        # ✅ FIX: Validate file exists using storage_key
+        file_path = None
+        
+        if audience_file.storage_key and os.path.exists(audience_file.storage_key):
+            file_path = audience_file.storage_key
+            logger.info(f"   ✅ Found file at: {file_path}")
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"CSV file not found at: {audience_file.storage_key}. Please re-upload."
+            )
+        
+        logger.info(f"   📊 Expected rows: {audience_file.row_count or 0}")
+        
+        # Update campaign status
+        if send_request.send_immediately:
+            campaign.status = CampaignStatus.sending
+            campaign.started_at = datetime.now(timezone.utc)
+            db.commit()
+            
+            logger.info(f"   🚀 Starting B2C campaign in background")
+            
+            # ✅ FIX: Pass IDs only, not objects or session
+            background_tasks.add_task(
+                process_b2c_campaign_async,
+                campaign_id=campaign.campaign_id,
+                audience_file_id=audience_file.id
+            )
+            
+            message = f"B2C campaign started - processing {audience_file.row_count or 0} recipients from CSV"
+            
+        else:
+            campaign.status = CampaignStatus.scheduled
+            campaign.scheduled_at = send_request.scheduled_at
+            db.commit()
+            message = f"B2C campaign scheduled for {audience_file.row_count or 0} recipients"
+        
+        logger.info(f"   ✅ {message}")
+        
+        return CampaignActionResponse(
+            success=True,
+            message=message,
+            campaign_id=campaign_id,
+            action="send",
+            affected_count=audience_file.row_count or 0
+        )
+    
+    # ============================================
+    # B2B CAMPAIGN PROCESSING - USES CONTACT LIST
+    # ============================================
+    
+    logger.info(f"🎯 Processing B2B campaign: {campaign.campaign_name}")
+    
+    # Get recipients from contact list
     if send_request.test_mode and send_request.test_contacts:
         contacts = db.query(Contact).filter(
             Contact.contact_id.in_(send_request.test_contacts),
@@ -383,25 +520,26 @@ def send_campaign(
             ContactList.list_id == campaign.contact_list_id,
             Contact.status == "active"
         ).all()
-        # 🔹 NEW: this is where B2C CSV sending will go later
-    elif campaign.audience_file_id:
-        # TODO: implement B2C sender from AudienceFile (no contacts)
-        raise HTTPException(
-            status_code=400,
-            detail="B2C audience file sending not implemented yet"
-        )
-
     else:
         raise HTTPException(status_code=400, detail="No recipients specified")
     
     if not contacts:
         raise HTTPException(status_code=400, detail="No valid contacts found")
     
+    logger.info(f"   📋 Found {len(contacts)} contacts in list")
+    
     # Create campaign results
+    from ..services.campaign_sender_service import (
+        create_campaign_results,
+        process_campaign_batch
+    )
+    
     results_created = create_campaign_results(db, campaign, contacts)
     
     if results_created == 0:
         raise HTTPException(status_code=400, detail="No valid recipients found")
+    
+    logger.info(f"   ✅ Created {results_created} campaign results")
     
     # Update campaign
     campaign.total_recipients = results_created
@@ -409,29 +547,154 @@ def send_campaign(
     if send_request.send_immediately:
         campaign.status = CampaignStatus.sending
         campaign.started_at = datetime.now(timezone.utc)
+        db.commit()
         
-        # Queue first batch in background
-        background_tasks.add_task(process_campaign_batch, campaign_id, batch_size=100)
+        # Queue first batch
+        background_tasks.add_task(
+            process_campaign_batch, 
+            campaign_id, 
+            batch_size=100
+        )
+        
+        message = f"B2B campaign queued for sending to {results_created} contacts"
     else:
         campaign.status = CampaignStatus.scheduled
         campaign.scheduled_at = send_request.scheduled_at
-    
-    db.commit()
+        db.commit()
+        message = f"B2B campaign scheduled for {results_created} contacts"
     
     # Invalidate caches
     RedisCampaignService.invalidate_campaign_caches(
         campaign_id, org_id, campaign.survey_id
     )
     
+    logger.info(f"   ✅ {message}")
+    
     return CampaignActionResponse(
         success=True,
-        message=f"Campaign {'queued for sending' if send_request.send_immediately else 'scheduled'}",
+        message=message,
         campaign_id=campaign_id,
         action="send",
         affected_count=results_created
     )
 
+@router.get("/{campaign_id}/b2c/file", response_class=FileResponse)
+def get_b2c_campaign_file(
+    campaign_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Download updated audience file with campaign status.
+    
+    For B2C campaigns only - returns CSV with status columns.
+    """
+    org_id = current_user.get("org_id")
+    campaign = get_campaign_or_404(db, campaign_id, org_id)
+    
+    if not campaign.audience_file_id:
+        raise HTTPException(
+            status_code=400,
+            detail="This is not a B2C campaign (no audience file)"
+        )
+    
+    from ..models.audience_file import AudienceFile
+    
+    audience_file = db.query(AudienceFile).filter(
+        AudienceFile.id == campaign.audience_file_id
+    ).first()
+    
+    if not audience_file:
+        raise HTTPException(status_code=404, detail="Audience file not found")
+    
+    # ✅ FIX: Use storage_key from database
+    file_path = audience_file.storage_key
+    
+    if not file_path:
+        raise HTTPException(
+            status_code=400,
+            detail="Audience file has no storage location"
+        )
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=404,
+            detail="Campaign file not found on server"
+        )
+    
+    # Return file
+    from fastapi.responses import FileResponse
+    
+    return FileResponse(
+        path=file_path,
+        filename=f"{campaign.campaign_name}_results.csv",
+        media_type="text/csv"
+    )
 
+
+@router.get("/{campaign_id}/b2c/stats")
+def get_b2c_campaign_stats(
+    campaign_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get statistics from B2C campaign file.
+    
+    Returns counts of pending, sent, delivered, failed, etc.
+    """
+    org_id = current_user.get("org_id")
+    campaign = get_campaign_or_404(db, campaign_id, org_id)
+    
+    if not campaign.audience_file_id:
+        raise HTTPException(
+            status_code=400,
+            detail="This is not a B2C campaign (no audience file)"
+        )
+    
+    from ..models.audience_file import AudienceFile
+    from ..services.file_campaign_processor import get_b2c_campaign_stats
+    
+    audience_file = db.query(AudienceFile).filter(
+        AudienceFile.id == campaign.audience_file_id
+    ).first()
+    
+    if not audience_file:
+        raise HTTPException(status_code=404, detail="Audience file not found")
+    
+    # ✅ FIX: Use storage_key from database
+    file_path = audience_file.storage_key
+    
+    if not file_path:
+        raise HTTPException(
+            status_code=400,
+            detail="Audience file has no storage location"
+        )
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=404,
+            detail="Campaign file not found - campaign may not have started"
+        )
+    
+    # Get stats from CSV
+    stats = get_b2c_campaign_stats(file_path)
+    
+    # Calculate rates
+    if stats["total"] > 0:
+        stats["pending_rate"] = round((stats["pending"] / stats["total"]) * 100, 2)
+        stats["sent_rate"] = round((stats["sent"] / stats["total"]) * 100, 2)
+        stats["delivered_rate"] = round((stats["delivered"] / stats["total"]) * 100, 2)
+        stats["failed_rate"] = round((stats["failed"] / stats["total"]) * 100, 2)
+    
+    return {
+        "campaign_id": campaign_id,
+        "campaign_name": campaign.campaign_name,
+        "campaign_type": "B2C",
+        "audience_file": audience_file.audience_name,
+        "file_path": file_path,  # Include for debugging
+        "stats": stats
+    }
 @router.post("/{campaign_id}/pause", response_model=CampaignActionResponse)
 def pause_campaign(
     campaign_id: str,
@@ -558,7 +821,7 @@ def list_campaign_results(
         query = query.filter(CampaignResult.status.in_(status))
     
     if channel:
-        query = query.filter(CampaignResult.channel_used.in_(channel))
+        query = query.filter(CampaignResult.channel.in_(channel))
     
     # Get total
     total = query.count()

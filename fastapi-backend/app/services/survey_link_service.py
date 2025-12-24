@@ -159,7 +159,7 @@ def create_survey_link_reference(
         contact_id=contact.contact_id,
         org_id=campaign.org_id,
         tracking_token=result.tracking_token,
-        channel=result.channel_used.value if hasattr(result.channel_used, 'value') else result.channel_used,
+        channel=result.channel.value if hasattr(result.channel, 'value') else result.channel,
         meta_data={
             "campaign_name": campaign.campaign_name,
             "contact_name": contact.name,
@@ -436,7 +436,7 @@ def bulk_create_link_references(
                 contact_id=contact.contact_id,
                 org_id=campaign.org_id,
                 tracking_token=result.tracking_token,
-                channel=result.channel_used.value if hasattr(result.channel_used, 'value') else result.channel_used,
+                channel=result.channel.value if hasattr(result.channel, 'value') else result.channel,
                 meta_data={
                     "campaign_name": campaign.campaign_name,
                     "contact_name": contact.name,

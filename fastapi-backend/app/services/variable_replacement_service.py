@@ -131,7 +131,7 @@ def replace_variables(
     # ============================================
     replacements['tracking_token'] = result.tracking_token
     replacements['result_id'] = result.result_id
-    replacements['channel'] = result.channel_used.value
+    replacements['channel'] = result.channel.value
     
     # ============================================
     # SURVEY LINKS
@@ -243,10 +243,10 @@ def build_tracking_url(
         'tracking_token': result.tracking_token,
         'result_id': result.result_id,
         'org_id': campaign.org_id,
-        'source': result.channel_used.value,
+        'source': result.channel.value,
         'channel': 'campaign',
         'utm_source': 'campaign',
-        'utm_medium': result.channel_used.value,
+        'utm_medium': result.channel.value,
         'utm_campaign': campaign.campaign_name,
     }
     

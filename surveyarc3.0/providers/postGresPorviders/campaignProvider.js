@@ -1,3 +1,5 @@
+// providers/postGresPorviders/campaignProvider.jsx
+
 "use client";
 
 import React, {
@@ -149,7 +151,7 @@ export const CampaignProvider = ({ children }) => {
   };
 
   /** SEND */
-  const sendCampaign = async (campaignId, sendData) => {
+  const sendCampaign = async (campaignId, sendData = { send_immediately: true }) => {
     try {
       const result = await CampaignModel.send(campaignId, sendData, userId);
       
@@ -209,13 +211,59 @@ export const CampaignProvider = ({ children }) => {
     }
   };
 
-  /** GET RESULTS */
+  /** GET RESULTS (B2B) */
   const getResults = async (campaignId, params = {}) => {
     try {
       return await CampaignModel.getResults(campaignId, params, userId);
     } catch (e) {
       console.error("Failed to get results:", e);
       return { items: [], total: 0 };
+    }
+  };
+
+  // ============================================
+  // ✅ NEW: B2C METHODS
+  // ============================================
+
+  /** GET B2C STATS */
+  const getB2CStats = async (campaignId) => {
+    try {
+      return await CampaignModel.getB2CStats(campaignId, userId);
+    } catch (e) {
+      console.error("Failed to get B2C stats:", e);
+      return null;
+    }
+  };
+
+  /** DOWNLOAD B2C FILE */
+  const downloadB2CFile = async (campaignId) => {
+    try {
+      const { blob, filename } = await CampaignModel.downloadB2CFile(campaignId, userId);
+      
+      // Trigger browser download
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      return { success: true, filename };
+    } catch (e) {
+      console.error("Failed to download B2C file:", e);
+      throw e;
+    }
+  };
+
+  /** UPLOAD AUDIENCE FILE */
+  const uploadAudienceFile = async (file, audienceName) => {
+    try {
+      return await CampaignModel.uploadAudienceFile(file, audienceName, orgId, userId);
+    } catch (e) {
+      console.error("Failed to upload audience file:", e);
+      throw e;
     }
   };
 
@@ -274,6 +322,11 @@ export const CampaignProvider = ({ children }) => {
     resumeCampaign,
     getAnalytics,
     getResults,
+    
+    // ✅ B2C Actions
+    getB2CStats,
+    downloadB2CFile,
+    uploadAudienceFile,
     
     // Filter/Pagination
     setFilter,

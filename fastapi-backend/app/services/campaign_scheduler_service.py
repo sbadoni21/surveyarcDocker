@@ -256,9 +256,14 @@ class CampaignScheduler:
         
         return triggered_count
     
+# ============================================
+# FIXED: _trigger_campaign() method for campaign_scheduler_service.py
+# Replace the _trigger_campaign method in your scheduler
+# ============================================
+
     def _trigger_campaign(self, session: Session, campaign: Campaign):
         """
-        ✅ SMART: Trigger a single campaign with detailed logging
+        ✅ FIXED: Trigger campaign - supports BOTH B2B and B2C
         """
         logger.info("┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
         logger.info("┃  TRIGGERING CAMPAIGN                                   ┃")
@@ -268,42 +273,49 @@ class CampaignScheduler:
         logger.info(f"📊 Status: {campaign.status.value if hasattr(campaign.status, 'value') else campaign.status}")
         logger.info(f"📅 Scheduled: {campaign.scheduled_at}")
         logger.info(f"📡 Channel: {campaign.channel.value if hasattr(campaign.channel, 'value') else campaign.channel}")
-        logger.info("")
         
-        # Step 1: Validate contact list
-        logger.info("STEP 1: VALIDATING CONTACT LIST")
+        # ✅ STEP 1: DETERMINE CAMPAIGN TYPE
+        logger.info("")
+        logger.info("STEP 1: DETERMINING CAMPAIGN TYPE")
         logger.info("─" * 40)
         
-        if campaign.contact_list_id:
-            logger.debug(f"🔍 Looking for list: {campaign.contact_list_id}")
-            
-            contact_list = session.query(ContactList).filter(
-                ContactList.list_id == campaign.contact_list_id,
-                ContactList.deleted_at.is_(None)
-            ).first()
-            
-            if not contact_list:
-                logger.error("❌ VALIDATION FAILED: Contact list not found")
-                logger.error(f"   - List ID: {campaign.contact_list_id}")
-                
-                campaign.status = CampaignStatus.cancelled
-                campaign.meta_data = campaign.meta_data or {}
-                campaign.meta_data["cancel_reason"] = "Contact list not found"
-                campaign.meta_data["cancelled_at"] = datetime.now(UTC).isoformat()
-                
-                logger.error("✋ Campaign cancelled")
-                return
-            
-            logger.info(f"✅ Contact list found: {contact_list.list_name}")
-            logger.debug(f"   - List ID: {contact_list.list_id}")
-            logger.debug(f"   - Org ID: {contact_list.org_id}")
-            logger.debug(f"   - Status: {contact_list.status}")
+        # Convert empty strings to None
+        audience_file_id = campaign.audience_file_id
+        if audience_file_id == "":
+            audience_file_id = None
+        
+        contact_list_id = campaign.contact_list_id
+        if contact_list_id == "":
+            contact_list_id = None
+        
+        is_b2c = audience_file_id is not None
+        is_b2b = contact_list_id is not None
+        
+        if is_b2c and is_b2b:
+            logger.error("❌ Campaign has both audience_file_id and contact_list_id!")
+            campaign.status = CampaignStatus.cancelled
+            campaign.meta_data = campaign.meta_data or {}
+            campaign.meta_data["cancel_reason"] = "Invalid configuration: both B2B and B2C"
+            return
+        
+        if not is_b2c and not is_b2b:
+            logger.error("❌ Campaign has neither audience_file_id nor contact_list_id!")
+            campaign.status = CampaignStatus.cancelled
+            campaign.meta_data = campaign.meta_data or {}
+            campaign.meta_data["cancel_reason"] = "No recipients source configured"
+            return
+        
+        campaign_type = "B2C" if is_b2c else "B2B"
+        logger.info(f"✅ Campaign type: {campaign_type}")
+        
+        if is_b2c:
+            logger.info(f"   - Audience File ID: {audience_file_id}")
         else:
-            logger.info("ℹ️  No specific contact list (using all contacts)")
+            logger.info(f"   - Contact List ID: {contact_list_id}")
         
         logger.info("")
         
-        # Step 2: Validate content
+        # ✅ STEP 2: VALIDATE CONTENT
         logger.info("STEP 2: VALIDATING CAMPAIGN CONTENT")
         logger.info("─" * 40)
         
@@ -326,11 +338,154 @@ class CampaignScheduler:
         logger.info("✅ Content validation passed")
         logger.info("")
         
-        # Step 3: Get recipients
-        logger.info("STEP 3: GETTING RECIPIENTS")
+        # ============================================
+        # B2C CAMPAIGN FLOW
+        # ============================================
+        
+        if is_b2c:
+            logger.info("🎯 PROCESSING B2C CAMPAIGN")
+            logger.info("=" * 60)
+            
+            # Import B2C processor
+            from ..services.file_campaign_processor import process_b2c_campaign_async
+            from ..models.audience_file import AudienceFile
+            
+            # Get audience file
+            logger.info("STEP 3: VALIDATING AUDIENCE FILE")
+            logger.info("─" * 40)
+            
+            audience_file = session.query(AudienceFile).filter(
+                AudienceFile.id == audience_file_id,
+                AudienceFile.org_id == campaign.org_id
+            ).first()
+            
+            if not audience_file:
+                logger.error("❌ Audience file not found!")
+                logger.error(f"   - File ID: {audience_file_id}")
+                
+                campaign.status = CampaignStatus.cancelled
+                campaign.meta_data = campaign.meta_data or {}
+                campaign.meta_data["cancel_reason"] = "Audience file not found"
+                campaign.meta_data["cancelled_at"] = datetime.now(UTC).isoformat()
+                
+                return
+            
+            logger.info(f"✅ Audience file found: {audience_file.filename}")
+            logger.info(f"   - Audience name: {audience_file.audience_name}")
+            logger.info(f"   - Row count: {audience_file.row_count or 0}")
+            logger.info(f"   - Storage key: {audience_file.storage_key}")
+            
+            # Validate file exists
+            import os
+            if not audience_file.storage_key or not os.path.exists(audience_file.storage_key):
+                logger.error("❌ File not found at storage location!")
+                logger.error(f"   - Storage key: {audience_file.storage_key}")
+                
+                campaign.status = CampaignStatus.cancelled
+                campaign.meta_data = campaign.meta_data or {}
+                campaign.meta_data["cancel_reason"] = "Audience file missing from storage"
+                campaign.meta_data["cancelled_at"] = datetime.now(UTC).isoformat()
+                
+                return
+            
+            logger.info(f"✅ File exists at: {audience_file.storage_key}")
+            logger.info("")
+            
+            # Update campaign status
+            logger.info("STEP 4: UPDATING CAMPAIGN STATUS")
+            logger.info("─" * 40)
+            
+            campaign.status = CampaignStatus.sending
+            campaign.started_at = datetime.now(UTC)
+            campaign.total_recipients = audience_file.row_count or 0
+            
+            session.flush()
+            
+            logger.info(f"✅ Campaign status updated: {campaign.status.value if hasattr(campaign.status, 'value') else campaign.status}")
+            logger.info(f"   - Started at: {campaign.started_at}")
+            logger.info(f"   - Expected recipients: {campaign.total_recipients}")
+            logger.info("")
+            
+            # Start B2C background processing
+            logger.info("STEP 5: STARTING B2C BACKGROUND PROCESSING")
+            logger.info("─" * 40)
+            
+            thread_name = f"B2C-Processor-{campaign.campaign_id[:8]}"
+            
+            processor_thread = threading.Thread(
+                target=process_b2c_campaign_async,
+                args=(campaign.campaign_id, audience_file.id),
+                daemon=True,
+                name=thread_name
+            )
+            
+            logger.debug(f"   - Thread name: {thread_name}")
+            logger.debug(f"   - Campaign ID: {campaign.campaign_id}")
+            logger.debug(f"   - Audience File ID: {audience_file.id}")
+            
+            processor_thread.start()
+            
+            logger.info(f"✅ B2C background thread started")
+            logger.info(f"   - Thread ID: {processor_thread.ident}")
+            logger.info(f"   - Thread alive: {processor_thread.is_alive()}")
+            logger.info("")
+            
+            logger.info("┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
+            logger.info("┃  ✅ B2C CAMPAIGN TRIGGERED SUCCESSFULLY                ┃")
+            logger.info("┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛")
+            logger.info(f"📋 Campaign: {campaign.campaign_name}")
+            logger.info(f"📊 Expected recipients: {campaign.total_recipients}")
+            logger.info(f"📁 File: {audience_file.filename}")
+            logger.info(f"🆔 Campaign ID: {campaign.campaign_id}")
+            logger.info("")
+            
+            return
+        
+        # ============================================
+        # B2B CAMPAIGN FLOW (Original Logic)
+        # ============================================
+        
+        logger.info("🎯 PROCESSING B2B CAMPAIGN")
+        logger.info("=" * 60)
+        
+        # Step 3: Validate contact list
+        logger.info("STEP 3: VALIDATING CONTACT LIST")
+        logger.info("─" * 40)
+        
+        if contact_list_id:
+            logger.debug(f"🔍 Looking for list: {contact_list_id}")
+            
+            contact_list = session.query(ContactList).filter(
+                ContactList.list_id == contact_list_id,
+                ContactList.deleted_at.is_(None)
+            ).first()
+            
+            if not contact_list:
+                logger.error("❌ VALIDATION FAILED: Contact list not found")
+                logger.error(f"   - List ID: {contact_list_id}")
+                
+                campaign.status = CampaignStatus.cancelled
+                campaign.meta_data = campaign.meta_data or {}
+                campaign.meta_data["cancel_reason"] = "Contact list not found"
+                campaign.meta_data["cancelled_at"] = datetime.now(UTC).isoformat()
+                
+                logger.error("✋ Campaign cancelled")
+                return
+            
+            logger.info(f"✅ Contact list found: {contact_list.list_name}")
+            logger.debug(f"   - List ID: {contact_list.list_id}")
+            logger.debug(f"   - Org ID: {contact_list.org_id}")
+            logger.debug(f"   - Status: {contact_list.status}")
+        else:
+            logger.info("ℹ️  No specific contact list (using all contacts)")
+        
+        logger.info("")
+        
+        # Step 4: Get recipients
+        logger.info("STEP 4: GETTING RECIPIENTS")
         logger.info("─" * 40)
         logger.debug(f"   - Org ID: {campaign.org_id}")
-        logger.debug(f"   - Contact List ID: {campaign.contact_list_id or 'All'}")
+        logger.debug(f"   - Contact List ID: {contact_list_id or 'All'}")
         
         contacts = self._get_campaign_contacts(session, campaign)
         
@@ -356,8 +511,8 @@ class CampaignScheduler:
         
         logger.info("")
         
-        # Step 4: Create campaign results
-        logger.info("STEP 4: CREATING CAMPAIGN RESULTS")
+        # Step 5: Create campaign results
+        logger.info("STEP 5: CREATING CAMPAIGN RESULTS")
         logger.info("─" * 40)
         
         results_created = create_campaign_results(session, campaign, contacts)
@@ -378,8 +533,8 @@ class CampaignScheduler:
         
         logger.info("")
         
-        # Step 5: Update campaign status
-        logger.info("STEP 5: UPDATING CAMPAIGN STATUS")
+        # Step 6: Update campaign status
+        logger.info("STEP 6: UPDATING CAMPAIGN STATUS")
         logger.info("─" * 40)
         
         logger.debug(f"   - Old status: {campaign.status.value if hasattr(campaign.status, 'value') else campaign.status}")
@@ -395,11 +550,11 @@ class CampaignScheduler:
         logger.info(f"   - Total recipients: {campaign.total_recipients}")
         logger.info("")
         
-        # Step 6: Start background processing
-        logger.info("STEP 6: STARTING BACKGROUND PROCESSING")
+        # Step 7: Start B2B background processing
+        logger.info("STEP 7: STARTING B2B BACKGROUND PROCESSING")
         logger.info("─" * 40)
         
-        thread_name = f"CampaignProcessor-{campaign.campaign_id[:8]}"
+        thread_name = f"B2B-Processor-{campaign.campaign_id[:8]}"
         
         processor_thread = threading.Thread(
             target=self._process_campaign_async,
@@ -413,19 +568,18 @@ class CampaignScheduler:
         
         processor_thread.start()
         
-        logger.info(f"✅ Background thread started")
+        logger.info(f"✅ B2B background thread started")
         logger.info(f"   - Thread ID: {processor_thread.ident}")
         logger.info(f"   - Thread alive: {processor_thread.is_alive()}")
         logger.info("")
         
         logger.info("┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
-        logger.info("┃  ✅ CAMPAIGN TRIGGERED SUCCESSFULLY                    ┃")
+        logger.info("┃  ✅ B2B CAMPAIGN TRIGGERED SUCCESSFULLY                ┃")
         logger.info("┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛")
         logger.info(f"📋 Campaign: {campaign.campaign_name}")
         logger.info(f"👥 Recipients: {results_created}")
         logger.info(f"🆔 Campaign ID: {campaign.campaign_id}")
         logger.info("")
-    
     def _get_campaign_contacts(self, session: Session, campaign: Campaign) -> list:
         """Get contacts for a campaign with detailed logging"""
         logger.debug("┌─────────────────────────────────────────────┐")

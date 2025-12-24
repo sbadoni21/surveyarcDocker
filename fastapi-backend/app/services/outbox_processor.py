@@ -1,14 +1,21 @@
 # ============================================
-# FIXED OUTBOX PROCESSOR WITH HEALTH CHECKS
-# app/services/outbox_processor_single.py
+# UNIFIED OUTBOX PROCESSOR - B2B + B2C SUPPORT
+# app/services/outbox_processor_unified.py
 # ============================================
+"""
+Unified outbox processor that handles BOTH:
+- B2B campaigns (with CampaignResult updates)
+- B2C campaigns (with CSV file updates)
+
+Automatically detects campaign type from payload.b2c_mode flag.
+"""
 
 from __future__ import annotations
 import os
 import time
 import logging
 import httpx
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import and_, or_
@@ -16,17 +23,8 @@ from typing import Optional
 
 from ..db import SessionLocal
 from ..models.outbox import Outbox
-from ..models.campaigns import (
-    Campaign, 
-    RecipientStatus,
-    CampaignStatus
-)
+from ..models.campaigns import Campaign, RecipientStatus, CampaignStatus
 from ..models.campaign_result import CampaignResult
-
-
-# ============================================
-# CONFIGURATION
-# ============================================
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,21 +32,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-MAIL_RELAY_URL = "http://localhost:4001"
-MAIL_API_TOKEN =  "supersecrettoken"
+MAIL_RELAY_URL = os.getenv("MAIL_RELAY_URL", "http://localhost:4001")
+MAIL_API_TOKEN = os.getenv("MAIL_API_TOKEN", "supersecrettoken")
 UTC = timezone.utc
 
 MAX_RETRY_ATTEMPTS = 0  # Single attempt only
-PROCESSING_TIMEOUT_MINUTES = 10
-HEALTH_CHECK_INTERVAL = 30  # Check health every 30 seconds
+HEALTH_CHECK_INTERVAL = 30
 
 consecutive_errors = 0
 is_processing = False
 last_health_check = None
 relay_is_healthy = False
 
+logger.info("=" * 80)
+logger.info("🚀 UNIFIED OUTBOX PROCESSOR - B2B + B2C SUPPORT")
+logger.info("=" * 80)
 logger.info(f"📧 Mail Relay URL: {MAIL_RELAY_URL}")
-logger.info(f"🎯 SINGLE ATTEMPT MODE - No retries")
+logger.info(f"🎯 Single attempt mode - No retries")
+logger.info(f"🏥 Health check interval: {HEALTH_CHECK_INTERVAL}s")
+logger.info("=" * 80)
 
 
 # ============================================
@@ -59,7 +61,6 @@ async def check_relay_health() -> bool:
     """Check if mail relay is accessible"""
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            # Try to reach the relay service (you may need to adjust endpoint)
             response = await client.get(
                 f"{MAIL_RELAY_URL}/health",
                 headers={"Authorization": f"Bearer {MAIL_API_TOKEN}"} if MAIL_API_TOKEN else {}
@@ -110,7 +111,7 @@ class ProcessingResult:
         self.success = success
         self.message_id = message_id
         self.error = error
-        self.should_skip = should_skip  # If True, don't mark as processed
+        self.should_skip = should_skip
 
 
 # ============================================
@@ -142,7 +143,6 @@ async def send_to_mail_relay(kind: str, payload: dict) -> dict:
             return result
             
     except httpx.ConnectError as e:
-        # Connection failed - relay might be down
         error_msg = f"Connection failed: {str(e)[:100]}"
         logger.error(f"🔌 {error_msg} - Mail relay may be down!")
         raise ConnectionError(error_msg) from e
@@ -163,6 +163,10 @@ async def send_to_mail_relay(kind: str, payload: dict) -> dict:
         raise Exception(error_msg) from e
 
 
+# ============================================
+# B2B CAMPAIGN RESULT UPDATES
+# ============================================
+
 def update_b2b_result_sent(
     session: Session,
     result_id: str,
@@ -176,11 +180,11 @@ def update_b2b_result_sent(
         ).with_for_update().first()
         
         if not result:
-            logger.warning(f"⚠️  CampaignResult {result_id} not found")
+            logger.warning(f"⚠️  B2B CampaignResult {result_id} not found")
             return
         
         if result.status == RecipientStatus.delivered:
-            logger.debug(f"ℹ️  Result {result_id} already delivered")
+            logger.debug(f"ℹ️  B2B Result {result_id} already delivered")
             return
         
         result.status = RecipientStatus.delivered
@@ -204,7 +208,7 @@ def update_b2b_result_sent(
             if not campaign.channel_stats:
                 campaign.channel_stats = {}
             
-            channel_key = result.channel_used.value
+            channel_key = result.channel.value
             
             if channel_key not in campaign.channel_stats:
                 campaign.channel_stats[channel_key] = {
@@ -234,11 +238,11 @@ def update_b2b_result_failed(
         ).with_for_update().first()
         
         if not result:
-            logger.warning(f"⚠️  CampaignResult {result_id} not found")
+            logger.warning(f"⚠️  B2B CampaignResult {result_id} not found")
             return
         
         if result.status == RecipientStatus.failed:
-            logger.debug(f"ℹ️  Result {result_id} already failed")
+            logger.debug(f"ℹ️  B2B Result {result_id} already failed")
             return
         
         result.status = RecipientStatus.failed
@@ -259,7 +263,7 @@ def update_b2b_result_failed(
             if not campaign.channel_stats:
                 campaign.channel_stats = {}
             
-            channel_key = result.channel_used.value
+            channel_key = result.channel.value
             
             if channel_key not in campaign.channel_stats:
                 campaign.channel_stats[channel_key] = {
@@ -273,129 +277,102 @@ def update_b2b_result_failed(
         session.flush()
         
     except Exception as e:
-        logger.error(f"❌ Error updating failed result {result_id}: {e}", exc_info=True)
+        logger.error(f"❌ Error updating B2B failed result {result_id}: {e}", exc_info=True)
+
 
 # ============================================
-# CAMPAIGN RESULT UPDATES
+# B2C CSV FILE UPDATES
 # ============================================
 
-def update_campaign_result_sent(
+def update_b2c_status_from_outbox(
     session: Session,
-    result_id: str,
-    sent_at: datetime,
-    message_id: Optional[str] = None
+    campaign_id: str,
+    tracking_token: str,
+    status: str,
+    message_id: Optional[str] = None,
+    error: Optional[str] = None
 ):
-    """Update result to DELIVERED"""
+    """
+    Update CSV status when B2C outbox message is processed.
+    
+    This updates the CSV file stored for the campaign.
+    """
+    import csv
+    import tempfile
+    
     try:
-        result = session.query(CampaignResult).filter(
-            CampaignResult.result_id == result_id
-        ).with_for_update().first()
+        logger.debug(f"📝 Updating B2C CSV: {tracking_token} → {status}")
         
-        if not result:
-            logger.warning(f"⚠️  CampaignResult {result_id} not found")
-            return
-        
-        if result.status == RecipientStatus.delivered:
-            logger.debug(f"ℹ️  Result {result_id} already delivered")
-            return
-        
-        result.status = RecipientStatus.delivered
-        result.sent_at = sent_at
-        result.delivered_at = sent_at
-        
-        if message_id:
-            result.message_id = message_id
-        
-        logger.debug(f"✅ Result {result_id} → delivered")
-        
+        # Get campaign and audience file
         campaign = session.query(Campaign).filter(
-            Campaign.campaign_id == result.campaign_id
-        ).with_for_update().first()
+            Campaign.campaign_id == campaign_id
+        ).first()
         
-        if campaign:
-            campaign.sent_count = (campaign.sent_count or 0) + 1
-            campaign.delivered_count = (campaign.delivered_count or 0) + 1
-            
-            if not campaign.channel_stats:
-                campaign.channel_stats = {}
-            
-            channel_key = result.channel_used.value
-            
-            if channel_key not in campaign.channel_stats:
-                campaign.channel_stats[channel_key] = {
-                    "sent": 0, "delivered": 0, "opened": 0, 
-                    "clicked": 0, "bounced": 0, "failed": 0
-                }
-            
-            campaign.channel_stats[channel_key]["sent"] += 1
-            campaign.channel_stats[channel_key]["delivered"] += 1
-            flag_modified(campaign, "channel_stats")
+        if not campaign or not campaign.audience_file_id:
+            logger.warning(f"⚠️  B2C Campaign or audience file not found: {campaign_id}")
+            return
         
-        session.flush()
+        from ..models.audience_file import AudienceFile
+        
+        audience_file = session.query(AudienceFile).filter(
+            AudienceFile.id == campaign.audience_file_id
+        ).first()
+        
+        if not audience_file:
+            logger.warning(f"⚠️  Audience file not found: {campaign.audience_file_id}")
+            return
+        
+        # Get file path (assumes file is in /tmp - adjust for your storage)
+# ✅ RIGHT
+        file_path = audience_file.storage_key
+        
+        if not os.path.exists(file_path):
+            logger.warning(f"⚠️  CSV file not found: {file_path}")
+            return
+        
+        # Update CSV file
+        temp_path = file_path + ".tmp"
+        
+        with open(file_path, newline="", encoding="utf-8") as src, \
+             open(temp_path, "w", newline="", encoding="utf-8") as dst:
+            
+            reader = csv.DictReader(src)
+            writer = csv.DictWriter(dst, fieldnames=reader.fieldnames)
+            writer.writeheader()
+            
+            for row in reader:
+                if row.get("tracking_token") == tracking_token:
+                    # Update this row
+                    row["status"] = status
+                    
+                    if status in ["sent", "delivered"]:
+                        row["sent_at"] = datetime.now(UTC).isoformat()
+                        
+                        if status == "delivered":
+                            row["delivered_at"] = datetime.now(UTC).isoformat()
+                    
+                    if message_id:
+                        row["message_id"] = message_id
+                    
+                    if error:
+                        row["error"] = error[:500]
+                
+                writer.writerow(row)
+        
+        os.replace(temp_path, file_path)
+        
+        logger.debug(f"   ✅ B2C CSV updated for token: {tracking_token}")
         
     except Exception as e:
-        logger.error(f"❌ Error updating result {result_id}: {e}", exc_info=True)
-
-
-def update_campaign_result_failed(
-    session: Session,
-    result_id: str,
-    error_message: str
-):
-    """Update CampaignResult when message fails"""
-    try:
-        result = session.query(CampaignResult).filter(
-            CampaignResult.result_id == result_id
-        ).with_for_update().first()
-        
-        if not result:
-            logger.warning(f"⚠️  CampaignResult {result_id} not found")
-            return
-        
-        if result.status == RecipientStatus.failed:
-            logger.debug(f"ℹ️  Result {result_id} already failed")
-            return
-        
-        result.status = RecipientStatus.failed
-        result.error = error_message[:500]
-        result.failed_at = datetime.now(UTC)
-        result.retry_count = 1
-        
-        logger.debug(f"❌ Result {result_id} → failed")
-        
-        campaign = session.query(Campaign).filter(
-            Campaign.campaign_id == result.campaign_id
-        ).with_for_update().first()
-        
-        if campaign:
-            campaign.failed_count = (campaign.failed_count or 0) + 1
-            
-            if not campaign.channel_stats:
-                campaign.channel_stats = {}
-            
-            channel_key = result.channel_used.value
-            
-            if channel_key not in campaign.channel_stats:
-                campaign.channel_stats[channel_key] = {
-                    "sent": 0, "delivered": 0, "opened": 0,
-                    "clicked": 0, "bounced": 0, "failed": 0
-                }
-            
-            campaign.channel_stats[channel_key]["failed"] += 1
-            flag_modified(campaign, "channel_stats")
-        
-        session.flush()
-        
-    except Exception as e:
-        logger.error(f"❌ Error updating failed result {result_id}: {e}", exc_info=True)
+        logger.error(f"❌ Error updating B2C CSV: {e}", exc_info=True)
 
 
 # ============================================
 # CAMPAIGN COMPLETION CHECKER
 # ============================================
 
-def check_campaign_completion(session: Session, campaign_id: str):
-    """Check if campaign should be marked as completed"""
+def check_b2b_campaign_completion(session: Session, campaign_id: str):
+    """Check if B2B campaign should be marked as completed"""
     try:
         campaign = session.query(Campaign).filter(
             Campaign.campaign_id == campaign_id
@@ -407,6 +384,11 @@ def check_campaign_completion(session: Session, campaign_id: str):
         if campaign.status != CampaignStatus.sending:
             return
         
+        # Only for B2B campaigns (check CampaignResult table)
+        if campaign.audience_file_id:
+            # This is B2C - skip
+            return
+        
         pending_count = session.query(CampaignResult).filter(
             CampaignResult.campaign_id == campaign_id,
             CampaignResult.status.in_([
@@ -416,7 +398,7 @@ def check_campaign_completion(session: Session, campaign_id: str):
         ).count()
         
         logger.debug(
-            f"📊 Campaign {campaign_id}: {pending_count} pending/queued results"
+            f"📊 B2B Campaign {campaign_id}: {pending_count} pending/queued results"
         )
         
         if pending_count == 0:
@@ -428,7 +410,7 @@ def check_campaign_completion(session: Session, campaign_id: str):
             ).count()
             
             logger.info(
-                f"🎉 Campaign {campaign_id} COMPLETED! "
+                f"🎉 B2B Campaign {campaign_id} COMPLETED! "
                 f"Total: {total}, "
                 f"Delivered: {campaign.delivered_count or 0}, "
                 f"Failed: {campaign.failed_count or 0}"
@@ -437,17 +419,20 @@ def check_campaign_completion(session: Session, campaign_id: str):
             session.flush()
     
     except Exception as e:
-        logger.error(f"❌ Error checking completion: {e}", exc_info=True)
+        logger.error(f"❌ Error checking B2B completion: {e}", exc_info=True)
 
 
 # ============================================
-# CORE PROCESSING - WITH CONNECTION HANDLING
+# CORE PROCESSING - UNIFIED B2B + B2C
 # ============================================
 
 def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult:
     """
-    Process outbox message - single attempt
-    Returns should_skip=True if relay is down (don't mark as processed)
+    Process outbox message - UNIFIED for both B2B and B2C.
+    
+    Detects campaign type from payload.b2c_mode flag:
+    - B2B (b2c_mode=False): Updates CampaignResult table
+    - B2C (b2c_mode=True): Updates CSV file
     """
     try:
         session.refresh(outbox)
@@ -456,11 +441,18 @@ def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult
             logger.info(f"⏭️  Outbox #{outbox.id} already processed")
             return ProcessingResult(success=True, message_id="already-processed")
         
-        logger.info(f"📤 Processing outbox #{outbox.id}: {outbox.kind}")
+        # Detect campaign type
+        is_b2c = outbox.payload.get("b2c_mode", False)
+        campaign_type = "B2C" if is_b2c else "B2B"
+        
+        logger.info(
+            f"📤 Processing outbox #{outbox.id}: {outbox.kind} ({campaign_type})"
+        )
         
         import asyncio
         
         try:
+            # Send email via relay
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             result = loop.run_until_complete(
@@ -471,7 +463,7 @@ def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult
             message_id = result.get("messageId", "unknown")
             sent_timestamp = datetime.now(UTC)
             
-            # ✅ SUCCESS - Mark as sent
+            # ✅ SUCCESS - Mark outbox as sent
             outbox.sent_at = sent_timestamp
             
             if not hasattr(outbox, 'meta_data') or outbox.meta_data is None:
@@ -480,44 +472,66 @@ def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult
             outbox.meta_data["message_id"] = message_id
             outbox.meta_data["sent_successfully"] = True
             outbox.meta_data["sent_timestamp"] = sent_timestamp.isoformat()
+            outbox.meta_data["b2c_mode"] = is_b2c
             
             flag_modified(outbox, "meta_data")
             session.commit()
             
             logger.info(f"✅ Outbox #{outbox.id} sent: {message_id}")
             
-            # Update campaign
+            # Update campaign tracking based on type
             if outbox.kind.startswith("campaign."):
-                result_id = outbox.payload.get("result_id")
                 campaign_id = outbox.payload.get("campaign_id")
                 
-                if result_id:
-                    update_campaign_result_sent(
-                        session, result_id, sent_timestamp, message_id
-                    )
-                
-                if campaign_id:
-                    check_campaign_completion(session, campaign_id)
-                
-                session.commit()
+                if is_b2c:
+                    # ===================================
+                    # B2C: Update CSV file
+                    # ===================================
+                    tracking_token = outbox.payload.get("tracking_token")
+                    
+                    if tracking_token:
+                        update_b2c_status_from_outbox(
+                            session,
+                            campaign_id,
+                            tracking_token,
+                            status="delivered",
+                            message_id=message_id
+                        )
+                        logger.debug(f"   ✅ B2C CSV updated: {tracking_token}")
+                    
+                else:
+                    # ===================================
+                    # B2B: Update CampaignResult table
+                    # ===================================
+                    result_id = outbox.payload.get("result_id")
+                    
+                    if result_id:
+                        update_b2b_result_sent(
+                            session, result_id, sent_timestamp, message_id
+                        )
+                        logger.debug(f"   ✅ B2B CampaignResult updated: {result_id}")
+                    
+                    if campaign_id:
+                        check_b2b_campaign_completion(session, campaign_id)
+                    
+                    session.commit()
             
             return ProcessingResult(success=True, message_id=message_id)
             
         except ConnectionError as e:
-            # 🔌 CONNECTION FAILED - Don't mark as processed, skip for now
+            # 🔌 CONNECTION FAILED - Don't mark as processed
             error_msg = str(e)[:500]
             logger.error(
                 f"🔌 Outbox #{outbox.id} - Connection failed: {error_msg}"
             )
             logger.warning("⚠️  Message NOT marked as processed - will retry later")
             
-            # DON'T commit, DON'T set sent_at
             session.rollback()
             
             return ProcessingResult(
                 success=False,
                 error=error_msg,
-                should_skip=True  # Skip this batch, try again later
+                should_skip=True  # Skip batch, try again later
             )
             
         except Exception as e:
@@ -525,7 +539,7 @@ def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult
             error_msg = str(e)[:500]
             logger.error(f"❌ Outbox #{outbox.id} failed: {error_msg}")
             
-            # Mark as processed (failed)
+            # Mark outbox as processed (failed)
             outbox.sent_at = datetime.now(UTC)
             
             if not hasattr(outbox, 'meta_data') or outbox.meta_data is None:
@@ -534,20 +548,43 @@ def process_outbox_message(session: Session, outbox: Outbox) -> ProcessingResult
             outbox.meta_data["failed"] = True
             outbox.meta_data["failure_reason"] = error_msg
             outbox.meta_data["attempt_timestamp"] = datetime.now(UTC).isoformat()
+            outbox.meta_data["b2c_mode"] = is_b2c
             
             flag_modified(outbox, "meta_data")
             session.commit()
             
-            # Update campaign as failed
+            # Update campaign as failed based on type
             if outbox.kind.startswith("campaign."):
-                result_id = outbox.payload.get("result_id")
                 campaign_id = outbox.payload.get("campaign_id")
                 
-                if result_id:
-                    update_campaign_result_failed(session, result_id, error_msg)
+                if is_b2c:
+                    # ===================================
+                    # B2C: Update CSV with error
+                    # ===================================
+                    tracking_token = outbox.payload.get("tracking_token")
+                    
+                    if tracking_token:
+                        update_b2c_status_from_outbox(
+                            session,
+                            campaign_id,
+                            tracking_token,
+                            status="failed",
+                            error=error_msg
+                        )
+                        logger.debug(f"   ❌ B2C CSV error logged: {tracking_token}")
                 
-                if campaign_id:
-                    check_campaign_completion(session, campaign_id)
+                else:
+                    # ===================================
+                    # B2B: Update CampaignResult as failed
+                    # ===================================
+                    result_id = outbox.payload.get("result_id")
+                    
+                    if result_id:
+                        update_b2b_result_failed(session, result_id, error_msg)
+                        logger.debug(f"   ❌ B2B CampaignResult failed: {result_id}")
+                    
+                    if campaign_id:
+                        check_b2b_campaign_completion(session, campaign_id)
                 
                 session.commit()
             
@@ -612,13 +649,20 @@ def process_batch(batch_size: int = 25) -> dict:
         success_count = 0
         failed_count = 0
         connection_errors = 0
+        b2b_count = 0
+        b2c_count = 0
         
         for msg in messages:
             try:
+                # Track campaign types
+                if msg.payload.get("b2c_mode", False):
+                    b2c_count += 1
+                else:
+                    b2b_count += 1
+                
                 result = process_outbox_message(session, msg)
                 
                 if result.should_skip:
-                    # Connection error - stop processing this batch
                     connection_errors += 1
                     if connection_errors >= 3:
                         logger.error("🔌 Multiple connection failures - stopping batch")
@@ -642,7 +686,9 @@ def process_batch(batch_size: int = 25) -> dict:
             "processed": success_count + failed_count,
             "success": success_count,
             "failed": failed_count,
-            "connection_errors": connection_errors
+            "connection_errors": connection_errors,
+            "b2b_count": b2b_count,
+            "b2c_count": b2c_count
         }
         
     except Exception as e:
@@ -671,10 +717,11 @@ def run_forever(poll_interval: float = 2.0, batch_size: int = 25):
     """Run processor with health monitoring"""
     global consecutive_errors
     
-    logger.info("🚀 Outbox processor started with health checks")
+    logger.info("🚀 Unified Outbox Processor Started")
     logger.info(f"   ⚙️  Batch size: {batch_size}")
     logger.info(f"   ⏱️  Poll interval: {poll_interval}s")
     logger.info(f"   🏥 Health check interval: {HEALTH_CHECK_INTERVAL}s")
+    logger.info(f"   📊 Supports: B2B (CampaignResult) + B2C (CSV)")
     
     iteration = 0
     
@@ -689,14 +736,18 @@ def run_forever(poll_interval: float = 2.0, batch_size: int = 25):
                     logger.warning(
                         f"[#{iteration}] ⏸️  Paused - waiting for relay to recover"
                     )
-                    time.sleep(poll_interval * 3)  # Wait longer
+                    time.sleep(poll_interval * 3)
                 continue
             
             if result.get("processed", 0) > 0:
+                b2b = result.get("b2b_count", 0)
+                b2c = result.get("b2c_count", 0)
+                
                 logger.info(
                     f"[#{iteration}] "
                     f"✅ {result['success']} sent | "
-                    f"❌ {result['failed']} failed"
+                    f"❌ {result['failed']} failed | "
+                    f"B2B: {b2b} | B2C: {b2c}"
                 )
                 
                 if result.get("connection_errors", 0) > 0:
@@ -753,11 +804,25 @@ def get_outbox_stats() -> dict:
             )
         ).scalar() or 0
         
+        # Count B2B vs B2C
+        b2c_pending = session.execute(
+            sa.select(sa.func.count(Outbox.id)).where(
+                and_(
+                    Outbox.sent_at.is_(None),
+                    Outbox.payload['b2c_mode'].astext == 'true'
+                )
+            )
+        ).scalar() or 0
+        
+        b2b_pending = pending - b2c_pending
+        
         return {
             "pending": pending,
             "sent": sent,
             "failed": failed,
             "total": pending + sent + failed,
+            "b2b_pending": b2b_pending,
+            "b2c_pending": b2c_pending,
             "relay_healthy": relay_is_healthy,
             "timestamp": datetime.now(UTC).isoformat()
         }

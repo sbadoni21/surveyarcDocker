@@ -1,3 +1,5 @@
+// models/postGresModels/campaignModel.js
+
 const BASE = "/api/post-gres-apis/campaigns";
 
 const json = async (res) => {
@@ -10,7 +12,7 @@ const json = async (res) => {
 
 const toCamel = (c) => ({
   campaignId: c.campaign_id,
-  orgId: c.org_id,  // ✅ FIXED: was "org_id" (undefined variable)
+  orgId: c.org_id,
   userId: c.user_id,
   campaignName: c.campaign_name,
   surveyId: c.survey_id,
@@ -19,7 +21,9 @@ const toCamel = (c) => ({
   fallbackChannel: c.fallback_channel,
   channelPriority: c.channel_priority || [],
   
+  // ✅ B2B vs B2C
   contactListId: c.contact_list_id,
+  audienceFileId: c.audience_file_id,  // ✅ NEW: B2C support
   contactFilters: c.contact_filters || {},
   
   emailSubject: c.email_subject,
@@ -47,7 +51,7 @@ const toCamel = (c) => ({
   repliedCount: c.replied_count,
   unsubscribedCount: c.unsubscribed_count,
   surveyStartedCount: c.survey_started_count,
-  surveyCompletedCount: c.survey_completed_count,  
+  surveyCompletedCount: c.survey_completed_count,
   channelStats: c.channel_stats || {},
   metaData: c.meta_data || {},
   
@@ -60,13 +64,15 @@ const toSnake = (c) => ({
   campaign_name: c.campaignName,
   survey_id: c.surveyId,
   channel: c.channel,
-  org_id:c.orgId,
+  org_id: c.orgId,
   user_id: c.userId,
 
   fallback_channel: c.fallbackChannel,
   channel_priority: c.channelPriority,
   
+  // ✅ B2B vs B2C
   contact_list_id: c.contactListId,
+  audience_file_id: c.audienceFileId,  // ✅ NEW: B2C support
   contact_filters: c.contactFilters,
   
   email_subject: c.emailSubject,
@@ -87,9 +93,9 @@ const toSnake = (c) => ({
 const CampaignModel = {
   /** CREATE */
   async create(data, userId) {
-    console.log(data)
+    console.log("📝 Creating campaign:", data);
     const body = toSnake(data);
-        console.log(body)
+    console.log("📤 Sending to backend:", body);
 
     const res = await fetch(`${BASE}?user_id=${userId}`, {
       method: "POST",
@@ -101,7 +107,9 @@ const CampaignModel = {
       cache: "no-store",
     });
     
-    return toCamel(await json(res));
+    const result = await json(res);
+    console.log("✅ Campaign created:", result);
+    return toCamel(result);
   },
 
   /** LIST */
@@ -134,7 +142,7 @@ const CampaignModel = {
     });
     
     const data = await json(res);
-    console.log(data)
+    
     return {
       items: (data.items || []).map(toCamel),
       total: data.total,
@@ -175,7 +183,6 @@ const CampaignModel = {
 
   /** DELETE */
   async delete(campaignId, userId) {
-    
     const res = await fetch(
       `${BASE}/${encodeURIComponent(campaignId)}?user_id=${encodeURIComponent(userId)}`,
       {
@@ -190,6 +197,8 @@ const CampaignModel = {
 
   /** SEND */
   async send(campaignId, sendData, userId) {
+    console.log("🚀 Sending campaign:", campaignId, sendData);
+    
     const res = await fetch(
       `${BASE}/${encodeURIComponent(campaignId)}/send`,
       {
@@ -203,7 +212,9 @@ const CampaignModel = {
       }
     );
     
-    return json(res);
+    const result = await json(res);
+    console.log("✅ Campaign send response:", result);
+    return result;
   },
 
   /** PAUSE */
@@ -244,7 +255,7 @@ const CampaignModel = {
     return json(res);
   },
 
-  /** GET RESULTS */
+  /** GET RESULTS (B2B only) */
   async getResults(campaignId, params, userId) {
     const {
       page = 1,
@@ -280,6 +291,79 @@ const CampaignModel = {
       pageSize: data.page_size,
       totalPages: data.total_pages,
     };
+  },
+
+  // ============================================
+  // ✅ NEW: B2C METHODS
+  // ============================================
+
+  /** GET B2C STATS */
+  async getB2CStats(campaignId, userId) {
+    console.log("📊 Fetching B2C stats for campaign:", campaignId);
+    
+    const res = await fetch(
+      `${BASE}/${encodeURIComponent(campaignId)}/b2c/stats?user_id=${encodeURIComponent(userId)}`,
+      {
+        cache: "no-store",
+      }
+    );
+    
+    const stats = await json(res);
+    console.log("✅ B2C stats received:", stats);
+    return stats;
+  },
+
+  /** DOWNLOAD B2C FILE */
+  async downloadB2CFile(campaignId, userId) {
+    console.log("📥 Downloading B2C file for campaign:", campaignId);
+    
+    const res = await fetch(
+      `${BASE}/${encodeURIComponent(campaignId)}/b2c/file?user_id=${encodeURIComponent(userId)}`,
+      {
+        cache: "no-store",
+      }
+    );
+
+    if (!res.ok) {
+      throw new Error(`Failed to download file: ${res.statusText}`);
+    }
+
+    // Return blob for download
+    const blob = await res.blob();
+    const filename = res.headers.get('Content-Disposition')
+      ?.split('filename=')[1]
+      ?.replace(/"/g, '') || `campaign_${campaignId}_results.csv`;
+
+    console.log("✅ B2C file downloaded:", filename);
+    return { blob, filename };
+  },
+
+  /** UPLOAD AUDIENCE FILE (B2C) */
+  async uploadAudienceFile(file, audienceName, orgId, userId) {
+    console.log("📤 Uploading audience file:", {
+      fileName: file.name,
+      fileSize: file.size,
+      audienceName,
+      orgId
+    });
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('audience_name', audienceName);
+    formData.append('org_id', orgId);
+
+    const res = await fetch('/api/post-gres-apis/audience-files/upload', {
+      method: 'POST',
+      headers: {
+        'X-User-Id': userId,
+      },
+      body: formData,
+      cache: 'no-store',
+    });
+
+    const result = await json(res);
+    console.log("✅ Audience file uploaded:", result);
+    return result;
   },
 };
 

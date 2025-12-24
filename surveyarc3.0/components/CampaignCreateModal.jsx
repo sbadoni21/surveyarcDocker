@@ -5,7 +5,9 @@ import dynamic from "next/dynamic";
 import "react-quill-new/dist/quill.snow.css";
 import QUESTION_TYPES from "@/enums/questionTypes";
 import { useSalesforceContacts } from "@/providers/postGresPorviders/SalesforceContactProvider";
-import { useSalesforceAccounts } from "@/providers/postGresPorviders/SalesforceAccountProvider"; // Add this import
+import { useSalesforceAccounts } from "@/providers/postGresPorviders/SalesforceAccountProvider";
+import CampaignModel from "@/models/postGresModels/campaignModel";
+import UploadedFilesList from "./UploadedFilesList";
 
 const ReactQuill = dynamic(() => import("react-quill-new"), { ssr: false });
 
@@ -24,51 +26,60 @@ const CampaignCreateModal = ({
   onLoadSurveyQuestions,
   surveyQuestions = [],
 }) => {
-const [formData, setFormData] = useState({
-  campaignName: "",
-  surveyId: "",
-  channel: "email",
-  fallbackChannel: null,
-  status: "scheduled",
-  channelPriority: [],
-  orgId,
-  userId,
+  const [formData, setFormData] = useState({
+    campaignName: "",
+    surveyId: "",
+    channel: "email",
+    fallbackChannel: null,
+    status: "scheduled",
+    channelPriority: [],
+    orgId,
+    userId,
 
-  // 🔴 recipients
-  recipientSource: "internal",       // "internal" | "salesforce"
-  contactListId: "",
-  salesforceAccountId: "",           // for Salesforce tab
-  contactFilters: {},
+    // ✅ Campaign Type
+    campaignType: "b2b",  // "b2b" | "b2c" | "salesforce"
+    
+    // B2B
+    contactListId: "",
+    
+    // B2C
+    audienceFileId: "",
+    audienceFile: null,
+    audienceName: "",
+    
+    // Salesforce
+    salesforceAccountId: "",
+    
+    contactFilters: {},
 
-  emailSubject: "",
-  emailBodyHtml: "",
-  emailFromName: "",
-  emailReplyTo: "",
-  smsMessage: "",
-  whatsappMessage: "",
-  whatsappTemplateId: "",
-  voiceScript: "",
-  scheduledAt: null,
-  metaData: {},
-});
+    emailSubject: "",
+    emailBodyHtml: "",
+    emailFromName: "",
+    emailReplyTo: "",
+    smsMessage: "",
+    whatsappMessage: "",
+    whatsappTemplateId: "",
+    voiceScript: "",
+    scheduledAt: null,
+    metaData: {},
+  });
 
   const [selectedContacts, setSelectedContacts] = useState([]);
   const [showContactSelector, setShowContactSelector] = useState(false);
   const [showVariableMenu, setShowVariableMenu] = useState(false);
   const [showQuestionPicker, setShowQuestionPicker] = useState(false);
   const [pickerQuestionId, setPickerQuestionId] = useState("");
+  
+  // ✅ B2C Upload States
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
-// Salesforce contacts (external)
-const { contacts: sfContacts, listByAccount } = useSalesforceContacts();
+  // Salesforce
+  const { contacts: sfContacts, listByAccount } = useSalesforceContacts();
+  const { accounts, list: listAccounts } = useSalesforceAccounts();
 
-// Salesforce accounts
-const { accounts, list: listAccounts } = useSalesforceAccounts();
-
-// Internal contacts (from props)
-const internalContacts = contacts || [];
-
-  console.log(listByAccount)
-
+  // Internal contacts
+  const internalContacts = contacts || [];
 
   const hasLoadedLists = useRef(false);
   const hasLoadedContacts = useRef(false);
@@ -76,29 +87,111 @@ const internalContacts = contacts || [];
   const hasLoadedAccounts = useRef(false);
 
   const quillRef = useRef(null);
+  const fileInputRef = useRef(null);
 
-useEffect(() => {
-  if (!isOpen) return;
+  // ============================================
+  // ✅ FILE UPLOAD HANDLER
+  // ============================================
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  // 🔥 Load Salesforce Accounts Automatically
-  if (!hasLoadedAccounts.current && listAccounts && (!accounts || accounts.length === 0)) {
-    listAccounts();
-    hasLoadedAccounts.current = true;
-  }
+    // Validate file type
+    const validTypes = [
+      'text/csv',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ];
+    
+    if (!validTypes.includes(file.type) && !file.name.endsWith('.csv') && !file.name.endsWith('.xlsx')) {
+      alert('Please upload a CSV or Excel file');
+      return;
+    }
 
-  if (!hasLoadedLists.current && onLoadLists && lists.length === 0) {
-    onLoadLists();
-    hasLoadedLists.current = true;
-  }
-  if (!hasLoadedContacts.current && onLoadContacts && contacts.length === 0) {
-    onLoadContacts();
-    hasLoadedContacts.current = true;
-  }
-  if (!hasLoadedSurveys.current && onLoadSurveys && surveys.length === 0) {
-    onLoadSurveys();
-    hasLoadedSurveys.current = true;
-  }
-}, [isOpen, listAccounts, accounts, lists.length, contacts.length, surveys.length]);
+    // Validate file size (max 50MB)
+    const maxSize = 50 * 1024 * 1024;
+    if (file.size > maxSize) {
+      alert('File size must be less than 50MB');
+      return;
+    }
+
+    setUploadingFile(true);
+    setUploadProgress(0);
+
+    try {
+      console.log("📤 Uploading file:", file.name);
+      
+      // Upload file using CampaignModel
+      const result = await CampaignModel.uploadAudienceFile(
+        file,
+        formData.audienceName || file.name.replace(/\.[^/.]+$/, ""),
+        orgId,
+        userId
+      );
+
+      console.log('✅ File uploaded successfully:', result);
+
+      // Update form data
+      setFormData(prev => ({
+        ...prev,
+        audienceFileId: result.id,
+        audienceFile: file,
+        audienceName: result.audience_name,
+      }));
+
+      setUploadProgress(100);
+      
+      alert(`✅ File uploaded successfully!\n\nRows: ${result.row_count || 'Unknown'}\nColumns: ${result.header_row?.join(', ') || 'Unknown'}`);
+      
+    } catch (error) {
+      console.error('❌ File upload failed:', error);
+      alert('Failed to upload file: ' + error.message);
+      
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
+  const removeUploadedFile = () => {
+    setFormData(prev => ({
+      ...prev,
+      audienceFileId: "",
+      audienceFile: null,
+      audienceName: "",
+    }));
+    
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (!hasLoadedAccounts.current && listAccounts && (!accounts || accounts.length === 0)) {
+      listAccounts();
+      hasLoadedAccounts.current = true;
+    }
+
+    if (!hasLoadedLists.current && onLoadLists && lists.length === 0) {
+      onLoadLists();
+      hasLoadedLists.current = true;
+    }
+
+    if (!hasLoadedContacts.current && onLoadContacts && contacts.length === 0) {
+      onLoadContacts();
+      hasLoadedContacts.current = true;
+    }
+
+    if (!hasLoadedSurveys.current && onLoadSurveys && surveys.length === 0) {
+      onLoadSurveys();
+      hasLoadedSurveys.current = true;
+    }
+  }, [isOpen, listAccounts, accounts, lists.length, contacts.length, surveys.length]);
 
   const toggleContactSelection = (contactId) => {
     setSelectedContacts((prev) =>
@@ -404,104 +497,108 @@ useEffect(() => {
     setPickerQuestionId("");
   };
 
-const handleSubmit = async () => {
-  if (!formData.campaignName || !formData.surveyId) {
-    alert("Please fill Campaign Name and Survey.");
-    return;
-  }
-
-  const isInternalSource = formData.recipientSource !== "salesforce";
-
-  // ✅ Different validation depending on source
-  if (isInternalSource) {
-    if (!formData.contactListId && selectedContacts.length === 0) {
-      alert("Please select a contact list or individual contacts.");
+  // ============================================
+  // ✅ UPDATED SUBMIT HANDLER
+  // ============================================
+  const handleSubmit = async () => {
+    if (!formData.campaignName || !formData.surveyId) {
+      alert("Please fill Campaign Name and Survey.");
       return;
     }
-  } else {
-    // Salesforce source
-    if (!formData.salesforceAccountId || selectedContacts.length === 0) {
-      alert(
-        "Please select a Salesforce account and at least one Salesforce contact."
-      );
-      return;
+
+    // ✅ Validation based on campaign type
+    if (formData.campaignType === "b2b") {
+      if (!formData.contactListId && selectedContacts.length === 0) {
+        alert("Please select a contact list or individual contacts for B2B campaign.");
+        return;
+      }
+    } else if (formData.campaignType === "b2c") {
+      if (!formData.audienceFileId) {
+        alert("Please upload a CSV/Excel file for B2C campaign.");
+        return;
+      }
+    } else if (formData.campaignType === "salesforce") {
+      if (!formData.salesforceAccountId || selectedContacts.length === 0) {
+        alert("Please select a Salesforce account and contacts.");
+        return;
+      }
     }
-  }
 
-  // ✅ Build contactFilters depending on source
-  let contactFilters = formData.contactFilters || {};
+    // Build contact filters
+    let contactFilters = formData.contactFilters || {};
 
-  if (selectedContacts.length > 0) {
-    if (isInternalSource) {
-      // Internal contacts or lists
-      contactFilters = {
-        ...contactFilters,
-        contactIds: selectedContacts, // internal contact IDs
-      };
-    } else {
-      // Salesforce contacts
-      contactFilters = {
-        ...contactFilters,
-        salesforceContactIds: selectedContacts,
-        salesforceAccountId: formData.salesforceAccountId,
-      };
+    if (selectedContacts.length > 0) {
+      if (formData.campaignType === "salesforce") {
+        contactFilters = {
+          ...contactFilters,
+          salesforceContactIds: selectedContacts,
+          salesforceAccountId: formData.salesforceAccountId,
+        };
+      } else if (formData.campaignType === "b2b") {
+        contactFilters = {
+          ...contactFilters,
+          contactIds: selectedContacts,
+        };
+      }
     }
-  }
 
-  const submitData = {
-    ...formData,
-    contactFilters,
-    metaData: {
-      ...(formData.metaData || {}),
-      recipientSource: formData.recipientSource || "internal",
-      salesforceAccountId:
-        formData.recipientSource === "salesforce"
-          ? formData.salesforceAccountId
-          : undefined,
-    },
+    const submitData = {
+      ...formData,
+      contactFilters,
+      metaData: {
+        ...(formData.metaData || {}),
+        campaignType: formData.campaignType,
+        salesforceAccountId:
+          formData.campaignType === "salesforce"
+            ? formData.salesforceAccountId
+            : undefined,
+      },
+    };
+
+    if (formData.scheduledAt) {
+      const localDate = new Date(formData.scheduledAt);
+      submitData.scheduledAt = localDate.toISOString();
+    }
+
+    try {
+      console.log("📝 Creating campaign with data:", submitData);
+      await onCreate(submitData);
+
+      // Reset form
+      setFormData({
+        campaignName: "",
+        surveyId: "",
+        channel: "email",
+        fallbackChannel: null,
+        status: "scheduled",
+        channelPriority: [],
+        orgId,
+        userId,
+        campaignType: "b2b",
+        contactListId: null,
+        audienceFileId: "",
+        audienceFile: null,
+        audienceName: "",
+        salesforceAccountId: "",
+        contactFilters: {},
+        emailSubject: "",
+        emailBodyHtml: "",
+        emailFromName: "",
+        emailReplyTo: "",
+        smsMessage: "",
+        whatsappMessage: "",
+        whatsappTemplateId: "",
+        voiceScript: "",
+        scheduledAt: null,
+        metaData: {},
+      });
+      setSelectedContacts([]);
+      onClose();
+    } catch (error) {
+      console.error("Failed to create campaign:", error);
+      alert("Failed to create campaign: " + error.message);
+    }
   };
-
-  if (formData.scheduledAt) {
-    const localDate = new Date(formData.scheduledAt);
-    submitData.scheduledAt = localDate.toISOString();
-  }
-
-  try {
-    await onCreate(submitData);
-
-    // reset state
-    setFormData({
-      campaignName: "",
-      surveyId: "",
-      channel: "email",
-      fallbackChannel: null,
-      status: "scheduled",
-      channelPriority: [],
-      orgId,
-      userId,
-      recipientSource: "internal",
-      contactListId: "",
-      salesforceAccountId: "",
-      contactFilters: {},
-      emailSubject: "",
-      emailBodyHtml: "",
-      emailFromName: "",
-      emailReplyTo: "",
-      smsMessage: "",
-      whatsappMessage: "",
-      whatsappTemplateId: "",
-      voiceScript: "",
-      scheduledAt: null,
-      metaData: {},
-    });
-    setSelectedContacts([]);
-    onClose();
-  } catch (error) {
-    console.error("Failed to create campaign:", error);
-    alert("Failed to create campaign: " + error.message);
-  }
-};
-
 
   if (!isOpen) return null;
 
@@ -525,11 +622,12 @@ const handleSubmit = async () => {
     "bullet",
     "link",
   ];
-const isInternalSource = formData.recipientSource !== "salesforce";
-const hasRecipients =
-  isInternalSource
-    ? (formData.contactListId || selectedContacts.length > 0)
-    : (formData.salesforceAccountId && selectedContacts.length > 0);
+
+  // ✅ Check if campaign has valid recipients
+  const hasRecipients = 
+    (formData.campaignType === "b2b" && (formData.contactListId || selectedContacts.length > 0)) ||
+    (formData.campaignType === "b2c" && formData.audienceFileId) ||
+    (formData.campaignType === "salesforce" && formData.salesforceAccountId && selectedContacts.length > 0);
 
   return (
     <div className="fixed inset-0 h-full bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
@@ -652,40 +750,10 @@ const hasRecipients =
               </div>
             </div>
           </div>
-<div>
-  <label className="block text-sm font-medium text-gray-700 mb-2">
-    Salesforce Accounts
-  </label>
 
-  <select
-    onChange={async (e) => {
-      const accountId = e.target.value;
-      if (!accountId) return;
-
-      await listByAccount(accountId);
-      setFormData({ ...formData, contactListId: "" });
-      setSelectedContacts([]);
-      setShowContactSelector(true);
-    }}
-    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-  >
-    <option value="">Select Salesforce Account...</option>
-    {(accounts || []).map((acc) => (
-      <option key={acc.
-accountId
-} value={acc.
-accountId
-}>
-        {acc.name} {acc.industry ? `(${acc.industry})` : ""}
-      </option>
-    ))}
-  </select>
-</div>
-
-
-          <div className="text-center text-gray-500 text-sm">OR</div>
-
-     {/* Recipients Section with Tabs */}
+          {/* ============================================
+              ✅ RECIPIENTS SECTION WITH TABS
+              ============================================ */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">
               Recipients *
@@ -693,53 +761,75 @@ accountId
 
             {/* Tab Navigation */}
             <div className="flex border-b border-gray-200">
-            <button
-  type="button"
-  onClick={() => {
-    setFormData({
-      ...formData,
-      recipientSource: 'internal',
-      contactListId: '',
-      salesforceAccountId: '',
-      contactFilters: {},
-    });
-    setSelectedContacts([]);
-    setShowContactSelector(false);
-  }}
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({
+                    ...formData,
+                    campaignType: 'b2b',
+                    contactListId: '',
+                    audienceFileId: '',
+                    salesforceAccountId: '',
+                  });
+                  setSelectedContacts([]);
+                }}
                 className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
-                  formData.recipientSource === 'internal'
+                  formData.campaignType === 'b2b'
                     ? 'border-blue-600 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
-                📋 Internal Lists
+                📋 B2B (Contact Lists)
               </button>
-          <button
-  type="button"
-  onClick={() => {
-    setFormData({
-      ...formData,
-      recipientSource: 'salesforce',
-      contactListId: '',
-      salesforceAccountId: '',
-      contactFilters: {},
-    });
-    setSelectedContacts([]);
-    setShowContactSelector(false);
-  }}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({
+                    ...formData,
+                    campaignType: 'b2c',
+                    contactListId: '',
+                    audienceFileId: '',
+                    salesforceAccountId: '',
+                  });
+                  setSelectedContacts([]);
+                }}
                 className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
-                  formData.recipientSource === 'salesforce'
+                  formData.campaignType === 'b2c'
                     ? 'border-blue-600 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
-                ⚡ Salesforce Accounts
+                📊 B2C (CSV/Excel Upload)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({
+                    ...formData,
+                    campaignType: 'salesforce',
+                    contactListId: '',
+                    audienceFileId: '',
+                    salesforceAccountId: '',
+                  });
+                  setSelectedContacts([]);
+                }}
+                className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+                  formData.campaignType === 'salesforce'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                ⚡ Salesforce
               </button>
             </div>
 
-            {/* Internal Lists Tab */}
-            {formData.recipientSource === 'internal' && (
-              <div className="space-y-4">
+            {/* ============================================
+                B2B TAB
+                ============================================ */}
+            {formData.campaignType === 'b2b' && (
+              <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Select Contact List
@@ -786,46 +876,153 @@ accountId
                     ? `${selectedContacts.length} individual contacts selected`
                     : 'Select Individual Contacts'}
                 </button>
-{showContactSelector && (
-  <div className="border rounded-lg p-4 max-h-60 overflow-y-auto bg-gray-50">
-    <div className="space-y-2">
-      {internalContacts.length === 0 ? (
-        <p className="text-sm text-gray-500 text-center py-4">
-          No contacts available
-        </p>
-      ) : (
-        internalContacts.map((contact) => (
-          <label
-            key={contact.contactId}
-            className="flex items-center gap-3 p-2 hover:bg-white rounded cursor-pointer"
-          >
+
+                {showContactSelector && (
+                  <div className="border rounded-lg p-4 max-h-60 overflow-y-auto bg-white">
+                    <div className="space-y-2">
+                      {internalContacts.length === 0 ? (
+                        <p className="text-sm text-gray-500 text-center py-4">
+                          No contacts available
+                        </p>
+                      ) : (
+                        internalContacts.map((contact) => (
+                          <label
+                            key={contact.contactId}
+                            className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedContacts.includes(contact.contactId)}
+                              onChange={() => toggleContactSelection(contact.contactId)}
+                              className="w-4 h-4 text-blue-600"
+                            />
+                            <div className="flex-1">
+                              <div className="font-medium text-sm text-gray-900">
+                                {contact.name}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {contact.email}
+                              </div>
+                            </div>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ============================================
+                ✅ B2C TAB
+                ============================================ */}
+         {formData.campaignType === 'b2c' && (
+  <div className="space-y-4 p-4 bg-blue-50 rounded-lg">
+    {/* File Upload Section */}
+    <div className="space-y-3">
+      <label className="block text-sm font-medium text-gray-700">
+        Upload New CSV or Excel File
+      </label>
+      
+      <div className="border-2 border-dashed border-blue-300 rounded-lg p-6 text-center bg-white">
+        {!formData.audienceFileId ? (
+          <>
             <input
-              type="checkbox"
-              checked={selectedContacts.includes(contact.contactId)}
-              onChange={() => toggleContactSelection(contact.contactId)}
-              className="w-4 h-4 text-blue-600"
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              onChange={handleFileSelect}
+              className="hidden"
+              id="file-upload"
+              disabled={uploadingFile}
             />
-            <div className="flex-1">
-              <div className="font-medium text-sm text-gray-900">
-                {contact.name}
+            <label
+              htmlFor="file-upload"
+              className="cursor-pointer flex flex-col items-center gap-2"
+            >
+              <div className="text-4xl">📁</div>
+              <div className="text-sm text-gray-600">
+                Click to upload CSV or Excel file
               </div>
               <div className="text-xs text-gray-500">
-                {contact.email}
+                Required columns: <strong>email</strong> (for email campaigns) or <strong>phone</strong> (for SMS)
               </div>
+              <div className="text-xs text-gray-500">
+                Max file size: 50MB
+              </div>
+            </label>
+
+            {uploadingFile && (
+              <div className="mt-4">
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-blue-600 h-2 rounded-full transition-all"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+                <p className="text-sm text-gray-600 mt-2">
+                  Uploading... {uploadProgress}%
+                </p>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-center gap-2 text-green-600">
+              <span className="text-2xl">✓</span>
+              <span className="font-medium">File Uploaded Successfully</span>
             </div>
-          </label>
-        ))
-      )}
+            <div className="text-sm text-gray-700">
+              <div><strong>File:</strong> {formData.audienceName}</div>
+              {formData.audienceFile && (
+                <div><strong>Size:</strong> {(formData.audienceFile.size / 1024).toFixed(2)} KB</div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={removeUploadedFile}
+              className="text-sm text-red-600 hover:text-red-800 font-medium"
+            >
+              Remove File
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="text-center text-gray-500 text-sm font-medium">OR</div>
+
+      {/* ✅ Previously Uploaded Files List */}
+      <UploadedFilesList
+        orgId={orgId}
+        onSelectFile={(file) => {
+          setFormData(prev => ({
+            ...prev,
+            audienceFileId: file.id,
+            audienceName: file.audience_name,
+          }));
+          // Clear the file input if user selects from previous uploads
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
+        }}
+      />
+
+      <div className="bg-blue-100 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+        <strong>💡 Tip:</strong> Your CSV should have an "email" column (for email campaigns) or "phone" column (for SMS campaigns). Optional: "name" column for personalization.
+      </div>
+
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+        <strong>📊 B2C Mode:</strong> Status tracking will be done in the CSV file. Download the updated CSV after sending to see delivery statuses.
+      </div>
     </div>
   </div>
 )}
 
-              </div>
-            )}
-
-            {/* Salesforce Accounts Tab */}
-            {formData.recipientSource === 'salesforce' && (
-              <div className="space-y-4">
+            {/* ============================================
+                SALESFORCE TAB
+                ============================================ */}
+            {formData.campaignType === 'salesforce' && (
+              <div className="space-y-4 p-4 bg-purple-50 rounded-lg">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Select Salesforce Account
@@ -837,7 +1034,6 @@ accountId
                       setFormData({ 
                         ...formData, 
                         salesforceAccountId: accountId,
-                        contactListId: '',
                       });
                       setSelectedContacts([]);
                       
@@ -861,74 +1057,56 @@ accountId
                   </select>
                 </div>
 
-           {formData.salesforceAccountId && sfContacts.length > 0 && (
-  <div className="border rounded-lg overflow-hidden bg-gray-50">
-    <div className="p-3 bg-blue-50 border-b border-blue-200">
-      <div className="flex items-center justify-between">
-        <span className="font-medium text-blue-900">
-          {sfContacts.length} contacts from Salesforce
-        </span>
-        <button
-          type="button"
-          onClick={() => {
-            const allIds = sfContacts.map(c => c.contactId);
-            if (selectedContacts.length === allIds.length) {
-              setSelectedContacts([]);
-            } else {
-              setSelectedContacts(allIds);
-            }
-          }}
-          className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-        >
-          {selectedContacts.length === sfContacts.length ? 'Deselect All' : 'Select All'}
-        </button>
-      </div>
-    </div>
-    <div className="max-h-60 overflow-y-auto p-2">
-      <div className="space-y-2">
-        {sfContacts.map((contact) => (
-          <label
-            key={contact.contactId}
-            className="flex items-center gap-3 p-2 hover:bg-white rounded cursor-pointer transition-colors"
-          >
-            <input
-              type="checkbox"
-              checked={selectedContacts.includes(contact.contactId)}
-              onChange={() => toggleContactSelection(contact.contactId)}
-              className="w-4 h-4 text-blue-600"
-            />
-            <div className="flex-1">
-              <div className="font-medium text-sm text-gray-900">
-                {contact.name}
-              </div>
-              <div className="text-xs text-gray-500">
-                {contact.email}
-              </div>
-            </div>
-          </label>
-        ))}
-      </div>
-    </div>
-  </div>
-)}
-
-{formData.salesforceAccountId && selectedContacts.length > 0 && (
-  <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-    <div className="flex items-center gap-2 text-green-800">
-      <span className="text-lg">✓</span>
-      <span className="font-medium">
-        {selectedContacts.length} contacts selected from Salesforce
-      </span>
-    </div>
-  </div>
-)}
-
-{formData.salesforceAccountId && sfContacts.length === 0 && (
-  <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
-    No contacts found for this Salesforce account
-  </div>
-)}
-
+                {formData.salesforceAccountId && sfContacts.length > 0 && (
+                  <div className="border rounded-lg overflow-hidden bg-white">
+                    <div className="p-3 bg-purple-50 border-b border-purple-200">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-purple-900">
+                          {sfContacts.length} contacts from Salesforce
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const allIds = sfContacts.map(c => c.contactId);
+                            if (selectedContacts.length === allIds.length) {
+                              setSelectedContacts([]);
+                            } else {
+                              setSelectedContacts(allIds);
+                            }
+                          }}
+                          className="text-sm text-purple-600 hover:text-purple-800 font-medium"
+                        >
+                          {selectedContacts.length === sfContacts.length ? 'Deselect All' : 'Select All'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto p-2">
+                      <div className="space-y-2">
+                        {sfContacts.map((contact) => (
+                          <label
+                            key={contact.contactId}
+                            className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer transition-colors"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedContacts.includes(contact.contactId)}
+                              onChange={() => toggleContactSelection(contact.contactId)}
+                              className="w-4 h-4 text-purple-600"
+                            />
+                            <div className="flex-1">
+                              <div className="font-medium text-sm text-gray-900">
+                                {contact.name}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {contact.email}
+                              </div>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {formData.salesforceAccountId && selectedContacts.length > 0 && (
                   <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
@@ -941,7 +1119,7 @@ accountId
                   </div>
                 )}
 
-                {formData.salesforceAccountId && contacts.length === 0 && (
+                {formData.salesforceAccountId && sfContacts.length === 0 && (
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
                     No contacts found for this Salesforce account
                   </div>
@@ -949,6 +1127,7 @@ accountId
               </div>
             )}
           </div>
+
           {/* EMAIL CONFIG */}
           {(formData.channel === "email" ||
             formData.channel === "multi") && (
@@ -1168,6 +1347,7 @@ accountId
                 ].map((opt, i) => (
                   <button
                     key={i}
+                    type="button"
                     className={`px-3 py-1.5 text-sm rounded border ${
                       formData.scheduledAt === null && opt.value === null
                         ? "bg-blue-600 text-white border-blue-600"
@@ -1222,9 +1402,17 @@ accountId
         {/* Footer */}
         <div className="p-6 border-t bg-gray-50 flex items-center justify-between rounded-b-lg">
           <div className="text-sm text-gray-600 space-x-3">
-            {formData.contactListId && <span>📋 Using list</span>}
-            {selectedContacts.length > 0 && (
-              <span>👥 {selectedContacts.length} contacts selected</span>
+            {formData.campaignType === 'b2b' && formData.contactListId && (
+              <span>📋 B2B - Contact List</span>
+            )}
+            {formData.campaignType === 'b2c' && formData.audienceFileId && (
+              <span>📊 B2C - File Uploaded</span>
+            )}
+            {formData.campaignType === 'salesforce' && formData.salesforceAccountId && (
+              <span>⚡ Salesforce - {selectedContacts.length} contacts</span>
+            )}
+            {selectedContacts.length > 0 && formData.campaignType === 'b2b' && (
+              <span>👥 {selectedContacts.length} individual contacts</span>
             )}
           </div>
           <div className="flex items-center gap-3">
@@ -1235,19 +1423,19 @@ accountId
             >
               Cancel
             </button>
-  <button
-  type="button"
-  onClick={handleSubmit}
-  disabled={
-    !formData.campaignName ||
-    !formData.surveyId ||
-    !hasRecipients
-  }
-  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
->
-  Create Campaign
-</button>
-
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={
+                !formData.campaignName ||
+                !formData.surveyId ||
+                !hasRecipients ||
+                uploadingFile
+              }
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {uploadingFile ? 'Uploading...' : 'Create Campaign'}
+            </button>
           </div>
         </div>
       </div>

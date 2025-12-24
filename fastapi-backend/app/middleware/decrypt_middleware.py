@@ -26,10 +26,42 @@ class DecryptMiddleware:
                 more_body = message.get("more_body", False)
 
             try:
+                # ============================================
+                # ✅ SKIP FILE UPLOADS (multipart/form-data)
+                # ============================================
                 if scope["method"] in {"POST", "PUT", "PATCH"}:
-                    data = json.loads(body.decode("utf-8"))
+                    # Check Content-Type header
+                    content_type = None
+                    for header_name, header_value in scope.get("headers", []):
+                        if header_name == b"content-type":
+                            content_type = header_value.decode("utf-8").lower()
+                            break
+                    
+                    # Skip multipart/form-data (file uploads)
+                    if content_type and "multipart/form-data" in content_type:
+                        print(f"[DecryptMiddleware] Skipping file upload: {scope['path']}")
+                        return {"type": "http.request", "body": body, "more_body": False}
+                    
+                    # Skip if not JSON
+                    if content_type and "application/json" not in content_type:
+                        print(f"[DecryptMiddleware] Skipping non-JSON: {content_type}")
+                        return {"type": "http.request", "body": body, "more_body": False}
+                    
+                    # Only try to decrypt if body is not empty
+                    if not body:
+                        return {"type": "http.request", "body": body, "more_body": False}
+                    
+                    # Try to parse as JSON
+                    try:
+                        data = json.loads(body.decode("utf-8"))
+                    except json.JSONDecodeError:
+                        # Not JSON, pass through
+                        print(f"[DecryptMiddleware] Not JSON, passing through")
+                        return {"type": "http.request", "body": body, "more_body": False}
+                    
+                    # Only decrypt if encrypted_key is present
                     if "encrypted_key" in data:
-                        print(f"[Middleware] DecryptMiddleware activated for {scope['path']}")
+                        print(f"[DecryptMiddleware] DecryptMiddleware activated for {scope['path']}")
 
                         encrypted_key_bytes = base64.b64decode(data["encrypted_key"])
                         ciphertext_bytes   = base64.b64decode(data["ciphertext"])
@@ -61,6 +93,10 @@ class DecryptMiddleware:
                         scope["headers"] = headers + [
                             h for h in scope.get("headers", []) if h[0] != b"content-type"
                         ]
+                    else:
+                        # No encrypted_key, pass through as-is
+                        print(f"[DecryptMiddleware] No encrypted_key, passing through")
+                        
             except Exception as e:
                 print("[DecryptMiddleware] Error:", e)
                 traceback.print_exc()
