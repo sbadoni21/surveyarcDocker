@@ -8,7 +8,6 @@ frontend:
         - npm install --force
     build:
       commands:
-        - cd surveyarc3.0
         - npm run build
 
   artifacts:
