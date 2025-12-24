@@ -1,17 +1,21 @@
 version: 1
+
 frontend:
-  appRoot: surveyarcDocker/surveyarc3.0
   phases:
     preBuild:
       commands:
+        - cd surveyarc3.0
         - npm install
     build:
       commands:
+        - cd surveyarc3.0
         - npm run build
+
   artifacts:
-    baseDirectory: .next
+    baseDirectory: surveyarc3.0/.next
     files:
       - '**/*'
+
   cache:
     paths:
-      - node_modules/**/*
+      - surveyarc3.0/node_modules/**/*
