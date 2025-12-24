@@ -6,6 +6,9 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.js");
 const nextConfig = {
   reactStrictMode: false,
 
+  // ✅ REQUIRED for AWS Amplify SSR
+  output: "standalone",
+
   async headers() {
     return [
       {
@@ -19,10 +22,6 @@ const nextConfig = {
         ],
       },
     ];
-  },
-
-  experimental: {
-    serverActions: {},
   },
 
   images: {

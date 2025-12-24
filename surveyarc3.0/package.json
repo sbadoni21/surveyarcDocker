@@ -48,6 +48,7 @@
     "react-quill-new": "^3.6.0",
     "reactflow": "^11.11.4",
     "recharts": "^2.15.3",
+    "sharp": "^0.34.5",
     "simple-encryptor": "^4.0.0",
     "uuid": "^11.1.0",
     "xlsx": "^0.18.5",
