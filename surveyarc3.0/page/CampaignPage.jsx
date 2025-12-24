@@ -23,6 +23,9 @@ import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import { useQuestion } from "@/providers/questionPProvider";
 import { useSalesforceContacts } from "@/providers/postGresPorviders/SalesforceContactProvider";
 import { useSalesforceAccounts } from "@/providers/postGresPorviders/SalesforceAccountProvider";
+import { useCampaignResult } from "@/providers/postGresPorviders/campaginResultProvider";
+import CampaignOverview from "@/components/campagins/CampaignOverview";
+import CampaignAnalytics from "@/components/campagins/CampaignAnalytics";
 
 const CampaignPage = () => {
   const [activeTab, setActiveTab] = useState("overview");
@@ -49,9 +52,8 @@ const CampaignPage = () => {
     setFilter,
     filters
   } = useCampaign();
-  
-  console.log(campaigns)
-  const { 
+
+    const { 
     lists, 
     contacts, 
     listLists, 
@@ -224,190 +226,7 @@ const handleLoadSurveyQuestions = useCallback(
     );
   };
 
-  // Render Overview Tab
-  const renderOverview = () => (
-    <div className="space-y-6">
-      {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-blue-500 dark:bg-gray-900">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600 dark:text-gray-300 font-medium">Total Campaigns</p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{campaigns.length}</p>
-            </div>
-            <div className="text-4xl">📋</div>
-          </div>
-        </div>
 
-        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600 font-medium">Messages Sent</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">{totals.sent.toLocaleString()}</p>
-            </div>
-            <div className="text-4xl">📤</div>
-          </div>
-          <p className="text-xs text-green-600 mt-2">↑ {totals.delivered} delivered</p>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-purple-500">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600 font-medium">Open Rate</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">{openRate}%</p>
-            </div>
-            <div className="text-4xl">👁️</div>
-          </div>
-          <p className="text-xs text-gray-600 mt-2">{totals.opened} opened</p>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-orange-500">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600 font-medium">Response Rate</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">{responseRate}%</p>
-            </div>
-            <div className="text-4xl">📊</div>
-          </div>
-          <p className="text-xs text-gray-600 mt-2">{totals.surveyStarted} started</p>
-        </div>
-      </div>
-
-      {/* Recent Campaigns */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b">
-          <h2 className="text-lg font-semibold text-gray-900">Recent Campaigns</h2>
-        </div>
-        <div className="p-6">
-          <div className="space-y-4">
-            {campaigns.slice(0, 5).map(campaign => (
-              <div
-                key={campaign.campaignId}
-                className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
-                onClick={() => {
-                  setSelectedCampaign(campaign);
-                  setActiveTab("details");
-                }}
-              >
-                <div className="flex-1">
-                  <div className="flex items-center gap-3">
-                    <h3 className="font-semibold text-gray-900">{campaign.campaignName}</h3>
-                    <StatusBadge status={campaign.status} />
-                    <ChannelBadge channel={campaign.channel} />
-                  </div>
-                  <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
-                    <span>📧 {campaign.sentCount}/{campaign.totalRecipients}</span>
-                    <span>✅ {campaign.deliveredCount}</span>
-                    <span>📖 {campaign.openedCount}</span>
-                    <span>🎯 {campaign.surveyCompletedCount}</span>
-                  </div>
-                </div>
-                <div className="text-sm text-gray-500">
-                  {new Date(campaign.createdAt).toLocaleDateString()}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  // Render Analytics Tab
-  const renderAnalytics = () => (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Delivery Status Distribution */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold mb-4">Delivery Status Distribution</h3>
-          {pieData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={100}
-                  dataKey="value"
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-64 flex items-center justify-center text-gray-500">
-              No data available
-            </div>
-          )}
-        </div>
-
-        {/* Channel Distribution */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold mb-4">Channel Distribution</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={channelData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="count" fill="#3B82F6" name="Campaigns" />
-              <Bar dataKey="sent" fill="#10B981" name="Sent" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Campaign Performance Comparison */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold mb-4">Campaign Performance Comparison</h3>
-        <ResponsiveContainer width="100%" height={400}>
-          <BarChart data={performanceData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Bar dataKey="sent" fill="#3B82F6" name="Sent" />
-            <Bar dataKey="delivered" fill="#10B981" name="Delivered" />
-            <Bar dataKey="opened" fill="#F59E0B" name="Opened" />
-            <Bar dataKey="clicked" fill="#8B5CF6" name="Clicked" />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Engagement Funnel */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold mb-4">Engagement Funnel</h3>
-        <div className="space-y-3">
-          {[
-            { label: "Sent", value: totals.sent, color: "bg-blue-600", width: 100 },
-            { label: "Delivered", value: totals.delivered, color: "bg-green-600", width: (totals.delivered / totals.sent * 100) || 0 },
-            { label: "Opened", value: totals.opened, color: "bg-yellow-600", width: (totals.opened / totals.sent * 100) || 0 },
-            { label: "Survey Started", value: totals.surveyStarted, color: "bg-purple-600", width: (totals.surveyStarted / totals.sent * 100) || 0 },
-            { label: "Completed", value: totals.surveyCompleted, color: "bg-pink-600", width: (totals.surveyCompleted / totals.sent * 100) || 0 }
-          ].map(item => (
-            <div key={item.label} className="flex items-center gap-4">
-              <div className="w-32 text-sm font-medium text-gray-700">{item.label}</div>
-              <div className="flex-1 bg-gray-200 rounded-full h-8">
-                <div 
-                  className={`${item.color} h-8 rounded-full flex items-center justify-end pr-3 text-white text-sm font-medium transition-all`}
-                  style={{ width: `${item.width}%` }}
-                >
-                  {item.value > 0 && item.value}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
 
   // Render Campaigns Tab
   const renderCampaigns = () => (
@@ -589,112 +408,7 @@ const handleLoadSurveyQuestions = useCallback(
     </div>
   );
 
-  // Render Campaign Details
-  const renderDetails = () => {
-    if (!selectedCampaign) {
-      return (
-        <div className="text-center py-12 text-gray-500">
-          <div className="text-4xl mb-4">📊</div>
-          <p className="text-lg">Select a campaign to view details</p>
-        </div>
-      );
-    }
-
-    return (
-      <div className="space-y-6">
-        {/* Campaign Header */}
-        <div className="bg-white rounded-lg shadow p-6 dark:bg-gray-900">
-          <div className="flex items-start justify-between mb-6">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900">{selectedCampaign.campaignName}</h2>
-              <div className="flex items-center gap-3 mt-2">
-                <StatusBadge status={selectedCampaign.status} />
-                <ChannelBadge channel={selectedCampaign.channel} />
-              </div>
-            </div>
-            <button
-              onClick={() => {
-                setSelectedCampaign(null);
-                setActiveTab("campaigns");
-              }}
-              className="text-gray-400 hover:text-gray-600 text-2xl"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <p className="text-sm text-gray-600">Total Recipients</p>
-              <p className="text-2xl font-bold text-gray-900">{selectedCampaign.totalRecipients}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Sent</p>
-              <p className="text-2xl font-bold text-blue-600">{selectedCampaign.sentCount}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Delivered</p>
-              <p className="text-2xl font-bold text-green-600">{selectedCampaign.deliveredCount}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Opened</p>
-              <p className="text-2xl font-bold text-purple-600">{selectedCampaign.openedCount}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Analytics Summary */}
-        {analytics && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold mb-4">Performance Metrics</h3>
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
-                <p className="text-sm text-blue-600 font-medium">Delivery Rate</p>
-                <p className="text-2xl font-bold text-blue-900">{analytics.deliveryRate}%</p>
-              </div>
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <p className="text-sm text-green-600 font-medium">Open Rate</p>
-                <p className="text-2xl font-bold text-green-900">{analytics.openRate}%</p>
-              </div>
-              <div className="text-center p-4 bg-purple-50 rounded-lg">
-                <p className="text-sm text-purple-600 font-medium">Click Rate</p>
-                <p className="text-2xl font-bold text-purple-900">{analytics.clickRate}%</p>
-              </div>
-              <div className="text-center p-4 bg-orange-50 rounded-lg">
-                <p className="text-sm text-orange-600 font-medium">Response Rate</p>
-                <p className="text-2xl font-bold text-orange-900">{analytics.responseRate}%</p>
-              </div>
-              <div className="text-center p-4 bg-pink-50 rounded-lg">
-                <p className="text-sm text-pink-600 font-medium">Completion Rate</p>
-                <p className="text-2xl font-bold text-pink-900">{analytics.completionRate}%</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Timeline */}
-        <div className="bg-white rounded-lg shadow p-6 dark:bg-gray-900">
-          <h3 className="text-lg font-semibold mb-4">Campaign Timeline</h3>
-          <div className="space-y-4">
-            <div className="flex items-center gap-4">
-              <div className="w-24 text-sm text-gray-600">Created</div>
-              <div className="flex-1 text-sm font-medium">
-                {new Date(selectedCampaign.createdAt).toLocaleString()}
-              </div>
-            </div>
-            {selectedCampaign.scheduledAt && (
-              <div className="flex items-center gap-4">
-                <div className="w-24 text-sm text-gray-600">Scheduled</div>
-                <div className="flex-1 text-sm font-medium">
-                  {new Date(selectedCampaign.scheduledAt).toLocaleString()}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
+ 
 
   if (loading) {
     return (
@@ -738,7 +452,6 @@ const handleLoadSurveyQuestions = useCallback(
               { id: "overview", label: "Overview", icon: "📊" },
               { id: "campaigns", label: "Campaigns", icon: "📋" },
               { id: "analytics", label: "Analytics", icon: "📈" },
-              { id: "details", label: "Details", icon: "🔍" }
             ].map(tab => (
               <button
                 key={tab.id}
@@ -759,10 +472,22 @@ const handleLoadSurveyQuestions = useCallback(
 
       {/* Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === "overview" && renderOverview()}
+        {activeTab === "overview" && <CampaignOverview
+  campaigns={campaigns}
+  totals={totals}
+  openRate={openRate}
+  responseRate={responseRate}
+  setSelectedCampaign={setSelectedCampaign}
+  setActiveTab={setActiveTab}
+/>
+}
         {activeTab === "campaigns" && renderCampaigns()}
-        {activeTab === "analytics" && renderAnalytics()}
-        {activeTab === "details" && renderDetails()}
+        {activeTab === "analytics" && <CampaignAnalytics
+  pieData={pieData}
+  channelData={channelData}
+  performanceData={performanceData}
+  totals={totals}
+/>}
       </div>
     </div>
   );

@@ -11,7 +11,7 @@ SALESFORCE_CLIENT_SECRET = os.getenv("SALESFORCE_CLIENT_SECRET", "24B9DA49DE3C0B
 SALESFORCE_USERNAME = os.getenv("SALESFORCE_USERNAME","shivam521@agentforce.com")
 SALESFORCE_PASSWORD = os.getenv("SALESFORCE_PASSWORD","Uk097188@")
 # optional: if you ever need to append token separately
-SALESFORCE_SECURITY_TOKEN = os.getenv("SALESFORCE_SECURITY_TOKEN", "")
+SALESFORCE_SECURITY_TOKEN = os.getenv("SALESFORCE_PASSWORD_WITH_TOKEN", "")
 # NEW — full Apex path for Accounts API
 APEX_ACCOUNTS_PATH = os.getenv(
     "SALESFORCE_APEX_ACCOUNTS_PATH", "/services/apexrest/surveyarc/accounts"
@@ -39,11 +39,11 @@ class SalesforceService:
 
         data = {
             "grant_type": "password",
-            "client_id": SALESFORCE_CLIENT_ID,
-            "client_secret": SALESFORCE_CLIENT_SECRET,
-            "username": SALESFORCE_USERNAME,
+            "client_id": "3MVG9rZjd7MXFdLiiqARG.kHAwcV7PsBUxN4ia7eh11v3v_RqwgFaW_vXHgwxp3PfEdJeznDbiPxNuGkDodFA",
+            "client_secret": "24B9DA49DE3C0B7E3D745F10E80E801748B86853D2FF4613F89073BCDC2522DE",
+            "username": "shivam521@agentforce.com",
             # You can do PASSWORD + SECURITY_TOKEN if needed:
-            "password": SALESFORCE_PASSWORD + SALESFORCE_SECURITY_TOKEN,
+            "password": "Uk097188@@Du04iL7ebPDIy2LGOy9NmR2r",
         }
 
         resp = requests.post(SALESFORCE_TOKEN_URL, data=data)
@@ -60,7 +60,7 @@ class SalesforceService:
         return access_token, instance_url
 
     @classmethod
-    def call_salesforce(cls, method: str, url: str, token: str, **kwargs) -> Dict[str, Any]:
+    def call_salesforce(cls, method: str, url: str, token: str, **kwargs):
         headers = kwargs.pop("headers", {})
         headers.setdefault("Authorization", f"Bearer {token}")
         headers.setdefault("Content-Type", "application/json")
@@ -68,9 +68,25 @@ class SalesforceService:
         resp = requests.request(method, url, headers=headers, **kwargs)
         if not resp.ok:
             raise RuntimeError(f"Salesforce call failed: {resp.status_code} {resp.text}")
-        if resp.text:
-            return resp.json()
-        return {}
+
+        if not resp.text:
+            return None
+
+        # 🔥 Normalize Salesforce responses
+        try:
+            data = resp.json()
+        except ValueError:
+            return resp.text
+
+        # 🔥 Handle "JSON string inside JSON"
+        if isinstance(data, str):
+            try:
+                return json.loads(data)
+            except Exception:
+                return data
+
+        return data
+
 
     # ---------- Contacts via your Apex REST ----------
     @classmethod
@@ -89,9 +105,27 @@ class SalesforceService:
     @classmethod
     def get_accounts_from_apex(cls, limit: int = 50) -> List[Dict[str, Any]]:
         access_token, instance_url = cls.get_access_token()
-        path = APEX_ACCOUNTS_PATH.rstrip("/")  # 🔥 remove trailing slash if exists
+        path = APEX_ACCOUNTS_PATH.rstrip("/")
         url = f"{instance_url}{path}?limit={limit}"
-        return cls.call_salesforce("GET", url, access_token)
+
+        data = cls.call_salesforce("GET", url, access_token)
+
+        # ✅ Normalize response
+        if isinstance(data, list):
+            return data
+
+        if isinstance(data, dict):
+            return data.get("items", [])
+
+        if isinstance(data, str):
+            try:
+                parsed = json.loads(data)
+                return parsed if isinstance(parsed, list) else parsed.get("items", [])
+            except Exception:
+                return []
+
+        return []
+
 # app/services/salesforce_service.py (or wherever it lives)
 
     @classmethod

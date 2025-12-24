@@ -1,198 +1,253 @@
 # ============================================
-# SALESFORCE CONTACT SYNC SERVICE
-# app/services/salesforce_contact_sync_service.py
+# SALESFORCE CONTACT + LIST SYNC SERVICE
 # ============================================
 
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 from datetime import datetime, timezone
-from typing import Dict
+from typing import Dict, Set
 
-from ..models.contact import Contact, ContactEmail, ContactType
+from ..models.contact import (
+    Contact,
+    ContactEmail,
+    ContactType,
+    ContactList,
+    list_members,
+)
+from ..services.salesforce_service import SalesforceService
 from ..utils.id_generator import generate_id
 
 
-def sync_salesforce_contact_to_internal(sf_contact: Dict, org_id: str, session: Session) -> Contact:
-    """
-    Sync Salesforce contact with internal database
-    
-    Logic:
-    1. Check if contact exists by Salesforce ID
-    2. If not, check if contact exists by email
-    3. If found, update with Salesforce data
-    4. If not found, create new contact
-    5. Always update email to latest from Salesforce
-    
-    Returns: Internal Contact object
-    """
-    
+# ============================================================
+# CONTACT SYNC
+# ============================================================
+
+def sync_salesforce_contact_to_internal(
+    sf_contact: Dict,
+    org_id: str,
+    session: Session
+) -> Contact:
     sf_id = sf_contact.get("id") or sf_contact.get("Id")
     first_name = sf_contact.get("firstName") or sf_contact.get("FirstName") or ""
     last_name = sf_contact.get("lastName") or sf_contact.get("LastName") or ""
     email = sf_contact.get("email") or sf_contact.get("Email")
-    account_name = sf_contact.get("accountName")
-    
-    name = f"{first_name} {last_name}".strip() or "Unknown"
-    
+
     if not email:
-        raise ValueError(f"Contact {sf_id} has no email address")
-    
-    # ============================================
-    # STEP 1: Try to find existing contact by Salesforce ID
-    # ============================================
-    existing_contact = session.query(Contact).filter(
+        raise ValueError(f"Salesforce contact {sf_id} missing email")
+
+    email = email.strip().lower()
+    name = f"{first_name} {last_name}".strip() or "Unknown"
+
+    # --------------------------------------------------
+    # 1️⃣ Match by Salesforce ID
+    # --------------------------------------------------
+    existing = session.query(Contact).filter(
         Contact.salesforce_id == sf_id,
         Contact.org_id == org_id,
         Contact.deleted_at.is_(None)
     ).first()
-    
-    if existing_contact:
-        print(f"✅ Found existing contact by SF ID: {existing_contact.contact_id}")
-        
-        # Update contact details from Salesforce
-        existing_contact.name = name
-        existing_contact.updated_at = datetime.now(timezone.utc)
-        
-        # Update metadata
-        if not existing_contact.meta_data:
-            existing_contact.meta_data = {}
-        
-        existing_contact.meta_data["salesforce_synced_at"] = datetime.now(timezone.utc).isoformat()
-        existing_contact.meta_data["salesforce_account_name"] = account_name
-        
-        # Update/add email
-        _sync_contact_email(existing_contact, email, org_id, session)
-        
+
+    if existing:
+        existing.name = name
+        existing.updated_at = datetime.now(timezone.utc)
+
+        existing.meta = existing.meta or {}
+        existing.meta["salesforce_synced_at"] = datetime.now(timezone.utc).isoformat()
+
+        _sync_contact_email(existing, email, org_id, session)
         session.flush()
-        return existing_contact
-    
-    # ============================================
-    # STEP 2: Try to find existing contact by email
-    # ============================================
-    email_record = session.query(ContactEmail).filter(
-        ContactEmail.email == email,
-        ContactEmail.org_id == org_id,
+        return existing
+
+    # --------------------------------------------------
+    # 2️⃣ Match by email
+    # --------------------------------------------------
+    email_rec = session.query(ContactEmail).filter(
+        ContactEmail.email_lower == email,
         ContactEmail.status == "active"
     ).first()
-    
-    if email_record:
-        existing_contact = session.query(Contact).filter(
-            Contact.contact_id == email_record.contact_id,
+
+    if email_rec:
+        existing = session.query(Contact).filter(
+            Contact.contact_id == email_rec.contact_id,
             Contact.org_id == org_id,
             Contact.deleted_at.is_(None)
         ).first()
-        
-        if existing_contact:
-            print(f"✅ Found existing contact by email: {existing_contact.contact_id}")
-            
-            # Link Salesforce ID to existing contact
-            existing_contact.salesforce_id = sf_id
-            existing_contact.name = name  # Update name from Salesforce
-            existing_contact.updated_at = datetime.now(timezone.utc)
-            
-            # Update metadata
-            if not existing_contact.meta_data:
-                existing_contact.meta_data = {}
-            
-            existing_contact.meta_data["salesforce_synced_at"] = datetime.now(timezone.utc).isoformat()
-            existing_contact.meta_data["salesforce_account_name"] = account_name
-            existing_contact.meta_data["salesforce_linked_at"] = datetime.now(timezone.utc).isoformat()
-            
+
+        if existing:
+            existing.salesforce_id = sf_id
+            existing.name = name
+            existing.updated_at = datetime.now(timezone.utc)
+
+            existing.meta = existing.meta or {}
+            existing.meta["salesforce_linked_at"] = datetime.now(timezone.utc).isoformat()
+
             session.flush()
-            return existing_contact
-    
-    # ============================================
-    # STEP 3: Create new contact
-    # ============================================
-    print(f"🆕 Creating new contact from Salesforce: {name}")
-    
+            return existing
+
+    # --------------------------------------------------
+    # 3️⃣ Create new contact
+    # --------------------------------------------------
     new_contact = Contact(
         contact_id=generate_id(),
         org_id=org_id,
         name=name,
-        contact_type=ContactType.person,
-        salesforce_id=sf_id,
+        contact_type=ContactType.email,
         primary_identifier=email,
+        salesforce_id=sf_id,
         status="active",
-        created_at=datetime.now(timezone.utc),
-        meta_data={
+        meta={
             "source": "salesforce",
             "salesforce_synced_at": datetime.now(timezone.utc).isoformat(),
-            "salesforce_account_name": account_name
-        }
+        },
     )
-    
+
     session.add(new_contact)
     session.flush()
-    
-    # Add email
-    contact_email = ContactEmail(
-        email_id=generate_id(),
-        contact_id=new_contact.contact_id,
-        org_id=org_id,
-        email=email,
-        email_type="work",
-        is_primary=True,
-        status="active"
+
+    session.add(
+        ContactEmail(
+            id=generate_id(),
+            contact_id=new_contact.contact_id,
+            email=email,
+            email_lower=email,
+            is_primary=True,
+            status="active",
+        )
     )
-    session.add(contact_email)
-    
+
     session.flush()
     return new_contact
 
 
-def _sync_contact_email(contact: Contact, email: str, org_id: str, session: Session):
-    """
-    Sync email address for existing contact
-    Updates if different, or adds if not present
-    """
-    
-    # Check if email already exists for this contact
-    existing_email = session.query(ContactEmail).filter(
+# ============================================================
+# EMAIL SYNC (FIXED)
+# ============================================================
+
+def _sync_contact_email(
+    contact: Contact,
+    email: str,
+    org_id: str,
+    session: Session
+):
+    email = email.lower()
+
+    existing = session.query(ContactEmail).filter(
         ContactEmail.contact_id == contact.contact_id,
-        ContactEmail.email == email,
+        ContactEmail.email_lower == email,
         ContactEmail.status == "active"
     ).first()
-    
-    if existing_email:
-        # Email already exists and is active
-        if not existing_email.is_primary:
-            # Make it primary if it's not
-            existing_email.is_primary = True
+
+    if existing:
+        if not existing.is_primary:
+            existing.is_primary = True
         return
-    
-    # Check if contact has a different primary email
+
+    # demote old primary if exists
     current_primary = session.query(ContactEmail).filter(
         ContactEmail.contact_id == contact.contact_id,
-        ContactEmail.is_primary == True,
+        ContactEmail.is_primary.is_(True),
         ContactEmail.status == "active"
     ).first()
-    
+
     if current_primary:
-        if current_primary.email != email:
-            # Salesforce email is different - demote old primary, add new one
-            print(f"   📧 Updating email: {current_primary.email} → {email}")
-            current_primary.is_primary = False
-            
-            # Add new email as primary
-            new_email = ContactEmail(
-                email_id=generate_id(),
-                contact_id=contact.contact_id,
-                org_id=org_id,
-                email=email,
-                email_type="work",
-                is_primary=True,
-                status="active"
-            )
-            session.add(new_email)
-    else:
-        # No primary email exists, add this one
-        new_email = ContactEmail(
-            email_id=generate_id(),
+        current_primary.is_primary = False
+
+    session.add(
+        ContactEmail(
+            id=generate_id(),
             contact_id=contact.contact_id,
-            org_id=org_id,
             email=email,
-            email_type="work",
+            email_lower=email,
             is_primary=True,
-            status="active"
+            status="active",
         )
-        session.add(new_email)
+    )
+
+
+# ============================================================
+# LIST SYNC (FIXED & COMPLETE)
+# ============================================================
+
+def sync_salesforce_list(
+    list_id: str,
+    org_id: str,
+    db: Session
+):
+    contact_list = db.query(ContactList).filter(
+        ContactList.list_id == list_id,
+        ContactList.org_id == org_id,
+        ContactList.deleted_at.is_(None)
+    ).first()
+
+    if not contact_list:
+        raise ValueError("List not found")
+
+    meta = contact_list.meta_data or {}
+
+    if meta.get("source") != "salesforce":
+        raise ValueError("This list is not Salesforce-synced")
+
+    sf_account_id = meta.get("salesforce_account_id")
+    if not sf_account_id:
+        raise ValueError("Missing Salesforce account ID")
+
+    # --------------------------------------------------
+    # 1️⃣ Fetch Salesforce contacts
+    # --------------------------------------------------
+    account_data = SalesforceService.get_account_with_contacts(sf_account_id)
+    sf_contacts = account_data.get("contacts", []) or []
+
+    synced_contact_ids: Set[str] = set()
+
+    # --------------------------------------------------
+    # 2️⃣ Sync contacts
+    # --------------------------------------------------
+    for sf_contact in sf_contacts:
+        try:
+            contact = sync_salesforce_contact_to_internal(
+                sf_contact, org_id, db
+            )
+            synced_contact_ids.add(contact.contact_id)
+        except Exception:
+            continue
+
+    # --------------------------------------------------
+    # 3️⃣ Existing list members
+    # --------------------------------------------------
+    existing_members = {
+        r[0]
+        for r in db.execute(
+            select(list_members.c.contact_id)
+            .where(list_members.c.list_id == list_id)
+        ).all()
+    }
+
+    # --------------------------------------------------
+    # 4️⃣ Add missing contacts
+    # --------------------------------------------------
+    to_add = synced_contact_ids - existing_members
+    for cid in to_add:
+        db.execute(
+            list_members.insert().values(
+                list_id=list_id,
+                contact_id=cid
+            )
+        )
+
+    # --------------------------------------------------
+    # 5️⃣ Update metadata
+    # --------------------------------------------------
+    meta["last_synced_at"] = datetime.now(timezone.utc).isoformat()
+    meta["last_sync_counts"] = {
+        "salesforce_contacts": len(sf_contacts),
+        "added": len(to_add),
+    }
+
+    contact_list.meta_data = meta
+    db.commit()
+
+    return {
+        "salesforce_contacts": len(sf_contacts),
+        "added_to_list": len(to_add),
+        "total_in_list": len(existing_members | synced_contact_ids),
+    }

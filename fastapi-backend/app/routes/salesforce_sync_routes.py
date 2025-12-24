@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from ..db import get_db
 from ..services.salesforce_service import SalesforceService
-from ..services.salesforce_contact_sync_service import sync_salesforce_contact_to_internal
+from ..services.salesforce_contact_sync_service import sync_salesforce_contact_to_internal,sync_salesforce_list
 from ..models.contact import ContactList, Contact, list_members
 from ..schemas.salesforce_campaign import (
     SalesforceSyncRequest,
@@ -329,39 +329,62 @@ def sync_salesforce_account_as_list(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    """
-    Sync a Salesforce Account as a Contact List
-    - List name = Salesforce Account name
-    - Syncs all contacts under that account
-    """
+    print("===================================================")
+    print("🚀 START: sync_salesforce_account_as_list")
+    print(f"📥 Incoming request: {request}")
     
     org_id = current_user.get("org_id")
-    print(f"🔄 Syncing Salesforce Account {request.account_id} as Contact List for org {org_id}")
-    # Fetch Salesforce account and contacts
+    user_id = current_user.get("user_id")
+    print(f"👤 Current user_id={user_id}, org_id={org_id}")
+    print(f"🏢 Salesforce account_id={request.account_id}")
+
+    # --------------------------------------------------
+    # FETCH SALESFORCE ACCOUNT + CONTACTS
+    # --------------------------------------------------
     try:
+        print("🔄 Fetching Salesforce account with contacts...")
         account_data = SalesforceService.get_account_with_contacts(request.account_id)
+        print(f"📦 Raw Salesforce response: {account_data}")
+
         account = account_data.get("account", {})
         sf_contacts = account_data.get("contacts", [])
+
+        print(f"✅ Account data extracted: {account}")
+        print(f"👥 Contacts found in Salesforce: {len(sf_contacts)}")
+
     except Exception as e:
+        print("❌ ERROR fetching Salesforce account")
+        print(str(e))
         raise HTTPException(
             status_code=500,
             detail=f"Failed to fetch Salesforce account: {str(e)}"
         )
-    
+
     account_name = account.get("name", "Unknown Account")
-    
-    # Check if list already exists
+    print(f"📛 Account name resolved: {account_name}")
+
+    # --------------------------------------------------
+    # CHECK EXISTING LIST
+    # --------------------------------------------------
+    print("🔍 Checking if contact list already exists...")
     existing_lists = db.query(ContactList).filter(
         ContactList.org_id == org_id,
         ContactList.list_name == account_name
     ).all()
-    
+
+    print(f"📋 Existing lists with same name: {len(existing_lists)}")
+
     contact_list = None
     for lst in existing_lists:
+        print(f"➡️ Checking list_id={lst.list_id}, meta_data={lst.meta_data}")
         if lst.meta_data and lst.meta_data.get("salesforce_account_id") == request.account_id:
             contact_list = lst
+            print(f"✅ Matched existing Salesforce list: {lst.list_id}")
             break
-    
+
+    # --------------------------------------------------
+    # PREPARE METADATA
+    # --------------------------------------------------
     list_metadata = {
         "salesforce_account_id": request.account_id,
         "salesforce_account_type": account.get("type"),
@@ -370,8 +393,14 @@ def sync_salesforce_account_as_list(
         "source": "salesforce",
         "last_synced_at": datetime.now(timezone.utc).isoformat()
     }
-    
+
+    print(f"🧾 Prepared list meta_data: {list_metadata}")
+
+    # --------------------------------------------------
+    # CREATE OR UPDATE LIST
+    # --------------------------------------------------
     if not contact_list:
+        print("➕ Creating new contact list...")
         contact_list = ContactList(
             list_id=generate_id(),
             org_id=org_id,
@@ -381,36 +410,51 @@ def sync_salesforce_account_as_list(
         )
         db.add(contact_list)
         db.flush()
-        print(f"✅ Created list '{account_name}'")
+
+        print(f"✅ Created list_id={contact_list.list_id}")
         was_created = True
     else:
+        print(f"✏️ Updating existing list_id={contact_list.list_id}")
         contact_list.meta_data = list_metadata
         db.flush()
-        print(f"✅ Updating list '{account_name}'")
         was_created = False
-    
-    # Sync contacts
+
+    # --------------------------------------------------
+    # SYNC CONTACTS
+    # --------------------------------------------------
     synced_contact_ids = []
     failed_count = 0
-    
-    for sf_contact in sf_contacts:
+
+    print("🔁 Syncing Salesforce contacts to internal DB...")
+
+    for idx, sf_contact in enumerate(sf_contacts, start=1):
+        print(f"➡️ [{idx}/{len(sf_contacts)}] Processing SF contact: {sf_contact}")
+
         email = sf_contact.get("email") or sf_contact.get("Email")
-        
         if not email:
+            print("⚠️ Skipping contact (missing email)")
             failed_count += 1
             continue
-        
+
         try:
             contact = sync_salesforce_contact_to_internal(sf_contact, org_id, db)
             synced_contact_ids.append(contact.contact_id)
+            print(f"✅ Synced contact_id={contact.contact_id}")
         except Exception as e:
-            print(f"Warning: Failed to sync contact {sf_contact.get('id')}: {e}")
+            print(f"❌ Failed to sync SF contact {sf_contact.get('id')}: {e}")
             failed_count += 1
-    
-    # Add contacts to list
+
+    print(f"📊 Contacts synced successfully: {len(synced_contact_ids)}")
+    print(f"📊 Contacts failed: {failed_count}")
+
+    # --------------------------------------------------
+    # ADD CONTACTS TO LIST
+    # --------------------------------------------------
     added_count = 0
     existing_count = 0
-    
+
+    print("📎 Adding contacts to list_members table...")
+
     for contact_id in synced_contact_ids:
         existing = db.execute(
             select(list_members).where(
@@ -418,7 +462,7 @@ def sync_salesforce_account_as_list(
                 (list_members.c.contact_id == contact_id)
             )
         ).first()
-        
+
         if not existing:
             db.execute(
                 list_members.insert().values(
@@ -427,15 +471,26 @@ def sync_salesforce_account_as_list(
                 )
             )
             added_count += 1
+            print(f"➕ Added contact_id={contact_id} to list")
         else:
             existing_count += 1
-    
+            print(f"⏭️ Contact already in list: {contact_id}")
+
+    # --------------------------------------------------
+    # COMMIT
+    # --------------------------------------------------
+    print("💾 Committing transaction...")
     db.commit()
-    
+
     total_in_list = db.execute(
         select(list_members).where(list_members.c.list_id == contact_list.list_id)
     ).rowcount
-    
+
+    print("✅ TRANSACTION COMMITTED")
+    print(f"📦 Total contacts in list now: {total_in_list}")
+    print("🏁 END: sync_salesforce_account_as_list")
+    print("===================================================")
+
     return {
         "success": True,
         "list_id": contact_list.list_id,
@@ -524,3 +579,21 @@ def list_salesforce_accounts(
             status_code=500,
             detail=f"Failed to fetch Salesforce accounts: {str(e)}"
         )
+@router.post("/lists/{list_id}/sync-salesforce")
+def resync_salesforce_list(
+    list_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    org_id = current_user["org_id"]
+
+    try:
+        result = sync_salesforce_list(list_id, org_id, db)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    return {
+        "success": True,
+        "list_id": list_id,
+        "sync_result": result
+    }

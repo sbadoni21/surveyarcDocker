@@ -163,6 +163,118 @@ async def send_to_mail_relay(kind: str, payload: dict) -> dict:
         raise Exception(error_msg) from e
 
 
+def update_b2b_result_sent(
+    session: Session,
+    result_id: str,
+    sent_at: datetime,
+    message_id: Optional[str] = None
+):
+    """Update B2B CampaignResult to DELIVERED"""
+    try:
+        result = session.query(CampaignResult).filter(
+            CampaignResult.result_id == result_id
+        ).with_for_update().first()
+        
+        if not result:
+            logger.warning(f"⚠️  CampaignResult {result_id} not found")
+            return
+        
+        if result.status == RecipientStatus.delivered:
+            logger.debug(f"ℹ️  Result {result_id} already delivered")
+            return
+        
+        result.status = RecipientStatus.delivered
+        result.sent_at = sent_at
+        result.delivered_at = sent_at
+        
+        if message_id:
+            result.message_id = message_id
+        
+        logger.debug(f"✅ B2B Result {result_id} → delivered")
+        
+        # Update campaign stats
+        campaign = session.query(Campaign).filter(
+            Campaign.campaign_id == result.campaign_id
+        ).with_for_update().first()
+        
+        if campaign:
+            campaign.sent_count = (campaign.sent_count or 0) + 1
+            campaign.delivered_count = (campaign.delivered_count or 0) + 1
+            
+            if not campaign.channel_stats:
+                campaign.channel_stats = {}
+            
+            channel_key = result.channel_used.value
+            
+            if channel_key not in campaign.channel_stats:
+                campaign.channel_stats[channel_key] = {
+                    "sent": 0, "delivered": 0, "opened": 0,
+                    "clicked": 0, "bounced": 0, "failed": 0
+                }
+            
+            campaign.channel_stats[channel_key]["sent"] += 1
+            campaign.channel_stats[channel_key]["delivered"] += 1
+            flag_modified(campaign, "channel_stats")
+        
+        session.flush()
+        
+    except Exception as e:
+        logger.error(f"❌ Error updating B2B result {result_id}: {e}", exc_info=True)
+
+
+def update_b2b_result_failed(
+    session: Session,
+    result_id: str,
+    error_message: str
+):
+    """Update B2B CampaignResult when message fails"""
+    try:
+        result = session.query(CampaignResult).filter(
+            CampaignResult.result_id == result_id
+        ).with_for_update().first()
+        
+        if not result:
+            logger.warning(f"⚠️  CampaignResult {result_id} not found")
+            return
+        
+        if result.status == RecipientStatus.failed:
+            logger.debug(f"ℹ️  Result {result_id} already failed")
+            return
+        
+        result.status = RecipientStatus.failed
+        result.error = error_message[:500]
+        result.failed_at = datetime.now(UTC)
+        result.retry_count = 1
+        
+        logger.debug(f"❌ B2B Result {result_id} → failed")
+        
+        # Update campaign stats
+        campaign = session.query(Campaign).filter(
+            Campaign.campaign_id == result.campaign_id
+        ).with_for_update().first()
+        
+        if campaign:
+            campaign.failed_count = (campaign.failed_count or 0) + 1
+            
+            if not campaign.channel_stats:
+                campaign.channel_stats = {}
+            
+            channel_key = result.channel_used.value
+            
+            if channel_key not in campaign.channel_stats:
+                campaign.channel_stats[channel_key] = {
+                    "sent": 0, "delivered": 0, "opened": 0,
+                    "clicked": 0, "bounced": 0, "failed": 0
+                }
+            
+            campaign.channel_stats[channel_key]["failed"] += 1
+            flag_modified(campaign, "channel_stats")
+        
+        session.flush()
+        
+    except Exception as e:
+        logger.error(f"❌ Error updating failed result {result_id}: {e}", exc_info=True)
+
 # ============================================
 # CAMPAIGN RESULT UPDATES
 # ============================================
