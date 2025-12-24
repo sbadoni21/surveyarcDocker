@@ -53,11 +53,14 @@ import SequentialMonadicConfig from "./QuestionsConfigComponents/SequentialMonad
 import ForcedExposureConfig from "./QuestionsConfigComponents/ForcedExposureConfig";
 import YesNoConfig from "./QuestionsConfigComponents/YesNoConfig";
 import AutoSumConfig from "./QuestionsConfigComponents/AutoSumConf";
+import LogicEditor from "./QuestionLogicEditor";
 
 export default function QuestionConfigForm({
   type,
   config = {},
   updateConfig,
+  questions,
+  currentQuestion,
 }) {
   const componentsMap = {
     [QUESTION_TYPES.CONTACT_EMAIL]: (
@@ -246,28 +249,38 @@ export default function QuestionConfigForm({
   const Specific = componentsMap[type] || <DefaultConfig />;
 
   return (
-    <div className="space-y-4 p-3">
-      {/* Global required toggle for ALL question types */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <input
-            id="q_required"
-            type="checkbox"
-            checked={Boolean(config?.required)}
-            onChange={(e) => updateConfig("required", e.target.checked)}
-            className="h-4 w-4"
-          />
-          <label htmlFor="q_required" className="text-sm dark:text-[#96949C]">
-            Required question
-          </label>
-        </div>
-
-        <div className="text-xs text-gray-400">
-          Prevents next/submit until answered
-        </div>
+  <div className="space-y-4 p-3">
+    {/* Global required toggle */}
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <input
+          id="q_required"
+          type="checkbox"
+          checked={Boolean(config?.required)}
+          onChange={(e) => updateConfig("required", e.target.checked)}
+          className="h-4 w-4"
+        />
+        <label htmlFor="q_required" className="text-sm dark:text-[#96949C]">
+          Required question
+        </label>
       </div>
 
-      <div>{Specific}</div>
+      <div className="text-xs text-gray-400">
+        Prevents next/submit until answered
+      </div>
     </div>
-  );
+
+    {/* Question-specific config */}
+    <div>{Specific}</div>
+
+    {/* 🧠 LOGIC EDITOR (COMMON FOR ALL TYPES) */}
+    <LogicEditor
+      currentQuestion={currentQuestion}
+      logic={config.logic || []}
+      questions={questions}
+      updateLogic={(rules) => updateConfig("logic", rules)}
+    />
+  </div>
+);
+
 }

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 from fastapi import UploadFile, File, Form
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm.attributes import flag_modified
 from io import BytesIO
 from ..services.question_label_service import generate_next_serial_label
 import re
@@ -315,7 +316,9 @@ def update_question(
     for k, v in updates.items():
         setattr(q, k, v)
 
-
+    if "logic" in updates:
+        flag_modified(q, "logic")
+        
     q.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(q)

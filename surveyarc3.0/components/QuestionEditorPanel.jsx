@@ -21,6 +21,7 @@ export default function QuestionEdritorPanel({
   onSaved,
   surveyId,
   orgId,
+  questions,
 }) {
   const [editableQuestion, setEditableQuestion] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -296,6 +297,8 @@ export default function QuestionEdritorPanel({
                 surveyId={surveyId}
                 orgId={orgId}
                 questionId={editableQuestion?.questionId}
+                questions={questions}
+                currentQuestion={editableQuestion}
               />
             </div>
 
@@ -363,6 +366,8 @@ export default function QuestionEdritorPanel({
                 surveyId={surveyId}
                 orgId={orgId}
                 questionId={newQuestionData?.questionId}
+                questions={questions}
+                currentQuestion={newQuestionData}
               />
             </div>
 

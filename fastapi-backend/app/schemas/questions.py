@@ -75,3 +75,22 @@ class CSVUploadResponse(BaseModel):
     total_updates: int = 0
     details: list[dict] = []
     error: Optional[str] = None
+
+
+class LogicCondition(BaseModel):
+    question: str           # serial_label or question_id
+    question_serial_label: str           # serial_label or question_id
+    operator: str
+    value: Optional[Any] = None
+
+
+class LogicAction(BaseModel):
+    action: str
+    target: Optional[str] = None
+    options: Optional[List[str]] = None
+
+
+class LogicRule(BaseModel):
+    id: str
+    if_: LogicCondition = Field(..., alias="if")
+    then: LogicAction

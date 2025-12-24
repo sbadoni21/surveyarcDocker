@@ -6,6 +6,8 @@ import RenderQuestion from "./AnswerUI";
 import RuleEngine from "./RulesEngine";
 import TicketModel from "@/models/ticketModel";
 import SLAModel from "@/models/slaModel";
+import { evaluateQuestionLogic } from "./QuestionLogicEngine";
+
 
 export default function SurveyForm({
   questions = [],
@@ -81,6 +83,60 @@ export default function SurveyForm({
     setCurrentPageIndex(0);
     setJumpToQuestion(null);
   }, [blocks, questions]);
+
+  useEffect(() => {
+  if (!questions.length) return;
+
+  const { hiddenOptionsMap, pipedUpdates } =
+    evaluateQuestionLogic({
+      questions,
+      answers,
+    });
+
+  setBlocksWithQuestions((prev) =>
+    prev.map((block) => ({
+      ...block,
+      questions: block.questions.map((q) => {
+        let updated = q;
+
+        // 🔹 APPLY HIDDEN OPTIONS
+        if (hiddenOptionsMap[q.serial_label]) {
+          const hidden = hiddenOptionsMap[q.serial_label];
+          const opts = q.config?.options || [];
+          updated = {
+            ...updated,
+            config: {
+              ...q.config,
+              options: opts.filter(
+                (o) => !hidden.has(o.serial_label)
+              ),
+            },
+          };
+        }
+
+        // 🔹 APPLY PIPE ANSWERS
+        pipedUpdates.forEach((p) => {
+          if (p.targetSerial !== q.serial_label) return;
+
+          if (p.field === "label") {
+            updated = { ...updated, label: p.value };
+          } else if (p.field === "description") {
+            updated = { ...updated, description: p.value };
+          } else if (p.field.startsWith("config.")) {
+            const key = p.field.replace("config.", "");
+            updated = {
+              ...updated,
+              config: { ...updated.config, [key]: p.value },
+            };
+          }
+        });
+
+        return updated;
+      }),
+    }))
+  );
+}, [answers, questions]);
+
 
   const currentBlock = blocksWithQuestions[currentBlockIndex];
 

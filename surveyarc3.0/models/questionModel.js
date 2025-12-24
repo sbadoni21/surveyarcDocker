@@ -93,7 +93,7 @@ const QuestionModel = {
     //   payload.serial_label = data.serial_label.trim();
     // }
 
-    console.log("target",payload);
+    console.log("target", payload);
 
     const res = await fetch(`${BASE}`, {
       method: "POST",
@@ -131,6 +131,21 @@ const QuestionModel = {
       cache: "no-store",
     });
     return toCamel(await json(res));
+  },
+
+  async updateLogic(questionId, logic) {
+    const res = await fetch(`${BASE}/${questionId}`, {
+      method: "PATCH",
+      headers: headersWithUser(),
+      body: JSON.stringify({
+        logic,
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error("Failed to update logic");
+    }
+    return await res.json();
   },
 
   async delete(orgId, surveyId, questionId) {

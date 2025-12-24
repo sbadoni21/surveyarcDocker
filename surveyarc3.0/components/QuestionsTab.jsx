@@ -177,6 +177,7 @@ const QuestionsTab = ({
         onSaved={onChildSaved}
         surveyId={surveyId}
         orgId={orgId}
+        questions={questions}
       />
     </div>
   );
