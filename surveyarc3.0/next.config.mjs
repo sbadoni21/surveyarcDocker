@@ -8,7 +8,16 @@ const nextConfig = {
 
   // ✅ REQUIRED for AWS Amplify SSR
   output: "standalone",
-
+  
+  async redirects() {
+    return [
+      {
+        source: '/',
+        destination: '/en',
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     return [
       {
