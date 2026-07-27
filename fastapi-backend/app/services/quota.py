@@ -2,15 +2,189 @@
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
+import uuid
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.models.quota import SurveyQuota, SurveyQuotaCell
+from app.models.questions import Question
 from app.schemas.quota import QuotaUpdate
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_uuid_or_none(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    try:
+        return str(uuid.UUID(str(value)))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _normalize_scalar(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.strip()
+    return value
+
+
+def _compare_values(actual: Any, operator: str, expected: Any) -> bool:
+    op = (operator or "eq").strip().lower()
+
+    if op in {"exists"}:
+        return actual is not None
+    if op in {"not_exists", "missing"}:
+        return actual is None
+    if op == "empty":
+        return actual in (None, "", [], {})
+    if op == "not_empty":
+        return actual not in (None, "", [], {})
+
+    actual = _normalize_scalar(actual)
+    expected = _normalize_scalar(expected)
+
+    if op in {"eq", "equals", "=="}:
+        if isinstance(actual, list):
+            return expected in actual
+        return actual == expected
+    if op in {"neq", "!=", "not_equals"}:
+        if isinstance(actual, list):
+            return expected not in actual
+        return actual != expected
+    if op == "in":
+        if not isinstance(expected, list):
+            expected = [expected]
+        if isinstance(actual, list):
+            return any(item in expected for item in actual)
+        return actual in expected
+    if op == "not_in":
+        if not isinstance(expected, list):
+            expected = [expected]
+        if isinstance(actual, list):
+            return all(item not in expected for item in actual)
+        return actual not in expected
+    if op == "contains":
+        if isinstance(actual, list):
+            return expected in actual
+        if isinstance(actual, dict):
+            return expected in actual.values() or expected in actual.keys()
+        if isinstance(actual, str):
+            return str(expected) in actual
+        return False
+    if op == "not_contains":
+        return not _compare_values(actual, "contains", expected)
+
+    try:
+        actual_num = float(actual)
+        expected_num = float(expected)
+    except (TypeError, ValueError):
+        actual_num = expected_num = None
+
+    if op in {"gt", "greater", ">"} and actual_num is not None and expected_num is not None:
+        return actual_num > expected_num
+    if op in {"gte", "greater_or_equal", ">="} and actual_num is not None and expected_num is not None:
+        return actual_num >= expected_num
+    if op in {"lt", "less", "<"} and actual_num is not None and expected_num is not None:
+        return actual_num < expected_num
+    if op in {"lte", "less_or_equal", "<="} and actual_num is not None and expected_num is not None:
+        return actual_num <= expected_num
+
+    return False
+
+
+def _matches_condition(condition: Any, facts: Dict[str, Any]) -> bool:
+    if condition in (None, "", {}):
+        return True
+
+    if isinstance(condition, list):
+        return all(_matches_condition(item, facts) for item in condition)
+
+    if not isinstance(condition, dict):
+        return False
+
+    if "all" in condition:
+        rules = condition.get("all") or []
+        return all(_matches_condition(rule, facts) for rule in rules)
+    if "any" in condition:
+        rules = condition.get("any") or []
+        return any(_matches_condition(rule, facts) for rule in rules)
+    if "not" in condition:
+        return not _matches_condition(condition.get("not"), facts)
+
+    if "field" in condition or "question_id" in condition or "questionId" in condition:
+        field = (
+            condition.get("field")
+            or condition.get("question_id")
+            or condition.get("questionId")
+        )
+        operator = condition.get("operator", "eq")
+        expected = condition.get("value")
+        actual = facts.get(field)
+        return _compare_values(actual, operator, expected)
+
+    for field, expected in condition.items():
+        actual = facts.get(field)
+        if isinstance(expected, dict):
+            if "operator" in expected or "value" in expected:
+                operator = expected.get("operator", "eq")
+                value = expected.get("value")
+                if not _compare_values(actual, operator, value):
+                    return False
+            else:
+                if not _matches_condition(expected, actual if isinstance(actual, dict) else facts):
+                    return False
+        else:
+            if not _compare_values(actual, "eq", expected):
+                return False
+    return True
+
+
+def _matches_target_option(cell: SurveyQuotaCell, quota: SurveyQuota, facts: Dict[str, Any]) -> bool:
+    if not cell.target_option_id:
+        return True
+    if not quota.question_id:
+        return False
+    actual = facts.get(quota.question_id)
+    return _compare_values(actual, "contains", cell.target_option_id)
+
+
+def _should_block(count: int, cap: int, stop_condition: Optional[str]) -> bool:
+    operator = (stop_condition or "greater_or_equal").strip().lower()
+    if operator == "greater":
+        return count > cap
+    if operator == "equal":
+        return count == cap
+    if operator == "less":
+        return count < cap
+    return count >= cap
+
+
+def _validate_question_scope(
+    db: Session,
+    org_id: str,
+    survey_id: str,
+    question_id: Optional[str],
+) -> Optional[Question]:
+    if not question_id:
+        return None
+
+    question = (
+        db.query(Question)
+        .filter(
+            Question.question_id == question_id,
+            Question.org_id == org_id,
+            Question.survey_id == survey_id,
+        )
+        .first()
+    )
+    if not question:
+        raise HTTPException(
+            status_code=422,
+            detail="question_id does not belong to the provided org_id and survey_id",
+        )
+    return question
 
 
 # ---------- CREATE ----------
@@ -33,9 +207,10 @@ def create_quota(db: Session, payload: Any) -> SurveyQuota:
         raise HTTPException(status_code=422, detail="name is required")
 
     question_id = getattr(payload, "question_id", None)
+    _validate_question_scope(db, org_id, survey_id, question_id)
     quota_type = getattr(payload, "quota_type", "hard")
     is_enabled = bool(getattr(payload, "is_enabled", True))
-    stop_condition = getattr(payload, "stop_condition", "greater")
+    stop_condition = getattr(payload, "stop_condition", "greater_or_equal")
     when_met = getattr(payload, "when_met", "close_survey")
     description = getattr(payload, "description", "") or ""
 
@@ -139,14 +314,21 @@ def list_quotas_by_survey(db: Session, survey_id: str) -> List[SurveyQuota]:
 def evaluate_quota(
     db: Session, quota_id: UUID, facts: Dict
 ) -> Tuple[SurveyQuota, List[SurveyQuotaCell]]:
-    """
-    For now: just returns quota + cells. You can plug your own matching logic.
-    """
     quota = fetch_quota_with_cells(db, quota_id)
     if not quota:
         raise HTTPException(status_code=404, detail="Quota not found")
 
-    return quota, list(quota.cells or [])
+    matched_cells: List[SurveyQuotaCell] = []
+    for cell in quota.cells or []:
+        if not cell.is_enabled:
+            continue
+        if not _matches_target_option(cell, quota, facts or {}):
+            continue
+        if not _matches_condition(cell.condition or {}, facts or {}):
+            continue
+        matched_cells.append(cell)
+
+    return quota, matched_cells
 
 
 # ---------- INCREMENT ----------
@@ -213,6 +395,8 @@ def update_quota(
     if not quota:
         return None
 
+    _validate_question_scope(db, data.org_id, data.survey_id, data.question_id)
+
     # --- update scalar fields ---
     quota.org_id = data.org_id
     quota.survey_id = data.survey_id
@@ -233,13 +417,17 @@ def update_quota(
     db.query(SurveyQuotaCell).filter(SurveyQuotaCell.quota_id == quota.id).delete()
     db.flush()
 
+    existing_cells = {cell.id: cell for cell in quota.cells or []}
     new_cells: List[SurveyQuotaCell] = []
     for cell_data in data.cells:
+        preserved_count = 0
+        if getattr(cell_data, "id", None) in existing_cells:
+            preserved_count = existing_cells[cell_data.id].count
         cell = SurveyQuotaCell(
             quota_id=quota.id,
             label=cell_data.label,
             cap=cell_data.cap,
-            count=0,  # reset count on update; adjust if you need to keep old counts
+            count=preserved_count,
             condition=cell_data.condition or {},
             is_enabled=bool(cell_data.is_enabled),
             target_option_id=cell_data.target_option_id,

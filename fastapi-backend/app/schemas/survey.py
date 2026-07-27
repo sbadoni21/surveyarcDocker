@@ -1,22 +1,22 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
+
 
 class SurveyBase(BaseModel):
     org_id: str
     project_id: str
-    name: str = None
-    created_by: str = None
-    updated_by: str = None
-    theme_id: str = None
+    name: str
+    created_by: str
+    updated_by: Optional[str] = None
+    theme_id: Optional[str] = None
     time: Optional[str] = None
-    settings: Optional[Dict[str, Any]] = {"anonymous": False}
-    question_order: Optional[List[str]] =  None
-    meta_data: Optional[Dict[str, Any]] = None
+    settings: Dict[str, Any] = Field(default_factory=lambda: {"anonymous": False})
+    question_order: List[str] = Field(default_factory=list)
+    meta_data: Dict[str, Any] = Field(default_factory=dict)
 
-    # 🔹 NEW (make them optional in base so Out can inherit)
-    blocks: Optional[List[Dict[str, Any]]] = None
-    block_order: Optional[List[str]] = None
+    blocks: List[Dict[str, Any]] = Field(default_factory=list)
+    block_order: List[str] = Field(default_factory=list)
 
 class SurveyCreate(SurveyBase):
     survey_id: Optional[str] = None
@@ -43,12 +43,6 @@ class SurveyOut(SurveyBase):
     status: str
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    theme_id: Optional[str]  = None
+    theme_id: Optional[str] = None
 
-
-    class Config:
-        orm_mode = True
-    blocks: List[Dict[str, Any]] = None
-    block_order: List[str] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)

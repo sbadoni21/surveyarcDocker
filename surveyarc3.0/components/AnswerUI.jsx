@@ -26,6 +26,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { ContactEmailInput } from "@/utils/question-render/ContactEmailInput";
 
 function SortableItem({ id }) {
   const { attributes, listeners, setNodeRef, transform, transition } =
@@ -144,7 +145,12 @@ const pickWeighted = (items) => {
 
   switch (questionType) {
     case QUESTION_TYPES.CONTACT_EMAIL:
-    case QUESTION_TYPES.CONTACT_WEBSITE:
+ return ContactEmailInput({
+    value,
+    onChange,
+    config,
+    inputClasses,
+  });    case QUESTION_TYPES.CONTACT_WEBSITE:
       return (
         <input
           type="email"

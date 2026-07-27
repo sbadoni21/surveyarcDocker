@@ -29,7 +29,7 @@ class DummyBotConfig:
     max_steps_per_respondent: int = 80
     headless: bool = True
     debug: bool = False
-    screenshot_on_error: bool = True
+    screenshot_on_error: bool = False
     response_timeout: int = 15000  # ms to wait for response POST
     thank_you_snippets: List[str] = field(
         default_factory=lambda: [
@@ -549,4 +549,3 @@ async def generate_dummy_responses(cfg: DummyBotConfig) -> dict:
     print("[BOT] ==========================================\n")
 
     return summary
-

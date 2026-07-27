@@ -5,9 +5,7 @@ import ProjectsList from "@/components/ProjectList";
 import ProjectForm from "@/components/ProjectForm";
 import { useProject } from "@/providers/postGresPorviders/projectProvider";
 import { getCookie } from "cookies-next";
-import { IoSearch } from "react-icons/io5";
 import { FaSpinner } from "react-icons/fa";
-import { FiPlus } from "react-icons/fi";
 
 export default function ProjectPage() {
   const {
@@ -16,8 +14,10 @@ export default function ProjectPage() {
     deleteProject,
     projects,
     updateProject,
+    addMember,
+    updateMember,
+    removeMember,
   } = useProject();
-
   const [project, setProject] = useState(null);
   const [editProject, setEditProject] = useState(null);
   const [orgId, setOrgId] = useState(null);
@@ -33,40 +33,9 @@ export default function ProjectPage() {
 
   // Filter projects by user access and search query
   const filteredProjects = projects?.filter((project) => {
-    // Apply search filter first
-    const matchesSearch = project.name?.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    // Check multiple role variations for owner/admin
-    const isOwnerOrAdmin = 
-      userRole === "owner" || 
-      userRole === "admin" || 
-      userRole === "Owner" ||
-      userRole === "Admin" ||
-      isOrgOwner ||
-      getCookie("isOwner") === "true" ||
-      getCookie("isAdmin") === "true";
-    
-    // Owners and admins see all projects (only filtered by search)
-    if (isOwnerOrAdmin) {
-      return matchesSearch;
-    }
-
-    // For regular users, check if they have access to this project
-    const hasAccess = 
-      project.ownerUID === ownerUID || // User is the project owner
-      project.members?.some(m => {
-        const memberId = m?.uid || m?.user_id || m?.id || m;
-        return memberId === ownerUID;
-      }) || // User is in members array (checking different ID formats)
-      project.teamMembers?.some(member => {
-        const memberId = member?.uid || member?.user_id || member?.userId || member?.id;
-        return memberId === ownerUID;
-      }) || // User is in teamMembers
-      project.assignedUsers?.includes(ownerUID); // User is in assignedUsers
-
-    return hasAccess && matchesSearch;
+    if (!searchQuery) return true;
+    return project.name?.toLowerCase().includes(searchQuery.toLowerCase());
   });
-
   useEffect(() => {
     setLoading(true);
 
@@ -78,19 +47,13 @@ export default function ProjectPage() {
       const role = getCookie("userRole") || getCookie("role");
       setUserRole(role);
       setIsOrgOwner(getCookie("isOwner") === "true" || getCookie("isOrgOwner") === "true");
-      
-      // Debug: Log the role information
-      console.log("User Role:", role);
-      console.log("Is Owner:", getCookie("isOwner"));
-      console.log("Is Admin:", getCookie("isAdmin"));
-      console.log("All cookies:", document.cookie);
     }
   }, []);
 
   useEffect(() => {
     if (!orgId) return;
     setLoading(true);
-    getAllProjects(orgId)
+    getAllProjects()
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [orgId]);
@@ -134,12 +97,36 @@ export default function ProjectPage() {
       return;
     }
 
+    const {
+      members = [],
+      ...directoryFields
+    } = formData;
+
     try {
       if (editProject) {
-        await updateProject(editProject.id, formData);
+        await updateProject(editProject.projectId, directoryFields);
+        await syncProjectMembers(
+          editProject.projectId,
+          editProject.members || [],
+          members,
+          editProject.owner_uid || editProject.ownerUID || ownerUID,
+          { addMember, updateMember, removeMember }
+        );
       } else {
         const projectId = "proj_" + Math.random().toString(36).substring(2, 10);
-        await createProject({ ...formData, orgId, ownerUID, projectId });
+        await createProject({
+          ...directoryFields,
+          orgId,
+          ownerUID,
+          projectId,
+        });
+        await syncProjectMembers(
+          projectId,
+          [],
+          members,
+          ownerUID,
+          { addMember, updateMember, removeMember }
+        );
       }
 
       setToggle(false);
@@ -190,4 +177,45 @@ export default function ProjectPage() {
       </section>
     </div>
   );
+}
+
+async function syncProjectMembers(projectId, existingMembers, desiredMembers, ownerUid, actions) {
+  const existingMap = new Map(
+    (existingMembers || [])
+      .filter((member) => member?.uid && member.uid !== ownerUid)
+      .map((member) => [member.uid, member])
+  );
+  const desiredMap = new Map(
+    (desiredMembers || [])
+      .filter((member) => member?.uid && member.uid !== ownerUid)
+      .map((member) => [member.uid, member])
+  );
+
+  for (const [uid, desired] of desiredMap.entries()) {
+    const existing = existingMap.get(uid);
+    if (!existing) {
+      await actions.addMember(projectId, {
+        uid,
+        role: desired.role || "contributor",
+        status: desired.status || "active",
+      });
+      continue;
+    }
+
+    if (
+      existing.role !== desired.role ||
+      (existing.status || "active") !== (desired.status || "active")
+    ) {
+      await actions.updateMember(projectId, uid, {
+        role: desired.role || "contributor",
+        status: desired.status || "active",
+      });
+    }
+  }
+
+  for (const [uid] of existingMap.entries()) {
+    if (!desiredMap.has(uid)) {
+      await actions.removeMember(projectId, uid);
+    }
+  }
 }

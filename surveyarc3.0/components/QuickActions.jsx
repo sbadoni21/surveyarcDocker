@@ -33,17 +33,41 @@ export const QuickActions = ({ survey, loading, handleToggleStatus, orgId, proje
     ? Math.round((generationProgress.completed / generationProgress.total) * 100)
     : 0;
 
+  const normalizedStatus = String(survey?.status || "draft").toLowerCase();
+  const statusConfig = {
+    draft: {
+      label: "Draft",
+      badge: "bg-amber-100 text-amber-800",
+      toggleLabel: "Change Status to Test",
+    },
+    test: {
+      label: "Test",
+      badge: "bg-yellow-100 text-yellow-800",
+      toggleLabel: "Change Status to Published",
+    },
+    published: {
+      label: "Published",
+      badge: "bg-green-100 text-green-800",
+      toggleLabel: "Change Status to Test",
+    },
+    archived: {
+      label: "Archived",
+      badge: "bg-gray-200 text-gray-700",
+      toggleLabel: "Change Status to Test",
+    },
+  }[normalizedStatus] || {
+    label: normalizedStatus || "Draft",
+    badge: "bg-slate-100 text-slate-800",
+    toggleLabel: "Change Status to Test",
+  };
+
   return (
     <div className="w-full border border-gray-300 rounded-lg bg-white shadow-sm">
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
           <span className="text-sm font-medium text-gray-700">Status:</span>
-          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-            survey?.status === "test" 
-              ? "bg-yellow-100 text-yellow-800" 
-              : "bg-green-100 text-green-800"
-          }`}>
-            {survey?.status === "test" ? "Test" : "Live"}
+          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusConfig.badge}`}>
+            {statusConfig.label}
           </span>
 
           {/* Generation Progress Indicator */}
@@ -79,9 +103,7 @@ export const QuickActions = ({ survey, loading, handleToggleStatus, orgId, proje
                     disabled={loading}
                     className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {survey?.status === "test"
-                      ? "Change Status to Published"
-                      : "Change Status to Test"}
+                    {statusConfig.toggleLabel}
                   </button>
                   
                   <DummyGeneratorPanel

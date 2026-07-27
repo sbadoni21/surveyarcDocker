@@ -1,69 +1,40 @@
-from pydantic import BaseModel, Field, EmailStr, field_validator, ConfigDict
-from typing import List, Optional, Annotated
+# app/schemas/user.py - CLEAN VERSION (No role field)
+
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic.types import StringConstraints
-from ..models.user import OrgRole
 
 class UserBase(BaseModel):
-    email: str
-    display_name: str 
-    role: OrgRole = OrgRole.member
-    org_ids: List[str]
-
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
-
-
-class UserCreate(UserBase):
-    uid: str
-    status: str = "active"
-    meta_data: dict = {}
-
-
-class UserUpdate(BaseModel):
-    display_name: Optional[str] = Field(None, alias="displayName")
-    role: Optional[OrgRole] = None
-    status: Optional[str] = None
-    org_ids: Optional[List[str]] = Field(None, alias="orgId")
-    meta_data: Optional[dict] = Field(None, alias="metadata")
-
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
-
-
-class UserOut(BaseModel):
-    uid: str
-    email: str
+    email: EmailStr
     display_name: str
-    role: str
-    org_ids: List[str] = []
-    status: str
-    meta_data: dict = {}
-    joined_at: Optional[datetime] = None
-    last_login_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
 
-    model_config = ConfigDict(from_attributes=True)
-
+class UserCreate(BaseModel):
+    """Schema for creating a user via regular /users endpoint"""
+    uid: str
+    email: EmailStr
+    display_name: str
+    org_ids: Optional[List[str]] = []
+    status: Optional[str] = "active"
+    meta_data: Optional[Dict[str, Any]] = {}
 
 class AdminCreateUserRequest(BaseModel):
     """
-    Schema for admin user creation endpoint.
-    Uses Pydantic v2 Annotated types for validation.
+    Schema for admin-create endpoint
+    
+    ✅ NO ROLE FIELD - Role assigned via RBAC system
     """
     email: EmailStr
-    password: Annotated[str, StringConstraints(min_length=8)]
-    display_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-    role: str = "member"
-    org_id: str
-    status: str = "active"
-    meta_data: Optional[dict] = None
-
-    @field_validator('role')
-    @classmethod
-    def validate_role(cls, v: str) -> str:
-        valid_roles = [role.value for role in OrgRole]
-        if v not in valid_roles:
-            raise ValueError(f'Invalid role. Must be one of: {", ".join(valid_roles)}')
-        return v
+    password: str = Field(..., min_length=6, description="User password (min 6 characters)")
+    display_name: str = Field(..., min_length=1, description="User's display name")
+    
+    # RBAC role name (from roles table)
+    role_name: str = Field(..., description="RBAC role name from roles table")
+    
+    org_id: str = Field(..., description="Organization ID")
+    current_user_id: str = Field(..., description="UID of admin creating this user")
+    
+    status: Optional[str] = Field(default="active", description="User status")
+    meta_data: Optional[Dict[str, Any]] = Field(default=None, description="Additional metadata")
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -71,10 +42,38 @@ class AdminCreateUserRequest(BaseModel):
                 "email": "user@example.com",
                 "password": "securePassword123",
                 "display_name": "John Doe",
-                "role": "member",
+                "role_name": "admin",
                 "org_id": "org_123456",
+                "current_user_id": "admin_uid_789",
                 "status": "active",
                 "meta_data": {}
             }
         }
     )
+
+class UserUpdate(BaseModel):
+    """Schema for updating a user"""
+    display_name: Optional[str] = None
+    org_ids: Optional[List[str]] = None
+    status: Optional[str] = None
+    meta_data: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class UserOut(BaseModel):
+    """
+    Schema for user response
+    
+    ✅ NO ROLE FIELD - Get roles from RBAC system if needed
+    """
+    uid: str
+    email: str
+    display_name: str
+    org_ids: List[str] = []
+    status: str
+    meta_data: Dict[str, Any] = {}
+    joined_at: Optional[datetime] = None
+    last_login_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)

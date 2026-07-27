@@ -38,26 +38,26 @@ export async function DELETE(req, { params }) {
   const { projectId, surveyid } = params;
   const { searchParams } = new URL(req.url);
   const orgId = searchParams.get("orgId");
+  const userId = searchParams.get("userId") ; // ✅ FIXED
   
   if (!orgId) {
     return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
   }
 
   try {
-    // Get current project
     const getRes = await fetch(`${BASE}/projects/${orgId}/${projectId}`, {
       signal: AbortSignal.timeout(30000),
       cache: "no-store",
+      headers: { "x-user-id": userId },
     });
     const project = await getRes.json();
     
     const surveyIds = (project.survey_ids || []).filter(id => id !== surveyid);
 
-    // Update project
     const payload = ENC ? await encryptPayload({ survey_ids: surveyIds }) : { survey_ids: surveyIds };
     const res = await fetch(`${BASE}/projects/${orgId}/${projectId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...(ENC ? { "x-encrypted": "1" } : {}) },
+      headers: { "Content-Type": "application/json", "x-user-id": userId, ...(ENC ? { "x-encrypted": "1" } : {}) },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30000),
       cache: "no-store",

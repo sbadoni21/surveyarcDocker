@@ -61,12 +61,11 @@ export async function POST(req) {
       current_user_id: body.current_user_id || "",
       password: body.password,
       display_name: body.displayName || body.display_name,
-      role: body.role ?? "member",
-      org_id: body.orgId || body.org_id,
+      role_name: body.role ?? "member",
+      org_id:  body.org_id,
       status: body.status ?? "active",
       meta_data: body.metaData || body.meta_data || {},
     };
-
     const payload = ENC ? await encryptPayload(payloadRaw) : payloadRaw;
 
     // Get auth token from request headers or cookies

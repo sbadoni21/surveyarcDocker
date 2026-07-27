@@ -27,7 +27,6 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { usePathname } from "next/navigation";
 import { useSurvey } from "@/providers/surveyPProvider";
 import { RiDeleteBin6Line } from "react-icons/ri";
 import { useQuestion } from "@/providers/questionPProvider";
@@ -563,14 +562,12 @@ const Droppable = ({ id, children }) => {
 const DraggableQuestionsList = ({
   questions,
   blocks,
+  orgId,
+  surveyId,
   setSelectedQuestionIndex,
   onBlocksChange,
   onRequestNewQuestion,
 }) => {
-  const pathname = usePathname();
-  const pathParts = pathname.split("/");
-  const orgId = pathParts[3];
-  const surveyId = pathParts[7];
   const scrollRef = useRef(null);
   const { updateSurvey } = useSurvey();
   const { deleteQuestion } = useQuestion();
@@ -638,6 +635,30 @@ const DraggableQuestionsList = ({
 
   const makePB = () => `PB-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
 
+  const serializeBlocksForPersistence = (nextBlocks = []) =>
+    (nextBlocks || []).map((block, index) => {
+      const sourceOrder = Array.isArray(block?.questionOrder)
+        ? block.questionOrder
+        : Array.isArray(block?.question_order)
+          ? block.question_order
+          : [];
+
+      return {
+        blockId:
+          block?.blockId ?? block?.id ?? block?.block_id ?? `block_${index + 1}`,
+        name: block?.name || `Block ${index + 1}`,
+        questionOrder: normalizeOrder(sourceOrder),
+        randomization: {
+          type: block?.randomization?.type || "none",
+          subsetCount:
+            block?.randomization?.subsetCount === "" ||
+            block?.randomization?.subsetCount == null
+              ? ""
+              : String(block.randomization.subsetCount),
+        },
+      };
+    });
+
   useEffect(() => {
     const next = Array.isArray(blocks) ? blocks : [];
     if (next === renderBlocks) return;
@@ -661,10 +682,7 @@ const DraggableQuestionsList = ({
 
   const persistBlocks = async (newBlocks) => {
     try {
-      const cleanedBlocks = (newBlocks || []).map((b) => ({
-        ...b,
-        questionOrder: normalizeOrder(b.questionOrder || []),
-      }));
+      const cleanedBlocks = serializeBlocksForPersistence(newBlocks);
 
       const blockOrder = cleanedBlocks.map((b) => b.blockId);
       await updateSurvey(orgId, surveyId, {
@@ -871,14 +889,15 @@ const DraggableQuestionsList = ({
     try {
       await deleteQuestion(orgId, surveyId, questionId);
 
-      const blockOrder = newBlocks.map((b) => b.blockId);
+      const cleanedBlocks = serializeBlocksForPersistence(newBlocks);
+      const blockOrder = cleanedBlocks.map((b) => b.blockId);
       await updateSurvey(orgId, surveyId, {
-        blocks: newBlocks,
+        blocks: cleanedBlocks,
         blockOrder,
         questionOrder: updatedQuestionOrder,
       });
 
-      onBlocksChange?.(newBlocks);
+      onBlocksChange?.(cleanedBlocks);
       setSelectedQuestionIndex?.(null);
     } catch (e) {
       console.error("Failed to delete question", e);
@@ -921,16 +940,17 @@ const DraggableQuestionsList = ({
     setByBlock(newByBlock);
 
     try {
-      const blockOrder = newBlocks.map((b) => b.blockId);
+      const cleanedBlocks = serializeBlocksForPersistence(newBlocks);
+      const blockOrder = cleanedBlocks.map((b) => b.blockId);
       const questionOrder = updatedQuestions.map((q) => q.questionId);
 
       await updateSurvey(orgId, surveyId, {
-        blocks: newBlocks,
+        blocks: cleanedBlocks,
         blockOrder,
         questionOrder,
       });
 
-      onBlocksChange?.(newBlocks);
+      onBlocksChange?.(cleanedBlocks);
     } catch (err) {
       console.error("Failed to delete block and its questions", err);
     }
@@ -952,13 +972,14 @@ const DraggableQuestionsList = ({
     setRenderBlocks(newBlocks);
 
     try {
-      const blockOrder = newBlocks.map((b) => b.blockId);
-      await updateSurvey(orgId, surveyId, { blocks: newBlocks, blockOrder });
+      const cleanedBlocks = serializeBlocksForPersistence(newBlocks);
+      const blockOrder = cleanedBlocks.map((b) => b.blockId);
+      await updateSurvey(orgId, surveyId, { blocks: cleanedBlocks, blockOrder });
     } catch (e) {
       console.error("Failed to persist block order", e);
     }
 
-    onBlocksChange?.(newBlocks);
+    onBlocksChange?.(serializeBlocksForPersistence(newBlocks));
   };
 
   const startRename = (block) => {

@@ -42,6 +42,8 @@ def create_survey(data: SurveyCreate, db: Session = Depends(get_db)):
         settings=data.settings or {"anonymous": False},
         question_order=data.question_order or [],
         meta_data=data.meta_data or {},
+        blocks=data.blocks or [],
+        block_order=data.block_order or [],
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
@@ -51,7 +53,8 @@ def create_survey(data: SurveyCreate, db: Session = Depends(get_db)):
 
     # cache + list invalidation
     RedisSurveyService.cache_survey(survey)
-    RedisSurveyService.cache_project_surveys(survey.project_id, [survey])
+    project_surveys = db.query(Survey).filter(Survey.project_id == survey.project_id).all()
+    RedisSurveyService.set_project_surveys_exact(survey.project_id, project_surveys)
 
     return survey
 

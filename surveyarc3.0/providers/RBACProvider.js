@@ -15,8 +15,14 @@ const RBACCtx = createContext(null);
 export const RBACProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [userRoles, setUserRoles] = useState([]);
+  const [effectivePermSet, setEffectivePermSet] = useState(new Set());
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
 
   const cacheRef = useRef(new Map());
+  const activePermissionsKeyRef = useRef(null);
+
+  // CRITICAL: Track what we're currently loading to prevent duplicates
+  const loadingKeysRef = useRef(new Set());
 
   // ----------------------------------
   // Cache helpers
@@ -24,20 +30,31 @@ export const RBACProvider = ({ children }) => {
   const invalidateCache = useCallback((userId) => {
     if (!userId) {
       cacheRef.current.clear();
+      activePermissionsKeyRef.current = null;
+      setEffectivePermSet(new Set());
+      setPermissionsLoaded(false);
     } else {
       cacheRef.current.delete(`roles:${userId}`);
-      cacheRef.current.delete(`permissions:${userId}`);
-      cacheRef.current.delete(`effective:${userId}`);
+      Array.from(cacheRef.current.keys()).forEach((key) => {
+        if (key.startsWith(`permissions:${userId}`) || key.startsWith(`effective:${userId}`)) {
+          cacheRef.current.delete(key);
+        }
+      });
+      if (
+        activePermissionsKeyRef.current &&
+        activePermissionsKeyRef.current.includes(`:${userId}:`)
+      ) {
+        activePermissionsKeyRef.current = null;
+        setEffectivePermSet(new Set());
+        setPermissionsLoaded(false);
+      }
     }
   }, []);
 
   // ==================================================
-  // ROLE MANAGEMENT (Existing)
+  // ROLE MANAGEMENT
   // ==================================================
 
-  // ----------------------------------
-  // Load roles for user
-  // ----------------------------------
   const listUserRoles = useCallback(async (userId, orgId) => {
     if (!userId) return [];
 
@@ -46,7 +63,15 @@ export const RBACProvider = ({ children }) => {
       return cacheRef.current.get(key);
     }
 
+    // Prevent duplicate requests
+    if (loadingKeysRef.current.has(key)) {
+      console.log("[RBAC] Already loading roles, skipping:", key);
+      return [];
+    }
+
+    loadingKeysRef.current.add(key);
     setLoading(true);
+    
     try {
       const res = await fetch(
         `/api/post-gres-apis/rbac/user/${encodeURIComponent(userId)}?org_id=${orgId || ''}`,
@@ -57,7 +82,6 @@ export const RBACProvider = ({ children }) => {
         throw new Error(`Failed to load roles: ${res.statusText}`);
       }
       const roles = await res.json();
-      console.log(roles)
       cacheRef.current.set(key, roles);
       setUserRoles(roles);
       return roles;
@@ -66,22 +90,21 @@ export const RBACProvider = ({ children }) => {
       return [];
     } finally {
       setLoading(false);
+      loadingKeysRef.current.delete(key);
     }
   }, []);
 
-  // ----------------------------------
-  // Assign role
-  // ----------------------------------
   const assignRole = useCallback(async (data) => {
     setLoading(true);
     try {
-      console.log(data)
       const body = {
         user_uid: data.userId,
         role_name: data.roleName,
+        created_by: data.createdBy || null,
         scope: data.scope,
         resource_id: data.resourceId,
         org_id: data.orgId || null,
+        is_creating_org: data.isCreatingOrg || false,
       };
 
       const res = await fetch(`/api/post-gres-apis/rbac/assign-role`, {
@@ -98,22 +121,20 @@ export const RBACProvider = ({ children }) => {
 
       const result = await res.json();
 
-      // Refresh roles
-      await listUserRoles(data.userId, data.orgId);
+      if (!data.isCreatingOrg) {
+        await listUserRoles(data.userId, data.orgId);
+      }
+      
       invalidateCache(data.userId);
-
       return result;
     } catch (error) {
-      console.error("Error assigning role:", error);
+      console.error("[RBAC] Error assigning role:", error);
       throw error;
     } finally {
       setLoading(false);
     }
   }, [listUserRoles, invalidateCache]);
 
-  // ----------------------------------
-  // Remove role
-  // ----------------------------------
   const removeRole = useCallback(async (data) => {
     setLoading(true);
     try {
@@ -157,9 +178,6 @@ export const RBACProvider = ({ children }) => {
     }
   }, [invalidateCache]);
 
-  // ----------------------------------
-  // Check permission
-  // ----------------------------------
   const hasPermission = useCallback(async (userId, permissionCode, orgId, scope, resourceId) => {
     try {
       const params = new URLSearchParams({
@@ -169,7 +187,6 @@ export const RBACProvider = ({ children }) => {
         scope: scope || 'org',
         resource_id: resourceId || '',
       });
-      console.log(userId, permissionCode, orgId, scope, resourceId)
       
       const res = await fetch(
         `/api/post-gres-apis/rbac/check-permission?${params}`,
@@ -187,21 +204,27 @@ export const RBACProvider = ({ children }) => {
   }, []);
 
   // ==================================================
-  // USER PERMISSIONS CRUD (New)
+  // USER PERMISSIONS CRUD
   // ==================================================
 
-  // ----------------------------------
-  // Get effective permissions
-  // ----------------------------------
   const getEffectivePermissions = useCallback(async (userId, orgId, scope = null, resourceId = null) => {
     if (!userId || !orgId) return null;
 
     const key = `effective:${userId}:${orgId}`;
+    
+    // Check cache first
     if (cacheRef.current.has(key)) {
       return cacheRef.current.get(key);
     }
 
+    // Prevent duplicate requests
+    if (loadingKeysRef.current.has(key)) {
+      return null;
+    }
+
+    loadingKeysRef.current.add(key);
     setLoading(true);
+    
     try {
       const params = new URLSearchParams({
         org_id: orgId,
@@ -228,16 +251,51 @@ export const RBACProvider = ({ children }) => {
       return null;
     } finally {
       setLoading(false);
+      loadingKeysRef.current.delete(key);
     }
   }, []);
 
-  // ----------------------------------
-  // List custom grants
-  // ----------------------------------
+  const loadEffectivePermissions = useCallback(
+    async (userId, orgId, scope = null, resourceId = null) => {
+      const requestKey = `effective:${userId}:${orgId}`;
+
+      if (
+        permissionsLoaded &&
+        activePermissionsKeyRef.current === requestKey
+      ) {
+        return effectivePermSet;
+      }
+
+      const data = await getEffectivePermissions(userId, orgId, scope, resourceId);
+
+      if (!data) {
+        activePermissionsKeyRef.current = requestKey;
+        setEffectivePermSet(new Set());
+        setPermissionsLoaded(true);
+        return;
+      }
+      const permissions = Array.isArray(data)
+        ? data
+        : data.effective_permissions || data.permissions || [];
+      activePermissionsKeyRef.current = requestKey;
+      setEffectivePermSet(new Set(permissions));
+      setPermissionsLoaded(true);
+    },
+    [effectivePermSet, getEffectivePermissions, permissionsLoaded]
+  );
+
   const listCustomGrants = useCallback(async (userId, orgId, currentUserId) => {
     if (!userId || !orgId) return [];
 
+    const key = `grants:${userId}:${orgId}`;
+    if (loadingKeysRef.current.has(key)) {
+      console.log("[RBAC] Already loading custom grants, skipping");
+      return [];
+    }
+
+    loadingKeysRef.current.add(key);
     setLoading(true);
+    
     try {
       const params = new URLSearchParams({
         org_id: orgId,
@@ -260,16 +318,22 @@ export const RBACProvider = ({ children }) => {
       return [];
     } finally {
       setLoading(false);
+      loadingKeysRef.current.delete(key);
     }
   }, []);
 
-  // ----------------------------------
-  // List denials
-  // ----------------------------------
   const listDenials = useCallback(async (userId, orgId, currentUserId) => {
     if (!userId || !orgId) return [];
 
+    const key = `denials:${userId}:${orgId}`;
+    if (loadingKeysRef.current.has(key)) {
+      console.log("[RBAC] Already loading denials, skipping");
+      return [];
+    }
+
+    loadingKeysRef.current.add(key);
     setLoading(true);
+    
     try {
       const params = new URLSearchParams({
         org_id: orgId,
@@ -292,12 +356,10 @@ export const RBACProvider = ({ children }) => {
       return [];
     } finally {
       setLoading(false);
+      loadingKeysRef.current.delete(key);
     }
   }, []);
 
-  // ----------------------------------
-  // Grant custom permission
-  // ----------------------------------
   const grantPermission = useCallback(async (data) => {
     setLoading(true);
     try {
@@ -306,10 +368,8 @@ export const RBACProvider = ({ children }) => {
         permission_code: data.permissionCode,
         scope: data.scope || "org",
         resource_id: data.resourceId,
-        user_id: data.grantedBy, // For auth header
+        user_id: data.grantedBy,
       };
-
-      console.log("[RBAC] Granting permission:", body);
 
       const res = await fetch(`/api/post-gres-apis/rbac/user-permissions/grant`, {
         method: "POST",
@@ -324,10 +384,7 @@ export const RBACProvider = ({ children }) => {
       }
 
       const result = await res.json();
-      
-      // Invalidate caches
       invalidateCache(data.userId);
-
       return result;
     } catch (error) {
       console.error("Error granting permission:", error);
@@ -337,9 +394,6 @@ export const RBACProvider = ({ children }) => {
     }
   }, [invalidateCache]);
 
-  // ----------------------------------
-  // Revoke custom permission
-  // ----------------------------------
   const revokePermission = useCallback(async (data) => {
     setLoading(true);
     try {
@@ -348,10 +402,8 @@ export const RBACProvider = ({ children }) => {
         permission_code: data.permissionCode,
         scope: data.scope || "org",
         resource_id: data.resourceId,
-        user_id: data.revokedBy, // For auth header
+        user_id: data.revokedBy,
       };
-
-      console.log("[RBAC] Revoking permission:", body);
 
       const res = await fetch(`/api/post-gres-apis/rbac/user-permissions/revoke`, {
         method: "POST",
@@ -366,10 +418,7 @@ export const RBACProvider = ({ children }) => {
       }
 
       const result = await res.json();
-      
-      // Invalidate caches
       invalidateCache(data.userId);
-
       return result;
     } catch (error) {
       console.error("Error revoking permission:", error);
@@ -379,9 +428,6 @@ export const RBACProvider = ({ children }) => {
     }
   }, [invalidateCache]);
 
-  // ----------------------------------
-  // Deny permission
-  // ----------------------------------
   const denyPermission = useCallback(async (data) => {
     setLoading(true);
     try {
@@ -391,10 +437,8 @@ export const RBACProvider = ({ children }) => {
         scope: data.scope || "org",
         resource_id: data.resourceId,
         reason: data.reason || null,
-        user_id: data.deniedBy, // For auth header
+        user_id: data.deniedBy,
       };
-
-      console.log("[RBAC] Denying permission:", body);
 
       const res = await fetch(`/api/post-gres-apis/rbac/user-permissions/deny`, {
         method: "POST",
@@ -409,10 +453,7 @@ export const RBACProvider = ({ children }) => {
       }
 
       const result = await res.json();
-      
-      // Invalidate caches
       invalidateCache(data.userId);
-
       return result;
     } catch (error) {
       console.error("Error denying permission:", error);
@@ -422,9 +463,6 @@ export const RBACProvider = ({ children }) => {
     }
   }, [invalidateCache]);
 
-  // ----------------------------------
-  // Remove denial
-  // ----------------------------------
   const removeDenial = useCallback(async (data) => {
     setLoading(true);
     try {
@@ -433,10 +471,8 @@ export const RBACProvider = ({ children }) => {
         permission_code: data.permissionCode,
         scope: data.scope || "org",
         resource_id: data.resourceId,
-        user_id: data.removedBy, // For auth header
+        user_id: data.removedBy,
       };
-
-      console.log("[RBAC] Removing denial:", body);
 
       const res = await fetch(`/api/post-gres-apis/rbac/user-permissions/remove-denial`, {
         method: "POST",
@@ -451,10 +487,7 @@ export const RBACProvider = ({ children }) => {
       }
 
       const result = await res.json();
-      
-      // Invalidate caches
       invalidateCache(data.userId);
-
       return result;
     } catch (error) {
       console.error("Error removing denial:", error);
@@ -464,24 +497,20 @@ export const RBACProvider = ({ children }) => {
     }
   }, [invalidateCache]);
 
-  // ----------------------------------
-  // Provider value
-  // ----------------------------------
+  const hasCapability = useCallback(
+    (permissionCode) => effectivePermSet.has(permissionCode),
+    [effectivePermSet]
+  );
+
   const value = useMemo(
     () => ({
-      // State
       loading,
       userRoles,
-      
-      // Role management
       listUserRoles,
       assignRole,
       removeRole,
-      
-      // Permission checking
       hasPermission,
-      
-      // User permissions (NEW)
+      permissionsLoaded,
       getEffectivePermissions,
       listCustomGrants,
       listDenials,
@@ -489,9 +518,10 @@ export const RBACProvider = ({ children }) => {
       revokePermission,
       denyPermission,
       removeDenial,
-      
-      // Cache
+      effectivePermSet,
       invalidateCache,
+      loadEffectivePermissions,
+      hasCapability,
     }),
     [
       loading,
@@ -500,6 +530,7 @@ export const RBACProvider = ({ children }) => {
       assignRole,
       removeRole,
       hasPermission,
+      permissionsLoaded,
       getEffectivePermissions,
       listCustomGrants,
       listDenials,
@@ -507,17 +538,17 @@ export const RBACProvider = ({ children }) => {
       revokePermission,
       denyPermission,
       removeDenial,
+      effectivePermSet,
       invalidateCache,
+      loadEffectivePermissions,
+      hasCapability,
     ]
   );
 
   return <RBACCtx.Provider value={value}>{children}</RBACCtx.Provider>;
 };
 
-// ----------------------------------
-// Hook
-// ----------------------------------
-export const useRBAC = () => {
+export const  useRBAC = () => {
   const ctx = useContext(RBACCtx);
   if (!ctx) throw new Error("useRBAC must be used inside RBACProvider");
   return ctx;

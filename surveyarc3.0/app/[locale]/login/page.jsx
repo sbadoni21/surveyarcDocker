@@ -44,15 +44,6 @@ const fetchUserAndOrg = async (uid, firebaseUser = null) => {
     
     setCurrentUser(user);
     
-    // Track login in backend
-    try {
-      await loginUser(uid);
-      console.log("Login tracked successfully");
-    } catch (loginError) {
-      console.error("Failed to track login:", loginError);
-      // Don't fail the entire login process for tracking failure
-    }
-    
     // Handle organization logic
     const primaryOrgId = Array.isArray(user.org_ids) && user.org_ids.length > 0
       ? String(user.org_ids[0])
@@ -89,7 +80,6 @@ const fetchUserAndOrg = async (uid, firebaseUser = null) => {
     setLoading(false);
   }
 };
-
 
   const handleEmailLogin = async () => {
     setLoading(true);

@@ -13,11 +13,22 @@ export function MemberManagementDialog({
   onRemoveMember,
   onBulkAddMembers, // ✅ New prop for bulk adding
   busy,
-  // Group-related props
   groups = [],
   onLoadGroupMembers,
   groupMembersCache = {},
 }) {
+  useEffect(() => {
+    if (open) {
+      console.log("=== MemberManagementDialog Debug ===");
+      console.log("Dialog open:", open);
+      console.log("Loading:", loading);
+      console.log("Project:", project);
+      console.log("Project members:", project?.members);
+      console.log("Candidates:", candidates);
+      console.log("Number of members:", (project?.members || []).length);
+      console.log("==================================");
+    }
+  }, [open, project, loading, candidates]);
   const [selectedCandidate, setSelectedCandidate] = useState(null);
   const [newMemberRole, setNewMemberRole] = useState("contributor");
   const [addMode, setAddMode] = useState("individual"); // "individual" or "group"

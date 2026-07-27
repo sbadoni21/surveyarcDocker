@@ -33,11 +33,11 @@ async function forceDecryptResponse(res) {
   }
 }
 
-// GET /api/post-gres-apis/projects/[projectId]/surveys?orgId=...
 export async function GET(req, { params }) {
   const { projectId } = await params;
   const { searchParams } = new URL(req.url);
   const orgId = searchParams.get("orgId");
+  const userId = searchParams.get("userId") ; // ✅ FIXED
   
   if (!orgId) {
     return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
@@ -47,6 +47,7 @@ export async function GET(req, { params }) {
     const res = await fetch(`${BASE}/projects/${orgId}/${projectId}`, {
       signal: AbortSignal.timeout(30000),
       cache: "no-store",
+      headers: { "x-user-id": userId },
     });
     
     const project = await res.json();
@@ -56,33 +57,31 @@ export async function GET(req, { params }) {
   }
 }
 
-// POST /api/post-gres-apis/projects/[projectId]/surveys
 export async function POST(req, { params }) {
   const { projectId } = await params;
   
   try {
     const raw = await req.json();
-    const { orgId, surveyId } = raw;
+    const { orgId, surveyId, user_id } = raw; // ✅ EXTRACT user_id
+    const userId = user_id ;
 
     if (!orgId || !surveyId) {
       return NextResponse.json({ detail: "orgId and surveyId are required" }, { status: 400 });
     }
 
-    // Get current project with cache disabled to ensure fresh data
     const qs = new URLSearchParams({ use_cache: "false" });
     const getRes = await fetch(`${BASE}/projects/${orgId}/${projectId}?${qs.toString()}`, {
       signal: AbortSignal.timeout(30000),
       cache: "no-store",
+      headers: { "x-user-id": userId },
     });
-    
+
     if (!getRes.ok) {
       const errorText = await getRes.text();
       return NextResponse.json({ detail: "Failed to fetch project", error: errorText }, { status: getRes.status });
     }
 
     const projectData = await getRes.json();
-    
-    // Ensure survey_ids is always an array
     const currentSurveyIds = Array.isArray(projectData.survey_ids) ? projectData.survey_ids : [];
     
     if (currentSurveyIds.includes(surveyId)) {
@@ -91,11 +90,10 @@ export async function POST(req, { params }) {
 
     const updatedSurveyIds = [...currentSurveyIds, surveyId];
 
-    // Update project
     const payload = ENC ? await encryptPayload({ survey_ids: updatedSurveyIds }) : { survey_ids: updatedSurveyIds };
     const res = await fetch(`${BASE}/projects/${orgId}/${projectId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...(ENC ? { "x-encrypted": "1" } : {}) },
+      headers: { "Content-Type": "application/json", "x-user-id": userId, ...(ENC ? { "x-encrypted": "1" } : {}) },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30000),
       cache: "no-store",

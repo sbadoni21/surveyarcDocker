@@ -41,14 +41,14 @@ const UserModel = {
       status = "active",
       metaData = {},
     } = data;
-
+console.log(data)
     const body = {
       email,
       password, 
       current_user_id,
       display_name: displayName || "",
       role,
-      org_id: String(orgId),
+      org_id: orgId,
       status,
       meta_data: metaData,
     };

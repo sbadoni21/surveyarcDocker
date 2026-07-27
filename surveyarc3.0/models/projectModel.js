@@ -72,7 +72,7 @@ const projectModel = {
   defaultData,
 
   // ===== CORE =====
-  async create(data) {
+  async create(data, userId) {
     const payload = defaultData({
       projectId: data.projectId, orgId: data.orgId, name: data.name,
       description: data.description, ownerUID: data.ownerUID,
@@ -81,112 +81,93 @@ const projectModel = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, user_id: userId }),
     });
     return snakeToCamel(await toJson(res));
   },
 
-  async getAll(orgId) {
+  async getAll(orgId, userId) {
     const url = new URL(`${BASE}`, window.location.origin);
     url.searchParams.set("orgId", String(orgId));
+    url.searchParams.set("userId", String(userId));
     const res = await fetch(url.toString(), { cache: "no-store" });
     const data = await toJson(res);
     return Array.isArray(data) ? data.map(snakeToCamel) : [];
   },
 
-  async getById(orgId, projectId) {
+  async getById(orgId, projectId, userId) {
     const url = new URL(`${BASE}/${projectId}`, window.location.origin);
     url.searchParams.set("orgId", String(orgId));
+    url.searchParams.set("userId", String(userId));
     const res = await fetch(url.toString(), { cache: "no-store" });
     return snakeToCamel(await toJson(res));
   },
 
-  async update(orgId, projectId, patch) {
+  async update(orgId, projectId, patch, userId) {
     const res = await fetch(`${BASE}/${projectId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
-      body: JSON.stringify({ orgId, ...camelToSnake(patch) }),
+      body: JSON.stringify({ orgId, user_id: userId, ...camelToSnake(patch) }),
     });
     return snakeToCamel(await toJson(res));
   },
 
-  async delete(orgId, projectId) {
-    const url = new URL(`${BASE}/${projectId}`, window.location.origin);
-    url.searchParams.set("orgId", String(orgId));
-    const res = await fetch(url.toString(), { method: "DELETE", cache: "no-store" });
-    return toJson(res);
+  async deleteProject(orgId, projectId, userId) {
+    const res = await fetch(
+      `${BASE}/${projectId}?orgId=${orgId}&userId=${userId}`,
+      { method: "DELETE", cache: "no-store" }
+    );
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
   },
 
   // ===== MEMBERS =====
-  async getMembers(orgId, projectId) {
+  async getMembers(orgId, projectId, userId) {
     const url = new URL(`${BASE}/${projectId}/members`, window.location.origin);
     url.searchParams.set("orgId", String(orgId));
-    const res = await fetch(url.toString(), { cache: "no-store" });
-    return await toJson(res); // your route already normalizes
-  },
-
-  async getMember(orgId, projectId, memberUid) {
-    const url = new URL(`${BASE}/${projectId}/members/${memberUid}`, window.location.origin);
-    url.searchParams.set("orgId", String(orgId));
+    url.searchParams.set("userId", String(userId));
     const res = await fetch(url.toString(), { cache: "no-store" });
     return await toJson(res);
   },
 
-  async addMember(orgId, projectId, member) {
+  async getMember(orgId, projectId, memberUid, userId) {
+    const url = new URL(`${BASE}/${projectId}/members/${memberUid}`, window.location.origin);
+    url.searchParams.set("orgId", String(orgId));
+    url.searchParams.set("userId", String(userId));
+    const res = await fetch(url.toString(), { cache: "no-store" });
+    return await toJson(res);
+  },
+
+  async addMember(orgId, projectId, member, userId) {
     const res = await fetch(`${BASE}/${projectId}/members`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
-      body: JSON.stringify({ orgId, ...member }),
+      body: JSON.stringify({ orgId, user_id: userId, ...member }),
     });
     return await toJson(res);
   },
 
-  async updateMember(orgId, projectId, memberUid, memberUpdate) {
+  async updateMember(orgId, projectId, memberUid, memberUpdate, userId) {
     const res = await fetch(`${BASE}/${projectId}/members/${memberUid}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
-      body: JSON.stringify({ orgId, ...memberUpdate }),
+      body: JSON.stringify({ orgId, user_id: userId, ...memberUpdate }),
     });
     return await toJson(res);
   },
 
-  async removeMember(orgId, projectId, memberUid) {
+  async removeMember(orgId, projectId, memberUid, userId) {
     const url = new URL(`${BASE}/${projectId}/members/${memberUid}`, window.location.origin);
     url.searchParams.set("orgId", String(orgId));
+    url.searchParams.set("userId", String(userId));
     const res = await fetch(url.toString(), { method: "DELETE", cache: "no-store" });
     return await toJson(res);
   },
 
-  // ===== SURVEYS =====
-  async patchSurveys(orgId, projectId, { add = [], remove = [] }) {
-    const res = await fetch(`${BASE}/${projectId}/surveys`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-      body: JSON.stringify({ orgId, add, remove }),
-    });
-    return await toJson(res);
-  },
-  async addSurveyId(orgId, projectId, surveyId) {
-    const res = await fetch(`${BASE}/${projectId}/surveys`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-      body: JSON.stringify({ orgId, surveyId }),
-    });
-    return await toJson(res);
-  },
-  async removeSurveyId(orgId, projectId, surveyId) {
-    const url = new URL(`${BASE}/${projectId}/surveys/${surveyId}`, window.location.origin);
-    url.searchParams.set("orgId", String(orgId));
-    const res = await fetch(url.toString(), { method: "DELETE", cache: "no-store" });
-    return await toJson(res);
-  },
-   
-  async bulkAddMembers(projectId, userUids, role = "contributor") {
+  async bulkAddMembers(projectId, userUids, role, userId) {
     const res = await fetch(
       `${BASE}/${encodeURIComponent(projectId)}/members/bulk`,
       {
@@ -195,21 +176,15 @@ const projectModel = {
         body: JSON.stringify({
           user_uids: userUids,
           role: role,
+          user_id: userId,
         }),
         cache: "no-store",
       }
     );
-
-    return parseJson(res);
+    return toJson(res);
   },
 
-  /**
-   * Bulk remove multiple members from a project
-   * @param {string} projectId - Project ID
-   * @param {string[]} userUids - Array of user UIDs to remove
-   * @returns {Promise<{removed: number, details: Array}>}
-   */
-  async bulkRemoveMembers(projectId, userUids) {
+  async bulkRemoveMembers(projectId, userUids, userId) {
     const res = await fetch(
       `${BASE}/${encodeURIComponent(projectId)}/members/bulk-remove`,
       {
@@ -217,137 +192,193 @@ const projectModel = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_uids: userUids,
+          user_id: userId,
         }),
         cache: "no-store",
       }
     );
+    return toJson(res);
+  },
 
-    return parseJson(res);
+  // ===== SURVEYS =====
+  async patchSurveys(orgId, projectId, { add = [], remove = [] }, userId) {
+    const res = await fetch(`${BASE}/${projectId}/surveys`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ orgId, user_id: userId, add, remove }),
+    });
+    return await toJson(res);
+  },
+
+  async addSurveyId(orgId, projectId, surveyId, userId) {
+    const res = await fetch(`${BASE}/${projectId}/surveys`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ orgId, user_id: userId, surveyId }),
+    });
+    return await toJson(res);
+  },
+
+  async removeSurveyId(orgId, projectId, surveyId, userId) {
+    const url = new URL(`${BASE}/${projectId}/surveys/${surveyId}`, window.location.origin);
+    url.searchParams.set("orgId", String(orgId));
+    url.searchParams.set("userId", String(userId));
+    const res = await fetch(url.toString(), { method: "DELETE", cache: "no-store" });
+    return await toJson(res);
   },
 
   // ===== MILESTONES =====
-  async listMilestones(orgId, projectId) {
+  async listMilestones(orgId, projectId, userId) {
     const url = new URL(`${BASE}/${projectId}/milestones`, window.location.origin);
     url.searchParams.set("orgId", String(orgId));
+    url.searchParams.set("userId", String(userId));
     const res = await fetch(url.toString(), { cache: "no-store" });
     return await toJson(res);
   },
-  async addMilestone(orgId, projectId, milestone) {
+
+  async addMilestone(orgId, projectId, milestone, userId) {
     const res = await fetch(`${BASE}/${projectId}/milestones`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
-      body: JSON.stringify({ orgId, ...milestone }),
+      body: JSON.stringify({ orgId, user_id: userId, ...milestone }),
     });
     return await toJson(res);
   },
-  async patchMilestone(orgId, projectId, mid, patch) {
+
+  async patchMilestone(orgId, projectId, mid, patch, userId) {
     const res = await fetch(`${BASE}/${projectId}/milestones/${mid}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
-      body: JSON.stringify({ orgId, ...patch }),
+      body: JSON.stringify({ orgId, user_id: userId, ...patch }),
     });
     return await toJson(res);
   },
-  async deleteMilestone(orgId, projectId, mid) {
+
+  async deleteMilestone(orgId, projectId, mid, userId) {
     const url = new URL(`${BASE}/${projectId}/milestones/${mid}`, window.location.origin);
     url.searchParams.set("orgId", String(orgId));
+    url.searchParams.set("userId", String(userId));
     const res = await fetch(url.toString(), { method: "DELETE", cache: "no-store" });
     return await toJson(res);
   },
 
   // ===== TAGS =====
-  async patchTags(orgId, projectId, { add = [], remove = [] }) {
+  async patchTags(orgId, projectId, { add = [], remove = [] }, userId) {
     const res = await fetch(`${BASE}/${projectId}/tags`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
-      body: JSON.stringify({ orgId, add, remove }),
+      body: JSON.stringify({ orgId, user_id: userId, add, remove }),
     });
     return await toJson(res);
   },
 
   // ===== ATTACHMENTS =====
-  async listAttachments(orgId, projectId) {
+  async listAttachments(orgId, projectId, userId) {
     const url = new URL(`${BASE}/${projectId}/attachments`, window.location.origin);
     url.searchParams.set("orgId", String(orgId));
+    url.searchParams.set("userId", String(userId));
     const res = await fetch(url.toString(), { cache: "no-store" });
     return await toJson(res);
   },
-  async addAttachment(orgId, projectId, attachment) {
+
+  async addAttachment(orgId, projectId, attachment, userId) {
     const res = await fetch(`${BASE}/${projectId}/attachments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
-      body: JSON.stringify({ orgId, ...attachment }),
+      body: JSON.stringify({ orgId, user_id: userId, ...attachment }),
     });
     return await toJson(res);
   },
-  async removeAttachment(orgId, projectId, aid) {
+
+  async removeAttachment(orgId, projectId, aid, userId) {
     const url = new URL(`${BASE}/${projectId}/attachments/${aid}`, window.location.origin);
     url.searchParams.set("orgId", String(orgId));
+    url.searchParams.set("userId", String(userId));
     const res = await fetch(url.toString(), { method: "DELETE", cache: "no-store" });
     return await toJson(res);
   },
 
   // ===== STATUS / TIMELINE / PROGRESS =====
-  async setStatus(orgId, projectId, { status, reason }) {
+  async setStatus(orgId, projectId, { status, reason }, userId) {
     const res = await fetch(`${BASE}/${projectId}/status`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
-      body: JSON.stringify({ orgId, status, reason }),
+      body: JSON.stringify({ orgId, user_id: userId, status, reason }),
     });
     return await toJson(res);
   },
-  async timeline(orgId, projectId) {
+
+  async timeline(orgId, projectId, userId) {
     const url = new URL(`${BASE}/${projectId}/timeline`, window.location.origin);
     url.searchParams.set("orgId", String(orgId));
+    url.searchParams.set("userId", String(userId));
     const res = await fetch(url.toString(), { cache: "no-store" });
     return await toJson(res);
   },
-  async recomputeProgress(orgId, projectId) {
+
+  async recomputeProgress(orgId, projectId, userId) {
     const res = await fetch(`${BASE}/${projectId}/progress/recompute`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
-      body: JSON.stringify({ orgId }),
+      body: JSON.stringify({ orgId, user_id: userId }),
     });
     return await toJson(res);
   },
 
   // ===== ORG-SCOPED =====
-  async search(orgId, query) {
+  async search(orgId, query, userId) {
     const res = await fetch(`${BASE}/org/${orgId}/search`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
-      body: JSON.stringify(query || {}),
+      body: JSON.stringify({ ...(query || {}), user_id: userId }),
     });
     return await toJson(res);
   },
-  async bulk(orgId, body) {
-    const res = await fetch(`${BASE}/org/${orgId}/bulk`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-      body: JSON.stringify(body || {}),
-    });
+
+  async bulk(orgId, body, userId) {
+    if (!body?.op) {
+      throw new Error("Bulk op is required");
+    }
+    const changeBody = camelToSnake({ ...body, userId });
+    const method = body.op === "delete" ? "DELETE" : "POST";
+
+    const res = await fetch(
+      `/api/post-gres-apis/projects/org/${orgId}/bulk`,
+      {
+        method,
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify(changeBody),
+      }
+    );
+
     return await toJson(res);
   },
+
   async listFavorites(orgId, userId) {
     const res = await fetch(`${BASE}/org/${orgId}/favorites/${userId}`, { cache: "no-store" });
     return await toJson(res);
   },
+
   async addFavorite(orgId, userId, projectId) {
-    const res = await fetch(`${BASE}/projects/${projectId}/org/${orgId}/favorites/${userId}`, {
+    console.log("first");
+    const res = await fetch(`${BASE}/${projectId}/org/${orgId}/favorites/${userId}`, {
       method: "POST", cache: "no-store",
     });
     return await toJson(res);
   },
+
   async removeFavorite(orgId, userId, projectId) {
-    const res = await fetch(`${BASE}/org/${orgId}/favorites/${userId}/${projectId}`, {
+    const res = await fetch(`${BASE}/${projectId}/org/${orgId}/favorites/${userId}`, {
       method: "DELETE", cache: "no-store",
     });
     return await toJson(res);

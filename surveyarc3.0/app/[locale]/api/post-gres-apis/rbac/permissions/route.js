@@ -1,72 +1,107 @@
+// app/api/post-gres-apis/rbac/permissions/route.js
+
 import { NextResponse } from "next/server";
+import { encryptPayload } from "@/utils/crypto_utils";
 import { decryptGetResponse } from "@/utils/crypto_client";
 
 const BASE = process.env.FASTAPI_BASE_URL;
+const ENC = process.env.ENCRYPT_SURVEYS === "1";
 
-/**
- * GET /rbac/permissions
- * Query: module?, search?, user, orgId
- */
-export async function GET(req) {
-  const { searchParams } = new URL(req.url);
-  console.log("Query params:", Object.fromEntries(searchParams));
-
-  const userId = searchParams.get("user");
-  const orgId = searchParams.get("orgId");
-  
-  if (!userId) {
-    return NextResponse.json(
-      { detail: "Missing user parameter" },
-      { status: 400 }
-    );
+async function forceDecryptResponse(res) {
+  const text = await res.text();
+  try {
+    const json = JSON.parse(text);
+    if (json && typeof json === "object") {
+      try {
+        return NextResponse.json(await decryptGetResponse(json), { status: res.status });
+      } catch {
+        return NextResponse.json(json, { status: res.status });
+      }
+    }
+    return NextResponse.json(json, { status: res.status });
+  } catch {
+    return NextResponse.json({ raw: text }, { status: res.status });
   }
-
-  const url = new URL(`${BASE}/rbac/permissions`);
-  
-  // Pass through relevant query params
-  if (searchParams.get("module")) {
-    url.searchParams.set("module", searchParams.get("module"));
-  }
-  if (searchParams.get("search")) {
-    url.searchParams.set("search", searchParams.get("search"));
-  }
-  
-  // Set org_id from orgId parameter
-  if (orgId) {
-    url.searchParams.set("org_id", orgId);
-  }
-
-  console.log("Fetching:", url.toString());
-
-  const res = await fetch(url.toString(), {
-    cache: "no-store",
-    headers: {
-      "x-user-id": userId,
-    },
-  });
-
-  const data = await res.json();
-  return NextResponse.json(
-    decryptGetResponse ? await decryptGetResponse(data) : data,
-    { status: res.status }
-  );
 }
 
-/**
- * POST /rbac/permissions
- */
+// GET /api/post-gres-apis/rbac/permissions
+export async function GET(req) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const userId = searchParams.get("user");
+    const orgId = searchParams.get("orgId");
+    const module = searchParams.get("module");
+
+    console.log("[RBAC Permissions] GET request:", { userId, orgId, module });
+
+    if (!userId || !orgId) {
+      return NextResponse.json(
+        { detail: "user and orgId are required" },
+        { status: 400 }
+      );
+    }
+
+    const params = new URLSearchParams({ user: userId, orgId });
+    if (module) params.set("module", module);
+
+    const res = await fetch(`${BASE}/rbac/permissions?${params}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": userId,
+      },
+      cache: "no-store",
+      signal: AbortSignal.timeout(30000),
+    });
+
+    return forceDecryptResponse(res);
+  } catch (e) {
+    console.error("[RBAC Permissions] GET error:", e);
+    return NextResponse.json(
+      { detail: "Upstream error", message: String(e?.message || e) },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/post-gres-apis/rbac/permissions
 export async function POST(req) {
-  const body = await req.json();
-  console.log("POST body:", body);
+  try {
+    const body = await req.json();
+    console.log("[RBAC Permissions] POST request:", body);
 
-  const res = await fetch(`${BASE}/rbac/permissions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-user-id": body.user_id || "",
-    },
-    body: JSON.stringify(body),
-  });
+    const userId = body.user_id || body.user;
 
-  return NextResponse.json(await res.json(), { status: res.status });
+    // Validate required fields
+    const required = ["code", "module"];
+    for (const k of required) {
+      if (!body[k]) {
+        return NextResponse.json(
+          { detail: `${k} is required` },
+          { status: 400 }
+        );
+      }
+    }
+
+    const payload = ENC ? await encryptPayload(body) : body;
+
+    const res = await fetch(`${BASE}/rbac/permissions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": userId || "",
+      },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+      signal: AbortSignal.timeout(30000),
+    });
+
+    return forceDecryptResponse(res);
+  } catch (e) {
+    console.error("[RBAC Permissions] POST error:", e);
+    return NextResponse.json(
+      { detail: "Upstream error", message: String(e?.message || e) },
+      { status: 500 }
+    );
+  }
 }

@@ -73,6 +73,7 @@ const GroupModel = {
   },
 
   async listByOrg(orgId, userId) {
+    console.log("fetching orgid for org in goruf", orgId, userId)
     const res = await fetch(`${BASE}/org/${encodeURIComponent(orgId)}`, {
       headers: {
         ...(userId ? { "X-User-Id": userId } : {}),

@@ -8,6 +8,36 @@ const json = async (res) => {
   return res.json();
 };
 
+const normalizeSurvey = (survey) => {
+  if (!survey || typeof survey !== "object") return survey;
+
+  const surveyId = survey.survey_id || survey.surveyId || survey.id || null;
+  const orgId = survey.org_id || survey.orgId || null;
+  const projectId = survey.project_id || survey.projectId || null;
+  const createdAt = survey.created_at || survey.createdAt || null;
+  const updatedAt = survey.updated_at || survey.updatedAt || null;
+  const questionOrder = survey.question_order || survey.questionOrder || [];
+  const blockOrder = survey.block_order || survey.blockOrder || [];
+
+  return {
+    ...survey,
+    survey_id: surveyId,
+    surveyId,
+    org_id: orgId,
+    orgId,
+    project_id: projectId,
+    projectId,
+    created_at: createdAt,
+    createdAt,
+    updated_at: updatedAt,
+    updatedAt,
+    question_order: questionOrder,
+    questionOrder,
+    block_order: blockOrder,
+    blockOrder,
+  };
+};
+
 const SurveyModel = {
   async create(orgId, data) {
     const body = {
@@ -19,11 +49,10 @@ const SurveyModel = {
       created_by: data.createdBy,
       updated_by: data.createdBy,
       settings: { anonymous: false },
-      question_order: [],
-      meta_data: {},
-      // optional: start with empty structure
-      blocks: [],
-      block_order: [],
+      question_order: data.questionOrder || data.question_order || [],
+      meta_data: data.metaData || data.meta_data || {},
+      blocks: data.blocks || [],
+      block_order: data.blockOrder || data.block_order || [],
     };
     const res = await fetch(`${BASE}`, {
       method: "POST",
@@ -31,7 +60,7 @@ const SurveyModel = {
       body: JSON.stringify(body),
       cache: "no-store",
     });
-    return json(res);
+    return normalizeSurvey(await json(res));
   },
 
   async get(surveyId) {
@@ -39,7 +68,7 @@ const SurveyModel = {
       method: "GET",
       cache: "no-store",
     });
-    return json(res);
+    return normalizeSurvey(await json(res));
   },
   
   async getAll(orgId) {
@@ -51,7 +80,8 @@ const SurveyModel = {
       method: "GET",
       cache: "no-store",
     });
-    return json(res);
+    const data = await json(res);
+    return Array.isArray(data) ? data.map(normalizeSurvey) : normalizeSurvey(data);
   },
 
   async getAllByProject(projectId) {
@@ -59,7 +89,8 @@ const SurveyModel = {
       method: "GET",
       cache: "no-store",
     });
-    return json(res);
+    const data = await json(res);
+    return Array.isArray(data) ? data.map(normalizeSurvey) : normalizeSurvey(data);
   },
 
   async update(surveyId, data) {
@@ -81,7 +112,7 @@ const SurveyModel = {
       body: JSON.stringify(payload),
       cache: "no-store",
     });
-    return json(res);
+    return normalizeSurvey(await json(res));
   },
 
   async delete(surveyId) {

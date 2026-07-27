@@ -37,6 +37,9 @@ async function forceDecryptResponse(res) {
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const orgId = searchParams.get("orgId");
+  const userId = searchParams.get("userId") || searchParams.get("user_id");
+  
+  console.log("Next.js API - orgId:", orgId, "userId:", userId);
   
   if (!orgId) {
     return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
@@ -45,27 +48,40 @@ export async function GET(req) {
   const qs = new URLSearchParams();
   const useCache = searchParams.get("use_cache");
   if (useCache) qs.set("use_cache", useCache);
+  
+  // ✅ ADD orgId to the query string for FastAPI
+  qs.set("orgId", orgId);
 
   try {
-    const res = await fetch(`${BASE}/projects/${orgId}?${qs.toString()}`, {
+    const url = `${BASE}/projects/${orgId}?${qs.toString()}`;
+    console.log("Calling FastAPI:", url);
+    
+    const res = await fetch(url, {
       signal: AbortSignal.timeout(30000),
+      headers: { 
+        "x-user-id": userId,
+      },
       cache: "no-store",
     });
+    
+    console.log("FastAPI response status:", res.status);
     return forceDecryptResponse(res);
   } catch (e) {
+    console.error("Error calling FastAPI:", e);
     return NextResponse.json({ detail: "Upstream error", message: String(e?.message || e) }, { status: 500 });
   }
 }
-
 // POST /api/post-gres-apis/projects
 export async function POST(req) {
   try {
     const raw = await req.json();
     const payload = ENC ? await encryptPayload(raw) : raw;
+    const userId = raw.ownerUID || raw.userId || raw.owner_uid;
+    console.log(raw, payload, userId);
 
     const res = await fetch(`${BASE}/projects/`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...(ENC ? { "x-encrypted": "1" } : {}) },
+      headers: { "Content-Type": "application/json", "x-user-id": userId, ...(ENC ? { "x-encrypted": "1" } : {}) },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30000),
       cache: "no-store",

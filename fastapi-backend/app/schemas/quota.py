@@ -1,5 +1,5 @@
 # app/schemas/quota.py
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 from datetime import datetime
@@ -8,6 +8,7 @@ from datetime import datetime
 # ---------- CREATE PAYLOAD TYPES ----------
 
 class QuotaCellCreate(BaseModel):
+    id: Optional[UUID] = None
     label: str
     cap: int = Field(..., ge=0)
     condition: Dict[str, Any] = Field(default_factory=dict)
@@ -34,9 +35,7 @@ class QuotaCreate(BaseModel):
 
     cells: List[QuotaCellCreate] = Field(default_factory=list)
 
-    class Config:
-        allow_population_by_field_name = True
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True, validate_by_name=True)
 
 
 # Update has same shape as create (full replacement)
@@ -58,8 +57,7 @@ class QuotaCell(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime]
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class Quota(BaseModel):
@@ -81,8 +79,7 @@ class Quota(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime]
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class QuotaWithCells(Quota):
@@ -92,7 +89,7 @@ class QuotaWithCells(Quota):
 # ---------- EVALUATE / INCREMENT ----------
 
 class QuotaEvaluateRequest(BaseModel):
-    respondent_id: Optional[UUID]
+    respondent_id: Optional[str]
     facts: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -105,7 +102,8 @@ class QuotaEvaluateResult(BaseModel):
 
 
 class QuotaIncrementRequest(BaseModel):
-    respondent_id: Optional[UUID]
+    respondent_id: Optional[str]
     matched_cell_id: UUID
     reason: str = "complete"
+    survey_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)

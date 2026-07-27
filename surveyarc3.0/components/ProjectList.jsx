@@ -1,28 +1,43 @@
 "use client";
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { getCookie } from "cookies-next";
 import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
 import { useProject } from "@/providers/postGresPorviders/projectProvider";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
+import { useRBAC } from "@/providers/RBACProvider"; // ✅ Import RBAC
 
 import { ProjectsToolbar } from "./projects/ProjectsToolbar";
 import { ProjectsTable } from "./projects/ProjectsTable";
 import { MemberManagementDialog } from "./projects/MemberManagementDialog";
 import { TimelineDialog } from "./projects/TimelineDialog";
 import { Toast } from "@/utils/Toast";
-import { descendingComparator, getComparator, getId, getRole   } from "@/utils/projectUtils";
+import { descendingComparator, getComparator, getId, getRole } from "@/utils/projectUtils";
 import { useGroups } from "@/providers/postGresPorviders/GroupProvider";
-import { FiPlus } from "react-icons/fi";
 
 const ITEMS_PER_PAGE = 10;
 
-export default function ProjectsList({ orgId, projects = [], deleteProject, onEditProject, handleCreateProject, loading }) {
+export default function ProjectsList({ 
+  orgId, 
+  projects = [], 
+  deleteProject, 
+  onEditProject, 
+  handleCreateProject, 
+  loading 
+}) {
   const router = useRouter();
-  const { user, getUsersByIds } = useUser();
+  const { user, getUsersByIds, getUsersByOrg } = useUser(); // ✅ Add getUsersByOrg
   const { organisation } = useOrganisation();
+  const { groups, loadGroups, loadMembers, membersCache } = useGroups();
+  
+  // ✅ RBAC Integration
+  const { 
+    loadEffectivePermissions, 
+   permissionsLoaded,
+    hasCapability 
+  } = useRBAC();
+
   const {
-    updateProject,
     getProjectById,
     addMember,
     removeMember,
@@ -33,16 +48,12 @@ export default function ProjectsList({ orgId, projects = [], deleteProject, onEd
     deleteMilestone,
     patchTags,
     addAttachment,
-    setStatus,
-    getAllProjects,
     getTimeline,
-    recomputeProgress,
     bulkProjects,
     listFavorites,
     addFavorite,
     removeFavorite,
   } = useProject();
-  const { groups, loadGroups, loadMembers, membersCache } = useGroups();
 
   // State
   const [order, setOrder] = useState("desc");
@@ -65,8 +76,105 @@ export default function ProjectsList({ orgId, projects = [], deleteProject, onEd
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState({ open: false, severity: "info", msg: "" });
   const [memberProfiles, setMemberProfiles] = useState({});
+  const [orgUsers, setOrgUsers] = useState([]);
+  const [loadingOrgUsers, setLoadingOrgUsers] = useState(false);
+  const [permissionsReady, setPermissionsReady] = useState(false);
+  const orgUsersRequestRef = useRef(0);
+  const myUserId = useMemo(
+    () => getId(user) || user?.uid || getCookie("currentUserId"),
+    [user]
+  );
+  useEffect(() => {
+    if (!orgId) return;
+    
+    const loadOrgUsers = async () => {
+      const requestId = orgUsersRequestRef.current + 1;
+      orgUsersRequestRef.current = requestId;
+      setLoadingOrgUsers(true);
 
-  // Permissions
+      try {
+        console.log("[ProjectsList] Loading users for org:", orgId);
+        const users = await getUsersByOrg(orgId);
+        if (orgUsersRequestRef.current !== requestId) return;
+        console.log("[ProjectsList] Loaded org users:", users);
+        setOrgUsers(users || []);
+      } catch (error) {
+        if (orgUsersRequestRef.current !== requestId) return;
+        console.error("[ProjectsList] Failed to load org users:", error);
+        setOrgUsers([]);
+      } finally {
+        if (orgUsersRequestRef.current === requestId) {
+          setLoadingOrgUsers(false);
+        }
+      }
+    };
+    
+    loadOrgUsers();
+  }, [orgId, getUsersByOrg]);
+
+  // ✅ Load user permissions on mount
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!myUserId || !orgId) {
+      setPermissionsReady(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (permissionsLoaded) {
+      setPermissionsReady(true);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setPermissionsReady(false);
+
+    (async () => {
+      try {
+        console.log("[ProjectsList] Loading permissions for user:", myUserId);
+        await loadEffectivePermissions(myUserId, orgId, "org", orgId);
+      } catch (error) {
+        console.error("[ProjectsList] Failed to load permissions:", error);
+      } finally {
+        if (!cancelled) {
+          setPermissionsReady(true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [myUserId, orgId, permissionsLoaded, loadEffectivePermissions]);
+
+  // ✅ RBAC Permission Checks
+  const canCreateProject = useMemo(() => {
+    return hasCapability("project.create");
+  }, [hasCapability]);
+
+  const canDeleteProject = useCallback((project) => {
+    // Check if user has org-level delete permission OR is project owner
+    const isProjectOwner = project?.owner_uid === myUserId;
+    return hasCapability("project.delete") || isProjectOwner;
+  }, [hasCapability, myUserId]);
+
+  const canEditProject = useCallback((project) => {
+    const isProjectOwner = project?.owner_uid === myUserId;
+    return hasCapability("project.update") || isProjectOwner;
+  }, [hasCapability, myUserId]);
+
+  const canManageMembers = useCallback((project) => {
+    return hasCapability("project.member.update");
+  }, [hasCapability]);
+
+  const canViewProject = useCallback((project) => {
+    return hasCapability("project.read");
+  }, [hasCapability]);
+
+  // Legacy permission checks (for backward compatibility)
   const isOwner = useMemo(() => {
     const team = Array.isArray(organisation?.team_members) ? organisation.team_members : [];
     const myId = getId(user) || user?.uid || "";
@@ -83,42 +191,59 @@ export default function ProjectsList({ orgId, projects = [], deleteProject, onEd
     [user]
   );
 
+  const applyProjectPatch = useCallback((pid, patch) => {
+    setProjectOverrides((prev) => ({
+      ...prev,
+      [pid]: { ...(prev[pid] || {}), ...patch },
+    }));
+  }, []);
+
+  const refreshActiveProject = useCallback(async (projectId) => {
+    if (!projectId) return;
+    const fresh = await getProjectById(projectId);
+    setActiveProject(fresh);
+    applyProjectPatch(projectId, { members: fresh.members });
+  }, [getProjectById, applyProjectPatch]);
 
   const canManageProject = useCallback(
     (project) => {
+      // ✅ Use RBAC permissions first, fallback to role-based check
+      if (hasCapability("project.update")) return true;
       if (isOwner) return true;
+      
       const myId = getId(user);
       const me = (project?.members || []).find((m) => getId(m) === myId);
       const r = getRole(me);
       return ["owner", "admin", "editor"].includes(r);
     },
-    [isOwner, user]
+    [hasCapability, isOwner, user]
   );
 
   const canEnter = useCallback(
-    (project) => isOwner || userInProject(project),
-    [isOwner, userInProject]
+    (project) => {
+      // ✅ Check RBAC permission first
+      if (hasCapability("project.read")) return true;
+      return isOwner || userInProject(project);
+    },
+    [hasCapability, isOwner, userInProject]
   );
 
   const orgTeamMembers = useMemo(
-    () => (Array.isArray(organisation?.team_members) ? organisation.team_members : []),
-    [organisation]
+    () => orgUsers, // Use loaded users
+    [orgUsers]
   );
-useEffect(() => {
+
+  useEffect(() => {
     if (memberOpen && orgId) {
       loadGroups(orgId);
     }
   }, [memberOpen, orgId, loadGroups]);
+
   const unassignedCandidates = useMemo(() => {
     if (!activeProject) return orgTeamMembers;
     const assigned = new Set((activeProject.members || []).map((m) => getId(m)));
     return orgTeamMembers.filter((m) => !assigned.has(getId(m)));
   }, [orgTeamMembers, activeProject]);
-
-  const myUserId = useMemo(
-    () => getId(user) || user?.uid || getCookie("currentUserId"),
-    [user]
-  );
 
   // Load favorites
   useEffect(() => {
@@ -161,13 +286,6 @@ useEffect(() => {
       }
     })();
   }, [memberOpen, activeProject, getUsersByIds, memberProfiles]);
-
-  const applyProjectPatch = useCallback((pid, patch) => {
-    setProjectOverrides((prev) => ({
-      ...prev,
-      [pid]: { ...(prev[pid] || {}), ...patch },
-    }));
-  }, []);
 
   // Filtering and sorting
   const filteredSorted = useMemo(() => {
@@ -217,6 +335,7 @@ useEffect(() => {
   const toggleFavorite = useCallback(
     async (pid) => {
       try {
+        console.log([pid])
         const isFav = favorites.has(pid);
         if (isFav) {
           await removeFavorite(myUserId, pid);
@@ -227,6 +346,7 @@ useEffect(() => {
           });
           openToast("Removed from favorites", "success");
         } else {
+          console.log(myUserId, pid)
           await addFavorite(myUserId, pid);
           setFavorites((prev) => new Set(prev).add(pid));
           openToast("Added to favorites", "success");
@@ -242,7 +362,7 @@ useEffect(() => {
     (project) => {
       const effective = { ...project, ...(projectOverrides[project.projectId] || {}) };
       if (!canEnter(effective)) {
-        openToast("You're not part of this project's team yet.", "warning");
+        openToast("You don't have permission to view this project.", "warning");
         return;
       }
       router.push(`/postgres-org/${orgId}/dashboard/projects/${project.projectId}`);
@@ -258,7 +378,7 @@ useEffect(() => {
     },
     [orderBy, order]
   );
- // ✅ Add bulk member handler
+
   const handleBulkAddMembers = useCallback(
     async (memberUids, role = "contributor") => {
       const projectId = activeProject?.projectId || activeProjectId;
@@ -266,45 +386,42 @@ useEffect(() => {
         return openToast("No members to add", "warning");
       }
 
+      // ✅ Check permission
+      if (!canManageMembers(activeProject)) {
+        return openToast("You don't have permission to manage members", "error");
+      }
+
       setBusy(true);
       try {
-        // Add members one by one (or implement a bulk endpoint on your backend)
         const promises = memberUids.map((uid) =>
           addMember(projectId, {
             uid,
-            email: "", // Will be filled from user profile
+            email: "",
             role: role || "contributor",
           })
         );
 
         await Promise.all(promises);
-
-        // Refresh project data
-        const updated = await getProjectById(projectId);
-        setActiveProject(updated);
-        applyProjectPatch(projectId, { members: updated.members });
-
-        openToast(
-          `Successfully added ${memberUids.length} member(s)!`,
-          "success"
-        );
+        await refreshActiveProject(projectId);
+        openToast(`Successfully added ${memberUids.length} member(s)!`, "success");
       } catch (e) {
         openToast(String(e?.message || e), "error");
       } finally {
         setBusy(false);
       }
     },
-    [
-      activeProject,
-      activeProjectId,
-      addMember,
-      getProjectById,
-      applyProjectPatch,
-      openToast,
-    ]
+    [activeProject, activeProjectId, addMember, refreshActiveProject, openToast, canManageMembers]
   );
+
   const handleAddTag = useCallback(
     async (projectId, tag) => {
+      const project = projects.find(p => p.projectId === projectId);
+      
+      // ✅ Check permission
+      if (!canEditProject(project)) {
+        return openToast("You don't have permission to edit this project", "error");
+      }
+
       const t = (tag || "").trim();
       if (!t) return;
       try {
@@ -317,11 +434,18 @@ useEffect(() => {
         openToast(String(e?.message || e), "error");
       }
     },
-    [patchTags, openToast, getProjectById, applyProjectPatch]
+    [patchTags, openToast, getProjectById, applyProjectPatch, canEditProject, projects]
   );
 
   const handleRemoveTag = useCallback(
     async (projectId, tag) => {
+      const project = projects.find(p => p.projectId === projectId);
+      
+      // ✅ Check permission
+      if (!canEditProject(project)) {
+        return openToast("You don't have permission to edit this project", "error");
+      }
+
       try {
         await patchTags(projectId, { remove: [tag] });
         const fresh = await getProjectById(projectId);
@@ -331,45 +455,115 @@ useEffect(() => {
         openToast(String(e?.message || e), "error");
       }
     },
-    [patchTags, openToast, getProjectById, applyProjectPatch]
+    [patchTags, openToast, getProjectById, applyProjectPatch, canEditProject, projects]
   );
 
-  const openMembers = useCallback(
-    async (project) => {
-      setMemberOpen(true);
-      const pid = project?.projectId || null;
-      setActiveProjectId(pid);
-      if (pid) {
-        try {
-          setActiveLoading(true);
-          const fresh = await getProjectById(pid);
-          setActiveProject(fresh || project);
-        } catch {
-          setActiveProject(project || null);
-        } finally {
-          setActiveLoading(false);
-        }
-      } else {
-        setActiveProject(null);
-      }
-    },
-    [getProjectById]
-  );
+const openMembers = useCallback(async (project) => {
+  const pid = project?.projectId;
+  setActiveProjectId(pid);
 
+  if (!pid) {
+    setActiveProject(null);
+    setMemberOpen(true);
+    return;
+  }
+
+  setActiveLoading(true);
+  
+  try {
+    // ✅ Fetch project FIRST
+    const fresh = await getProjectById(pid);
+    setActiveProject(fresh);
+    
+    // ✅ THEN open dialog
+    setMemberOpen(true);
+  } catch (error) {
+    console.error("Failed to load project:", error);
+    openToast("Failed to load project details", "error");
+  } finally {
+    setActiveLoading(false);
+  }
+}, [getProjectById, openToast]);
   const closeMembers = useCallback(() => setMemberOpen(false), []);
 
   const handleBulkArchive = async () => {
-    await bulkProjects({ projectIds: Array.from(selectedIds), op: "archive" });
-    setSelectedIds(new Set());
-    openToast("Archived selected projects", "success");
+    // ✅ Check permissions for each selected project
+    const projectsToArchive = Array.from(selectedIds).filter(pid => {
+      const project = projects.find(p => p.projectId === pid);
+      return canEditProject(project);
+    });
+
+    if (projectsToArchive.length === 0) {
+      return openToast("You don't have permission to archive any selected projects", "error");
+    }
+
+    if (projectsToArchive.length < selectedIds.size) {
+      openToast(`Can only archive ${projectsToArchive.length} of ${selectedIds.size} selected projects`, "warning");
+    }
+
+    try {
+      setBusy(true);
+      await bulkProjects({ projectIds: projectsToArchive, op: "archive" });
+      setSelectedIds(new Set());
+      openToast(`Archived ${projectsToArchive.length} project(s)`, "success");
+    } catch (e) {
+      openToast(String(e?.message || e), "error");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleBulkDelete = async () => {
-    console.log(selectedIds)
-    await bulkProjects({ projectIds: Array.from(selectedIds), op: "delete" });
-    setSelectedIds(new Set());
-    openToast("Deleted selected", "success");
+    // ✅ Check permissions for each selected project
+    const projectsToDelete = Array.from(selectedIds).filter(pid => {
+      const project = projects.find(p => p.projectId === pid);
+      return canDeleteProject(project);
+    });
+
+    if (projectsToDelete.length === 0) {
+      return openToast("You don't have permission to delete any selected projects", "error");
+    }
+
+    if (projectsToDelete.length < selectedIds.size) {
+      openToast(`Can only delete ${projectsToDelete.length} of ${selectedIds.size} selected projects`, "warning");
+    }
+
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete ${projectsToDelete.length} project(s)?`
+    );
+    if (!confirmDelete) return;
+
+    try {
+      setBusy(true);
+      await bulkProjects({ projectIds: projectsToDelete, op: "delete" });
+      setSelectedIds(new Set());
+      openToast(`Deleted ${projectsToDelete.length} project(s)`, "success");
+    } catch (e) {
+      openToast(String(e?.message || e), "error");
+    } finally {
+      setBusy(false);
+    }
   };
+
+  // ✅ Wrapped delete handler with permission check
+  const handleDelete = useCallback(async (projectId) => {
+    const project = projects.find(p => p.projectId === projectId);
+    
+    if (!canDeleteProject(project)) {
+      return openToast("You don't have permission to delete this project", "error");
+    }
+
+    await deleteProject(projectId);
+  }, [deleteProject, canDeleteProject, projects, openToast]);
+
+  // ✅ Wrapped edit handler with permission check
+  const handleEdit = useCallback((project) => {
+    if (!canEditProject(project)) {
+      return openToast("You don't have permission to edit this project", "error");
+    }
+    
+    onEditProject(project);
+  }, [onEditProject, canEditProject, openToast]);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -384,14 +578,14 @@ useEffect(() => {
         onClearSelection={() => setSelectedIds(new Set())}
         onBulkArchive={handleBulkArchive}
         onBulkDelete={handleBulkDelete}
-        loading={loading}
-        handleCreateProject={handleCreateProject}
+        loading={loading || busy || !permissionsReady || loadingOrgUsers}
+        handleCreateProject={permissionsReady && canCreateProject ? handleCreateProject : undefined} // ✅ Only show if permitted
+        canCreate={permissionsReady && canCreateProject} // ✅ Pass permission check
       />
   
       <ProjectsTable
         rows={rows}
         order={order}
-        
         orderBy={orderBy}
         onRequestSort={handleRequestSort}
         selectedIds={selectedIds}
@@ -408,6 +602,8 @@ useEffect(() => {
         projectOverrides={projectOverrides}
         canEnter={canEnter}
         canManageProject={canManageProject}
+        canDeleteProject={canDeleteProject} // ✅ Pass delete permission check
+        canEditProject={canEditProject} // ✅ Pass edit permission check
         onEnter={handleEnter}
         editingTags={editingTags}
         tagInput={tagInput}
@@ -428,8 +624,8 @@ useEffect(() => {
           setActiveProject(project);
           setActiveProjectId(project.projectId);
         }}
-        onEdit={onEditProject}
-        onDelete={deleteProject}
+        onEdit={handleEdit} // ✅ Use wrapped handler
+        onDelete={handleDelete} // ✅ Use wrapped handler
         onStatusChanged={async (projectId) => {
           const fresh = await getProjectById(projectId);
           applyProjectPatch(projectId, fresh || {});
@@ -451,7 +647,7 @@ useEffect(() => {
         </div>
       )}
 
-     <MemberManagementDialog
+      <MemberManagementDialog
         open={memberOpen}
         onClose={closeMembers}
         project={activeProject}
@@ -459,12 +655,14 @@ useEffect(() => {
         candidates={unassignedCandidates}
         byUid={byUid}
         onAddMember={async (uid, email, role) => {
+          if (!canManageMembers(activeProject)) {
+            return openToast("You don't have permission to manage members", "error");
+          }
+
           setBusy(true);
           try {
             await addMember(activeProjectId, { uid, email, role });
-            const updated = await getAllProjects();
-            setActiveProject(updated);
-            applyProjectPatch(activeProjectId, { members: updated.members });
+            await refreshActiveProject(activeProjectId);
             openToast("Member assigned successfully!", "success");
           } catch (e) {
             openToast(String(e?.message || e), "error");
@@ -473,12 +671,14 @@ useEffect(() => {
           }
         }}
         onRemoveMember={async (uid) => {
+          if (!canManageMembers(activeProject)) {
+            return openToast("You don't have permission to manage members", "error");
+          }
+
           setBusy(true);
           try {
             await removeMember(activeProjectId, uid);
-            const updated = await getAllProjects();
-            setActiveProject(updated);
-            applyProjectPatch(activeProjectId, { members: updated.members });
+            await refreshActiveProject(activeProjectId);
             openToast("Member removed successfully!", "success");
           } catch (e) {
             openToast(String(e?.message || e), "error");
@@ -486,13 +686,12 @@ useEffect(() => {
             setBusy(false);
           }
         }}
-        onBulkAddMembers={handleBulkAddMembers}  // ✅ Pass bulk handler
+        onBulkAddMembers={handleBulkAddMembers}
         busy={busy}
         groups={groups}
         onLoadGroupMembers={loadMembers}
         groupMembersCache={membersCache}
       />
-
 
       <TimelineDialog
         open={timelineOpen}

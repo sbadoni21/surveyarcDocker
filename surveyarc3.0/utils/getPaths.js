@@ -3,11 +3,20 @@ import { usePathname } from "next/navigation";
 
 export function useRouteParams() {
   const pathname = usePathname();
-  const pathParts = pathname.split("/");
+  const parts = String(pathname || "")
+    .split("/")
+    .filter(Boolean);
 
-  const orgId = pathParts[3] || null;
-  const projectId = pathParts[6] || null;
-  const surveyId = pathParts[7] || null;
+  const locale = parts[0] || null;
+  const appMode = ["org", "postgres-org"].includes(parts[1]) ? parts[1] : null;
+  const orgId = appMode ? parts[2] || null : null;
 
-  return { orgId, projectId, surveyId };
+  const projectsIdx = parts.indexOf("projects");
+  const projectId = projectsIdx >= 0 ? parts[projectsIdx + 1] || null : null;
+  const surveyId = projectsIdx >= 0 ? parts[projectsIdx + 2] || null : null;
+
+  const dashboardBase =
+    locale && appMode && orgId ? `/${locale}/${appMode}/${orgId}/dashboard` : null;
+
+  return { locale, appMode, orgId, projectId, surveyId, dashboardBase };
 }

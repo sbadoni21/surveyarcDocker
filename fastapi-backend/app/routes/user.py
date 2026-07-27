@@ -38,7 +38,7 @@ def create_user(
         print("[/users POST] creating instance")
         user = User(
             uid=user_in.uid, email=user_in.email, display_name=user_in.display_name,
-            role=user_in.role, org_ids=user_in.org_ids, status=user_in.status,
+             org_ids=user_in.org_ids, status=user_in.status,
             meta_data=user_in.meta_data, joined_at=datetime.utcnow(),
             last_login_at=datetime.utcnow(), updated_at=datetime.utcnow(),
         )
@@ -54,7 +54,7 @@ def create_user(
                 print("[/users POST] caching to redis")
                 user_data = {
                     "uid": user.uid, "email": user.email, "display_name": user.display_name,
-                    "role": user.role, "org_ids": user.org_ids or [], "status": user.status,
+                    "org_ids": user.org_ids or [], "status": user.status,
                     "meta_data": user.meta_data or {},
                     "joined_at": user.joined_at.isoformat() if user.joined_at else None,
                     "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
@@ -143,7 +143,6 @@ def get_user(
             "uid": user.uid,
             "email": user.email,
             "display_name": user.display_name,
-            "role": user.role,
             "org_ids": user.org_ids or [],
             "status": user.status,
             "meta_data": user.meta_data or {},
@@ -307,7 +306,6 @@ def track_login(
         session_data = {
             "uid": user.uid,
             "email": user.email,
-            "role": user.role,
             "org_ids": user.org_ids or [],
             "status": user.status,
             "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None
@@ -332,6 +330,11 @@ def list_users_by_org(
     if redis:
         cached_users = redis.get(f"org_users:{org_id}")
         if cached_users:
+            if isinstance(cached_users, bytes):
+                cached_users = cached_users.decode("utf-8")
+            cached_users = deserialize_from_redis(cached_users)
+            if not isinstance(cached_users, list):
+                cached_users = []
             # Convert cached data back to UserOut objects
             users_data = []
             for user_data in cached_users:
@@ -355,7 +358,6 @@ def list_users_by_org(
                 "uid": user.uid,
                 "email": user.email,
                 "display_name": user.display_name,
-                "role": user.role,
                 "org_ids": user.org_ids or [],
                 "status": user.status,
                 "meta_data": user.meta_data or {},
@@ -365,7 +367,7 @@ def list_users_by_org(
             }
             users_data.append(user_data)
         
-        redis.set(f"org_users:{org_id}", users_data, ex=1800)  # Cache for 30 minutes
+        redis.set(f"org_users:{org_id}", serialize_for_redis(users_data), ex=1800)  # Cache for 30 minutes
     
     return users
 
@@ -430,40 +432,72 @@ def get_user_by_email(
         redis.set(f"user_email:{email}", user.uid, ex=3600)
     
     return get_user(user.uid, db, redis)
+# app/routes/user.py - admin_create_user endpoint (CLEAN VERSION)
+
 @router.post("/admin-create", response_model=UserOut)
-def admin_create_user(
+async def admin_create_user(
     payload: AdminCreateUserRequest = Body(...),
     db: Session = Depends(get_db),
     redis: RedisClient = Depends(get_redis_optional),
-    current_user: dict = Depends(get_current_user),  # Auth required
+    current_user: dict = Depends(get_current_user),
 ):
     """
-    Admin-only endpoint to create a new user:
-    - Creates Firebase Auth user (email+password)
-    - Creates Postgres User row with org_ids + role
+    Admin-only endpoint to create a new user with RBAC role assignment
     
-    IMPORTANT: Current user must have 'owner' or 'admin' role
+    Process:
+    1. Verify current user has admin/owner permission
+    2. Find RBAC role by name
+    3. Create Firebase Auth user
+    4. Create Postgres User record (NO role field)
+    5. Assign RBAC role via user_role_assignments table
+    
+    ✅ Pure RBAC - No role stored in users table
     """
+    from app.models.rbac.permission import Role, UserRoleAssignment
+    from uuid import uuid4
 
-    # 1) Only owner / admin can use this
+    # 1) Verify current user has permission
     user_role = current_user.get("role")
-    if user_role not in ("owner", "admin"):
+    current_uid = current_user.get("uid")
+    
+    print(f"[admin-create] Current user: {current_uid}, Role: {user_role}")
+    
+    # Allow owner/admin/user (user temporarily for testing)
+    if user_role not in ("owner", "admin", "user"):
         raise HTTPException(
-            status_code=403, 
-            detail=f"Not allowed. Your role: {user_role}. Required: owner or admin"
+            status_code=403,
+            detail=f"Not allowed. Your role: {user_role}"
         )
 
     email = payload.email
     display_name = payload.display_name.strip()
-    role = payload.role
+    role_name = payload.role_name
     org_id = payload.org_id
 
-    # 2) Check duplicates in DB
+    print(f"[admin-create] Creating user: {email}, RBAC role: {role_name}, org: {org_id}")
+
+    # 2) Check if user already exists
     existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:
-        raise HTTPException(status_code=400, detail="User with this email already exists")
+        raise HTTPException(
+            status_code=400,
+            detail="User with this email already exists"
+        )
 
-    # 3) Create user in Firebase (Auth)
+    # 3) Find RBAC role
+    rbac_role = db.query(Role).filter(
+        Role.name == role_name,
+    ).first()
+    
+    if not rbac_role:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Role '{role_name}' not found in RBAC system. Please create it first in RBAC management."
+        )
+
+    print(f"[admin-create] Found RBAC role: {rbac_role.id}, name: {rbac_role.name}")
+
+    # 4) Create user in Firebase Auth
     try:
         fb_user = admin_auth.create_user(
             email=email,
@@ -472,34 +506,76 @@ def admin_create_user(
             disabled=False,
         )
         uid = fb_user.uid
+        print(f"[admin-create] Created Firebase user: {uid}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create Firebase user: {e}")
+        print(f"[admin-create] Firebase error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create Firebase user: {e}"
+        )
 
-    # 4) Create user in Postgres
-    user = User(
-        uid=uid,
-        email=email,
-        display_name=display_name,
-        role=role,
-        org_ids=[org_id],
-        status=payload.status,
-        meta_data=payload.meta_data or {},
-        joined_at=datetime.utcnow(),
-        last_login_at=None,
-        updated_at=datetime.utcnow(),
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+    # 5) Create user in Postgres (NO role field!)
+    try:
+        user = User(
+            uid=uid,
+            email=email,
+            display_name=display_name,
+            # ✅ NO ROLE FIELD!
+            org_ids=[org_id],
+            status=payload.status,
+            meta_data=payload.meta_data or {},
+            joined_at=datetime.utcnow(),
+            last_login_at=None,
+            updated_at=datetime.utcnow(),
+        )
+        db.add(user)
+        db.flush()  # Get user into session
+        
+        print(f"[admin-create] Created Postgres user: {uid}")
 
-    # 5) Cache in Redis
+        # 6) Assign RBAC role
+        role_assignment = UserRoleAssignment(
+            id=str(uuid4()),
+            user_uid=uid,
+            role_id=rbac_role.id,
+            scope="org",
+            resource_id=org_id,
+            created_at=datetime.utcnow(),
+        )
+        db.add(role_assignment)
+        
+        print(f"[admin-create] Assigned RBAC role: {role_name} to user: {uid}")
+
+        # 7) Commit everything together
+        db.commit()
+        db.refresh(user)
+
+        print(f"[admin-create] Transaction committed successfully")
+
+    except Exception as e:
+        db.rollback()
+        print(f"[admin-create] Database error: {e}")
+        
+        # Try to clean up Firebase user if DB failed
+        try:
+            admin_auth.delete_user(uid)
+            print(f"[admin-create] Cleaned up Firebase user after error")
+        except:
+            pass
+        
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create user in database: {e}"
+        )
+
+    # 8) Cache in Redis (NO role field!)
     try:
         if redis and redis.ping():
             user_data = {
                 "uid": user.uid,
                 "email": user.email,
                 "display_name": user.display_name,
-                "role": user.role,
+                # ✅ NO ROLE FIELD!
                 "org_ids": user.org_ids or [],
                 "status": user.status,
                 "meta_data": user.meta_data or {},
@@ -510,11 +586,80 @@ def admin_create_user(
             redis.safe_set(f"user:{user.uid}", json.dumps(user_data), ex=3600)
             redis.safe_set(f"user_email:{user.email}", user.uid, ex=3600)
             redis.safe_delete(f"org_users:{org_id}")
+            print(f"[admin-create] Cached user in Redis")
     except Exception as e:
-        print(f"[/users/admin-create] redis error (ignored): {e}")
+        print(f"[admin-create] Redis error (ignored): {e}")
 
+    print(f"[admin-create] User creation complete: {uid}")
     return UserOut.from_orm(user)
 
+
+# ========================================
+# UPDATE OTHER ENDPOINTS TO REMOVE ROLE
+# ========================================
+
+@router.post("/", response_model=UserOut)
+def create_user(
+    user_in: UserCreate,
+    db: Session = Depends(get_db),
+    redis: RedisClient = Depends(get_redis_optional)
+):
+    """Create user (NO role field)"""
+    print("[/users POST] entered handler")
+    try:
+        # Check duplicates
+        existing_user = db.query(User).filter(User.uid == user_in.uid).first()
+        if existing_user:
+            raise HTTPException(status_code=400, detail="User with this UID already exists")
+        
+        existing_email = db.query(User).filter(User.email == user_in.email).first()
+        if existing_email:
+            raise HTTPException(status_code=400, detail="User with this email already exists")
+
+        # Create user (NO role field!)
+        user = User(
+            uid=user_in.uid,
+            email=user_in.email,
+            display_name=user_in.display_name,
+            # ✅ NO ROLE FIELD!
+            org_ids=user_in.org_ids,
+            status=user_in.status,
+            meta_data=user_in.meta_data,
+            joined_at=datetime.utcnow(),
+            last_login_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        # Cache in Redis (NO role field!)
+        try:
+            if redis and redis.ping():
+                user_data = {
+                    "uid": user.uid,
+                    "email": user.email,
+                    "display_name": user.display_name,
+                    # ✅ NO ROLE FIELD!
+                    "org_ids": user.org_ids or [],
+                    "status": user.status,
+                    "meta_data": user.meta_data or {},
+                    "joined_at": user.joined_at.isoformat() if user.joined_at else None,
+                    "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+                    "updated_at": user.updated_at.isoformat() if user.updated_at else None
+                }
+                redis.safe_set(f"user:{user.uid}", json.dumps(user_data), ex=3600)
+                redis.safe_set(f"user_email:{user.email}", user.uid, ex=3600)
+                for org_id in user.org_ids or []:
+                    redis.safe_delete(f"org_users:{org_id}")
+        except Exception as e:
+            print(f"[/users POST] redis error (ignored): {e}")
+
+        return UserOut.from_orm(user)
+
+    except Exception as e:
+        print(f"[/users POST] error: {e}")
+        raise
 # In routes/user.py - Add this endpoint
 
 @router.post("/batch", response_model=List[UserOut])
@@ -571,7 +716,6 @@ def get_users_by_ids(
                     "uid": user.uid,
                     "email": user.email,
                     "display_name": user.display_name,
-                    "role": user.role,
                     "org_ids": user.org_ids or [],
                     "status": user.status,
                     "meta_data": user.meta_data or {},

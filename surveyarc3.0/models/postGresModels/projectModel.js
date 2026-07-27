@@ -40,7 +40,21 @@ const camelToSnake = (obj) => {
 };
 
 // default payload your FastAPI understands
-const defaultData = ({ projectId, orgId, name, description = "", ownerUID }) => {
+const defaultData = ({
+  projectId,
+  orgId,
+  name,
+  description = "",
+  ownerUID,
+  startDate = null,
+  dueDate = null,
+  status = "planning",
+  priority = "medium",
+  category = "",
+  tags = [],
+  isPublic = false,
+  notificationsEnabled = true,
+}) => {
   const now = new Date().toISOString();
   return {
     project_id: projectId,
@@ -50,17 +64,17 @@ const defaultData = ({ projectId, orgId, name, description = "", ownerUID }) => 
     owner_uid: ownerUID,
     is_active: true,
     members: [{ uid: ownerUID, role: "owner", status: "active", joined_at: now }],
-    start_date: now,
-    due_date: null,
+    start_date: startDate || now,
+    due_date: dueDate || null,
     milestones: [],
-    status: "planning",
+    status,
     progress_percent: 0,
-    priority: "medium",
-    category: "",
-    tags: [],
+    priority,
+    category,
+    tags: Array.isArray(tags) ? tags : [],
     attachments: [],
-    is_public: false,
-    notifications_enabled: true,
+    is_public: Boolean(isPublic),
+    notifications_enabled: Boolean(notificationsEnabled),
     last_activity: now,
     survey_ids: [],
     created_at: now,
@@ -74,8 +88,19 @@ const projectModel = {
   // ===== CORE =====
   async create(data) {
     const payload = defaultData({
-      projectId: data.projectId, orgId: data.orgId, name: data.name,
-      description: data.description, ownerUID: data.ownerUID,
+      projectId: data.projectId,
+      orgId: data.orgId,
+      name: data.name,
+      description: data.description,
+      ownerUID: data.ownerUID,
+      startDate: data.startDate,
+      dueDate: data.dueDate,
+      status: data.status,
+      priority: data.priority,
+      category: data.category,
+      tags: data.tags,
+      isPublic: data.isPublic,
+      notificationsEnabled: data.notificationsEnabled,
     });
     const res = await fetch(`${BASE}`, {
       method: "POST",
@@ -86,17 +111,21 @@ const projectModel = {
     return snakeToCamel(await toJson(res));
   },
 
-  async getAll(orgId) {
+  async getAll(orgId, userId) {
     const url = new URL(`${BASE}`, window.location.origin);
     url.searchParams.set("orgId", String(orgId));
+    url.searchParams.set("userId", String(userId)); // adjust as needed
     const res = await fetch(url.toString(), { cache: "no-store" });
     const data = await toJson(res);
     return Array.isArray(data) ? data.map(snakeToCamel) : [];
   },
 
-  async getById(orgId, projectId) {
+  async getById(orgId, projectId, userId) {
+    
     const url = new URL(`${BASE}/${projectId}`, window.location.origin);
     url.searchParams.set("orgId", String(orgId));
+    url.searchParams.set("userId", String(userId)); // adjust as needed
+
     const res = await fetch(url.toString(), { cache: "no-store" });
     return snakeToCamel(await toJson(res));
   },

@@ -31,14 +31,15 @@ async function forceDecryptResponse(res) {
   } catch {
     return NextResponse.json({ status: "error", raw: text }, { status: res.status });
   }
-}
 
-// GET /api/post-gres-apis/projects/[projectId]?orgId=...
+}
 export async function GET(req, { params }) {
-  const { projectId } =  await params;
+  const { projectId } = await params;
   const { searchParams } = new URL(req.url);
+
   const orgId = searchParams.get("orgId");
-  
+  const userId = searchParams.get("userId") ; // ✅ FIXED
+  console.log(orgId, projectId, userId);
   if (!orgId) {
     return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
   }
@@ -51,6 +52,7 @@ export async function GET(req, { params }) {
     const res = await fetch(`${BASE}/projects/${orgId}/${projectId}?${qs.toString()}`, {
       signal: AbortSignal.timeout(30000),
       cache: "no-store",
+      headers: { "x-user-id": userId },
     });
     return forceDecryptResponse(res);
   } catch (e) {
@@ -58,13 +60,13 @@ export async function GET(req, { params }) {
   }
 }
 
-// PATCH /api/post-gres-apis/projects/[projectId]
 export async function PATCH(req, { params }) {
-  const { projectId } =  await params;
+  const { projectId } = await params;
   
   try {
     const raw = await req.json();
-    const { orgId, ...updateData } = raw;
+    const { orgId, user_id, ...updateData } = raw; // ✅ EXTRACT user_id
+    const userId = user_id ;
 
     if (!orgId) {
       return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
@@ -74,7 +76,7 @@ export async function PATCH(req, { params }) {
 
     const res = await fetch(`${BASE}/projects/${orgId}/${projectId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...(ENC ? { "x-encrypted": "1" } : {}) },
+      headers: { "Content-Type": "application/json", "x-user-id": userId, ...(ENC ? { "x-encrypted": "1" } : {}) },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30000),
       cache: "no-store",
@@ -85,12 +87,12 @@ export async function PATCH(req, { params }) {
   }
 }
 
-// DELETE /api/post-gres-apis/projects/[projectId]?orgId=...
 export async function DELETE(req, { params }) {
-  const { projectId } =  await params;
+  const { projectId } = await params;
   const { searchParams } = new URL(req.url);
   const orgId = searchParams.get("orgId");
-  console.log(projectId, orgId)
+  const userId = searchParams.get("userId") ; // ✅ FIXED
+  
   if (!orgId) {
     return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
   }
@@ -98,6 +100,7 @@ export async function DELETE(req, { params }) {
   try {
     const res = await fetch(`${BASE}/projects/${orgId}/${projectId}`, {
       method: "DELETE",
+      headers: { "x-user-id": userId },
       signal: AbortSignal.timeout(30000),
       cache: "no-store",
     });

@@ -10,3 +10,4 @@ alembic
 firebase-admin
 python-multipart
 playwright
+pandas

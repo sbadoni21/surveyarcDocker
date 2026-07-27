@@ -2,7 +2,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 
 import QUESTION_TYPES from "@/enums/questionTypes";
-import { usePathname } from "next/navigation";
 
 import QuestionsTab from "@/components/QuestionsTab";
 import RulesTab from "@/components/RulesTab";
@@ -27,6 +26,8 @@ import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import QuotaTab from "@/components/QuotaTab";
 import TranslationInitScreen from "./TranslationPage";
 import { QuickActions } from "@/components/QuickActions";
+import { getNextSerialLabel } from "@/utils/getNextSerialLabel";
+import { useRouteParams } from "@/utils/getPaths";
 
 export default function Dist() {
   const [selectedType, setSelectedType] = useState(null);
@@ -47,14 +48,9 @@ export default function Dist() {
   const [newBlockName, setNewBlockName] = useState("");
   const [loading, setLoading] = useState(true);
   const { uid } = useUser();
-  const pathname = usePathname();
-  const parts = (pathname || "").split("/");
-  const orgId = parts[3];
-  const projectId = parts[6];
-  const surveyId = parts[7];
+  const { orgId, projectId, surveyId } = useRouteParams();
 
-  const domain =
-    process.env.NEXT_PUBLIC_DOMAIN || "https://surveyarc-docker.vercel.app";
+  const domain = "http://localhost:3000";
   const publicSurveyUrl = `${domain}/en/form?org_id=${orgId}&projects=${projectId}&survey_id=${surveyId}`;
 
   const { getAllQuestions, saveQuestion } = useQuestion();
@@ -195,6 +191,28 @@ export default function Dist() {
       .filter(Boolean);
   }, [survey?.blocks, selectedBlock, questionsById]);
 
+  const refreshSurveyBuilderData = useCallback(async () => {
+    if (!orgId || !surveyId) return;
+
+    const freshQuestions = await getAllQuestions(orgId, surveyId);
+    setQuestions(freshQuestions || []);
+
+    const refreshedSurvey = await getSurvey(surveyId);
+    const normalizedSurvey = normalizeSurveyFromApi(refreshedSurvey);
+    setSurvey(normalizedSurvey);
+
+    setSelectedBlock((prev) => {
+      if (prev && normalizedSurvey.blocks?.some((block) => block.blockId === prev)) {
+        return prev;
+      }
+      return (
+        normalizedSurvey.blockOrder?.[0] ??
+        normalizedSurvey.blocks?.[0]?.blockId ??
+        null
+      );
+    });
+  }, [getAllQuestions, getSurvey, orgId, surveyId]);
+
   const handleAddQuestion = async () => {
     if (addingQuestionRef.current) return;
 
@@ -207,8 +225,7 @@ export default function Dist() {
 
     addingQuestionRef.current = true;
     setAddingQuestion(true);
-
-    const questionId = `Q${Math.floor(100000 + Math.random() * 900000)}`;
+    const tempQuestionId = `temp_${Date.now()}_${Math.floor(Math.random() * 900000)}`;
 
     const defaultLabelForScreens =
       selectedType === "welcome_screen"
@@ -216,16 +233,23 @@ export default function Dist() {
         : selectedType === "end_screen"
         ? "End Screen"
         : "";
+const autoSerial = getNextSerialLabel(questions);
+
+const serialToSend =
+  newQuestionData.serial_label &&
+  newQuestionData.serial_label.trim()
+    ? newQuestionData.serial_label.trim()
+    : autoSerial;
 
     const labelToSave =
       (newQuestionData.label && newQuestionData.label.trim()) ||
       (isScreenType ? defaultLabelForScreens : "");
 
     const optimisticQuestion = {
-      questionId,
+      questionId: tempQuestionId,
       type: selectedType,
       label: labelToSave,
-      serial_label: newQuestionData.serial_label || "",
+      serial_label:serialToSend,
       description: newQuestionData.description || "",
       config: newQuestionData.config || {},
       required: true,
@@ -238,12 +262,12 @@ export default function Dist() {
         if (!prev) return prev;
         const updatedBlocks = (prev.blocks || []).map((b) =>
           b.blockId === selectedBlock
-            ? { ...b, questionOrder: [...(b.questionOrder || []), questionId] }
+            ? { ...b, questionOrder: [...(b.questionOrder || []), tempQuestionId] }
             : b
         );
         const updatedQuestionOrder = [
           ...(prev.questionOrder || []),
-          questionId,
+          tempQuestionId,
         ];
         return {
           ...prev,
@@ -252,20 +276,51 @@ export default function Dist() {
         };
       });
 
-      await QuestionModel.create(orgId, surveyId, optimisticQuestion);
+      const createdQuestion = await QuestionModel.create(
+        orgId,
+        surveyId,
+        optimisticQuestion
+      );
+      const realQuestionId = createdQuestion.questionId;
+      setQuestions((prev) =>
+        (prev || []).map((q) =>
+          q.questionId === tempQuestionId ? createdQuestion : q
+        )
+      );
+      setSurvey((prev) => {
+        if (!prev) return prev;
+        const updatedBlocks = (prev.blocks || []).map((b) =>
+          b.blockId === selectedBlock
+            ? {
+                ...b,
+                questionOrder: (b.questionOrder || []).map((id) =>
+                  id === tempQuestionId ? realQuestionId : id
+                ),
+              }
+            : b
+        );
+        const updatedQuestionOrder = (prev.questionOrder || []).map((id) =>
+          id === tempQuestionId ? realQuestionId : id
+        );
+        return {
+          ...prev,
+          blocks: updatedBlocks,
+          questionOrder: updatedQuestionOrder,
+        };
+      });
 
       const current = normalizeSurveyFromApi(await getSurvey(surveyId));
       const updatedBlocksServer = (current.blocks || []).map((b) =>
         b.blockId === selectedBlock
-          ? { ...b, questionOrder: [...(b.questionOrder || []), questionId] }
+          ? { ...b, questionOrder: [...(b.questionOrder || []), realQuestionId] }
           : b
       );
       const updatedQuestionOrderServer = [
         ...(current.questionOrder || []),
-        questionId,
+        realQuestionId,
       ];
 
-      await SurveyModel.update(surveyId, {
+      const updatedSurvey = await SurveyModel.update(surveyId, {
         blocks: updatedBlocksServer,
         block_order: current.blockOrder,
         question_order: updatedQuestionOrderServer,
@@ -273,19 +328,17 @@ export default function Dist() {
 
       const freshQs = await getAllQuestions(orgId, surveyId);
       setQuestions(freshQs || []);
-      setSurvey({
-        ...current,
-        blocks: updatedBlocksServer,
-        questionOrder: updatedQuestionOrderServer,
-      });
+      setSurvey(normalizeSurveyFromApi(updatedSurvey));
 
       setSelectedType(null);
       setNewQuestionData({ label: "", description: "", config: {} });
       setShowTypePopup(false);
-      return { ok: true, questionId };
+      return { ok: true, questionId: realQuestionId };
     } catch (err) {
       console.error("Error adding question:", err);
-      setQuestions((prev) => prev.filter((q) => q.questionId !== questionId));
+      setQuestions((prev) =>
+        prev.filter((q) => q.questionId !== tempQuestionId)
+      );
       setSurvey((prev) => {
         if (!prev) return prev;
         const updatedBlocks = (prev.blocks || []).map((b) =>
@@ -293,13 +346,13 @@ export default function Dist() {
             ? {
                 ...b,
                 questionOrder: (b.questionOrder || []).filter(
-                  (id) => id !== questionId
+                  (id) => id !== tempQuestionId
                 ),
               }
             : b
         );
         const updatedQuestionOrder = (prev.questionOrder || []).filter(
-          (id) => id !== questionId
+          (id) => id !== tempQuestionId
         );
         return {
           ...prev,
@@ -537,6 +590,8 @@ export default function Dist() {
               addingQuestion={addingQuestion}
               surveyId={surveyId}
               orgId={orgId}
+              projectId={projectId}
+              surveyName={survey?.name || ""}
               onBlocksChange={(newBlocks) =>
                 setSurvey((prev) =>
                   prev ? { ...prev, blocks: newBlocks } : prev
@@ -545,6 +600,7 @@ export default function Dist() {
               onRequestNewQuestion={(blockId) =>
                 openNewQuestionForBlock(blockId)
               }
+              onXmlSaved={refreshSurveyBuilderData}
             />
           </>
         )}

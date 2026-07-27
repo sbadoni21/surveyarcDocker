@@ -274,7 +274,7 @@ export default function QuestionEdritorPanel({
 
                 <div className="animate-in slide-in-from-bottom duration-300 delay-100">
                   <LabeledInput
-                    label="Question Label *"
+                    label="Question"
                     value={editableQuestion?.label || ""}
                     onChange={(e) => onLabelChange(e.target.value)}
                   />
@@ -340,7 +340,7 @@ export default function QuestionEdritorPanel({
 
                 <div className="animate-in slide-in-from-bottom duration-300 delay-100">
                   <LabeledInput
-                    label="Question Label *"
+                    label="Question"
                     value={newQuestionData?.label || ""}
                     onChange={(e) => onLabelChange(e.target.value)}
                     placeholder="Enter your question here..."

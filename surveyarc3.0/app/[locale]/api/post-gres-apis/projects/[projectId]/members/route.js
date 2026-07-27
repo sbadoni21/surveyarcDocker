@@ -28,12 +28,14 @@ export async function GET(req, { params }) {
   const { projectId } = await params;
   const { searchParams } = new URL(req.url);
   const orgId = searchParams.get("orgId");
+  const userId = searchParams.get("userId") ;
   if (!orgId) return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
 
   // ✔ Use the members endpoint (returns the actual array)
   const res = await fetch(`${BASE}/projects/${orgId}/${projectId}/members`, {
     signal: AbortSignal.timeout(30000),
     cache: "no-store",
+    headers: { "x-user-id": userId },
   });
   const { status, json } = await jsonOrError(res);
   return NextResponse.json(json, { status });
@@ -44,13 +46,17 @@ export async function GET(req, { params }) {
 export async function POST(req, { params }) {
   const { projectId } = await params;
   const body = await req.json().catch(() => ({}));
-  const { orgId, ...memberData } = body;
+  const { orgId, user_id, ...memberData } = body; // ✅ EXTRACT user_id
+  const userId = user_id ;
+  
   if (!orgId) return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
 
-  // ✔ Let the backend do the upsert (no full-array PATCH)
   const res = await fetch(`${BASE}/projects/${orgId}/${projectId}/members`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { 
+      "Content-Type": "application/json",
+      "x-user-id": userId // ✅ ADDED
+    },
     body: JSON.stringify(memberData),
     signal: AbortSignal.timeout(30000),
     cache: "no-store",

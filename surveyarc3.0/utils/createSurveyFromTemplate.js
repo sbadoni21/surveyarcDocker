@@ -4,7 +4,6 @@
 
 import QuestionModel from "@/models/questionModel";
 import SurveyModel from "@/models/surveyModel";
-
 /**
  * Create a survey from a template
  */
@@ -44,33 +43,27 @@ export async function createSurveyFromTemplate(
     const createdSurvey = await SurveyModel.create(orgId,surveyData);
     console.log(createdSurvey)
     // 2. Create all questions
-    const questionIds = [];
-    const createdQuestions = [];
+    const questionPayloads = template.questions.map((questionTemplate, index) => {
+      const serialLabel = questionTemplate.serial_label || `Q${index + 1}`;
 
-    for (const questionTemplate of template.questions) {
-      const questionId = `Q${Math.floor(100000 + Math.random() * 900000)}`;
-      
-      const questionData = {
-        questionId,
+      return {
         projectId,
         type: questionTemplate.type,
         label: questionTemplate.label,
-        serial_label: questionTemplate.serial_label,
+        serial_label: serialLabel,
         required: questionTemplate.required ?? true,
         description: questionTemplate.description || '',
         config: questionTemplate.config || {},
         logic: questionTemplate.logic || [],
       };
+    });
 
-      const createdQuestion = await QuestionModel.create(
-        orgId,
-        createdSurvey.survey_id,
-        questionData
-      );
-
-      questionIds.push(questionId);
-      createdQuestions.push(createdQuestion);
-    }
+    const createdQuestions = await QuestionModel.createBulk(
+      orgId,
+      createdSurvey.survey_id,
+      questionPayloads
+    );
+    const questionIds = createdQuestions.map((q) => q.questionId);
 
     // 3. Update survey with question order
     const updatedSurveyData = {

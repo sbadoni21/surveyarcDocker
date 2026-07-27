@@ -8,6 +8,7 @@ import PricingPage from "@/page/PricingPage.jsx";
 import { setCookie } from "cookies-next";
 import UserModel from "@/models/postGresModels/userModel";
 import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
+import { useRBAC } from "@/providers/RBACProvider";
 
 export default function RegistrationFlow() {
   const searchParams = useSearchParams();
@@ -23,6 +24,7 @@ export default function RegistrationFlow() {
   const isSubmittingRef = useRef(false);
 
   const { create, update, getById } = useOrganisation();
+  const { assignRole } = useRBAC();
 
   // Read invite orgId from query (?orgId=...)
   useEffect(() => {
@@ -52,6 +54,7 @@ export default function RegistrationFlow() {
    * Accept an invite:
    * 1) Update org team_members on org service
    * 2) Link user -> org via POST /users/{uid}/orgs (atomic on user)
+   * 3) Assign "member" role via RBAC
    */
   const acceptInvite = async ({ orgId, uid, email, role = "member" }) => {
     const org = await getById(orgId);
@@ -113,6 +116,22 @@ export default function RegistrationFlow() {
       throw err;
     }
 
+    // C) Assign RBAC role (member for invites)
+    try {
+      await assignRole({
+        userId: uid,
+        roleName: "member", // or map from the 'role' parameter
+        scope: "org",
+        resourceId: String(orgId),
+        orgId: String(orgId),
+      });
+      console.log(`✅ Assigned 'member' role to user ${uid} in org ${orgId}`);
+    } catch (rbacErr) {
+      console.error("⚠️ RBAC role assignment failed (non-fatal):", rbacErr);
+      // Don't fail the entire invite process if RBAC fails
+      // You may want to log this for manual intervention
+    }
+
     return updatedOrg;
   };
 
@@ -126,7 +145,7 @@ export default function RegistrationFlow() {
       safeSetState(() => setUserData(data));
 
       if (inviteOrgId) {
-        // Accept invite (updates org + links user to org)
+        // Accept invite (updates org + links user to org + assigns member role)
         await acceptInvite({
           orgId: String(inviteOrgId),
           uid: data.uid,
@@ -160,14 +179,14 @@ export default function RegistrationFlow() {
     }
   };
 
-  // Step 2 — Create organisation (and link user -> org)
+  // Step 2 — Create organisation (and link user -> org + assign owner role)
   const handleOrgNext = async (data) => {
     if (busy || isSubmittingRef.current || !userData?.uid) return;
     setBusy(true);
     isSubmittingRef.current = true;
 
     try {
-      // create org (your model seeds owner in team_members)
+      // 1) Create org (your model seeds owner in team_members)
       const created = await create({
         ...data,
         uid: String(userData.uid),
@@ -175,8 +194,32 @@ export default function RegistrationFlow() {
         ownerEmail: userData.email || "",
       });
 
-      // link user -> org (atomic)
+      if (!created?.org_id) {
+        throw new Error("Organization creation failed - no org_id returned");
+      }
+
+      console.log(`✅ Organization created: ${created.org_id}`);
+
+      // 2) Link user -> org (atomic)
       await UserModel.addOrg(userData.uid, String(created.org_id));
+      console.log(`✅ User ${userData.uid} linked to org ${created.org_id}`);
+
+      // 3) Assign OWNER role via RBAC with bootstrap flag
+      try {
+        await assignRole({
+          userId: userData.uid,
+          roleName: "owner",
+          scope: "org",
+          resourceId: String(created.org_id),
+          orgId: String(created.org_id),
+          isCreatingOrg: true,  // Bootstrap mode - bypasses RBAC permission check
+        });
+        console.log(`✅ Assigned 'owner' role to user ${userData.uid} in org ${created.org_id}`);
+      } catch (rbacErr) {
+        console.error("⚠️ RBAC owner role assignment failed:", rbacErr);
+        // This is critical for new orgs
+        alert("⚠️ Organization created but role assignment failed. Please contact support.");
+      } 
 
       safeSetState(() => {
         setOrgData(created);

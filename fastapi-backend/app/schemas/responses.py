@@ -1,5 +1,5 @@
 # app/schemas/responses.py
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from .answer import AnswerIn
@@ -36,5 +36,4 @@ class ResponseOut(ResponseBase):
     completed_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

@@ -52,8 +52,8 @@ async function forceDecryptResponse(res) {
 export async function POST(req, { params }) {
   try {
     const body = await req.json();
+    const userId = body.user_id ; // ✅ FIXED - use user_id from body
 
-    // Validate user_uids array
     if (!body.user_uids || !Array.isArray(body.user_uids)) {
       return NextResponse.json(
         { status: "error", message: "user_uids array is required" },
@@ -70,20 +70,14 @@ export async function POST(req, { params }) {
 
     const payload = ENC ? await encryptPayload(body) : body;
 
-    const authHeader = req.headers.get("authorization");
-    const cookieHeader = req.headers.get("cookie");
-    const userHeader = req.headers.get("x-user-id");
-
     const res = await fetch(
       `${BASE}/projects/${params.project_id}/members/bulk`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "x-user-id": userId, // ✅ FIXED - now using extracted userId
           ...(ENC ? { "x-encrypted": "1" } : {}),
-          ...(userHeader ? { "X-User-Id": userHeader } : {}),
-          ...(authHeader ? { Authorization: authHeader } : {}),
-          ...(cookieHeader ? { Cookie: cookieHeader } : {}),
         },
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(30000),

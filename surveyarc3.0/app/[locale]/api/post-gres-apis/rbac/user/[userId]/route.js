@@ -14,7 +14,7 @@ export async function GET(req, { params }) {
 
   try {
     // Build URL properly with org_id if provided
-    const url = new URL(`${BASE}/rbac/user/${encodeURIComponent(userId)}/permissions`);
+    const url = new URL(`${BASE}/rbac/user/${encodeURIComponent(userId)}`);
     if (orgId) {
       url.searchParams.set("org_id", orgId);
     }

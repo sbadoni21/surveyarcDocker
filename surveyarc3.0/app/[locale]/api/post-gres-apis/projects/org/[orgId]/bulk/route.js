@@ -32,17 +32,14 @@ async function forceDecryptResponse(res) {
     return NextResponse.json({ raw: text }, { status: res.status });
   }
 }
-
-/* --------------------------------------------------
-   SHARED BULK CALL
--------------------------------------------------- */
-async function bulkCall(orgId, body) {
+async function bulkCall(orgId, body, userId) { // ✅ ADDED userId param
   const payload = ENC ? await encryptPayload(body) : body;
 
   const res = await fetch(`${BASE}/projects/${orgId}/bulk`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "x-user-id": userId, // ✅ ADDED
       ...(ENC ? { "x-encrypted": "1" } : {}),
     },
     body: JSON.stringify(payload),
@@ -53,14 +50,10 @@ async function bulkCall(orgId, body) {
   return forceDecryptResponse(res);
 }
 
-/* --------------------------------------------------
-   METHODS
--------------------------------------------------- */
-
-// POST → archive, unarchive, set-status, set-priority
 export async function POST(req, { params }) {
   const { orgId } = await params;
   const body = await req.json();
+  const userId = body.user_id ; // ✅ EXTRACT user_id
 
   if (!body?.op) {
     return NextResponse.json(
@@ -69,16 +62,16 @@ export async function POST(req, { params }) {
     );
   }
 
-  return bulkCall(orgId, body);
+  return bulkCall(orgId, body, userId); // ✅ PASS userId
 }
 
-// DELETE → delete projects
 export async function DELETE(req, { params }) {
   const { orgId } = await params;
   const body = await req.json();
-console.log(body)
+  const userId = body.user_id ; // ✅ EXTRACT user_id
+
   return bulkCall(orgId, {
     ...body,
     op: "delete",
-  });
+  }, userId); // ✅ PASS userId
 }

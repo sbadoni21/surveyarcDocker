@@ -213,6 +213,9 @@ WEIGHTED_MULTI: (
   WELCOME_SCREEN: (
     <Icon color="#4B4187" icon="mingcute:hand-line" width="22" height="22" />
   ),
+  WELCOME: (
+    <Icon color="#4B4187" icon="mingcute:hand-line" width="22" height="22" />
+  ),
   END_SCREEN: (
     <Icon
       color="#4B4187"
@@ -222,6 +225,14 @@ WEIGHTED_MULTI: (
     />
   ),
   REDIRECT_URL: (
+    <Icon
+      color="#4B4187"
+      icon="streamline-sharp:link-share-2-remix"
+      width="20"
+      height="20"
+    />
+  ),
+  REDIRECT: (
     <Icon
       color="#4B4187"
       icon="streamline-sharp:link-share-2-remix"

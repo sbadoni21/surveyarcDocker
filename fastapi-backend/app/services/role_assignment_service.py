@@ -13,7 +13,7 @@ from app.core.redis_client import redis_client
 
 class RoleAssignmentService:
     """
-    Enterprise-grade role assignment manager with owner cache handling
+    Enterprise-grade role assignment manager with comprehensive cache handling
     """
 
     def __init__(self, db: Session):
@@ -135,18 +135,73 @@ class RoleAssignmentService:
     def _invalidate_user_cache(self, user_uid: str, org_id: Optional[str] = None):
         """
         Remove all permission caches for user, including owner cache
+        Uses SCAN for pattern matching to avoid blocking Redis
         """
-        # Invalidate permission caches
-        # Note: In production, you'd want to use SCAN with pattern matching
-        # For now, we'll delete specific keys we know about
-        redis_client.delete(f"perm:{user_uid}:global")
+        try:
+            # Always invalidate global permission cache
+            redis_client.delete(f"perm:{user_uid}:global")
+            
+            # Always invalidate user data cache (may contain role info)
+            redis_client.delete(f"user:{user_uid}")
+            
+            if org_id:
+                # Specific org caches
+                redis_client.delete(f"perm:{user_uid}:{org_id}")
+                redis_client.delete(f"owner:{user_uid}:{org_id}")
+                redis_client.delete(f"org_users:{org_id}")
+                
+                print(f"[RoleAssignment] Invalidated caches for user {user_uid} in org {org_id}")
+            else:
+                # When org_id is unknown, use SCAN to clear all owner and perm caches
+                # SCAN is non-blocking and production-safe
+                
+                # Clear owner cache pattern
+                owner_count = self._scan_and_delete(f"owner:{user_uid}:*")
+                
+                # Clear permission cache pattern  
+                perm_count = self._scan_and_delete(f"perm:{user_uid}:*")
+                
+                print(f"[RoleAssignment] Invalidated {owner_count} owner caches and {perm_count} permission caches for user {user_uid}")
+                
+        except Exception as e:
+            print(f"[RoleAssignment] Cache invalidation error (non-fatal): {e}")
+
+    def _scan_and_delete(self, pattern: str, count: int = 100) -> int:
+        """
+        Use SCAN to find and delete keys matching pattern
+        Safe for production use (non-blocking)
         
-        if org_id:
-            redis_client.delete(f"perm:{user_uid}:{org_id}")
-            # Invalidate owner cache for this specific org
-            redis_client.delete(f"owner:{user_uid}:{org_id}")
-        else:
-            # If we don't know the org_id, we need to invalidate all owner caches
-            # This is less efficient but ensures consistency
-            # In production, consider using Redis SCAN with pattern "owner:{user_uid}:*"
-            pass
+        Args:
+            pattern: Redis key pattern (e.g., "owner:user-123:*")
+            count: Number of keys to scan per iteration
+            
+        Returns:
+            Number of keys deleted
+        """
+        try:
+            if not redis_client.ping():
+                return 0
+            
+            deleted = 0
+            cursor = 0
+            
+            while True:
+                cursor, keys = redis_client.client.scan(
+                    cursor=cursor,
+                    match=pattern,
+                    count=count
+                )
+                
+                if keys:
+                    # Delete in batches
+                    deleted += redis_client.delete(*keys)
+                
+                # cursor returns to 0 when complete
+                if cursor == 0:
+                    break
+            
+            return deleted
+                
+        except Exception as e:
+            print(f"[RoleAssignment] SCAN failed for pattern {pattern}: {e}")
+            return 0

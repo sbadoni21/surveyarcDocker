@@ -3,12 +3,12 @@ import { BASE, forceDecryptResponse } from "@/utils/categoryApiHelpers";
 
 // Body: { q?, status?, priority?, tag?, is_active?, created_from?, created_to?, order_by?, limit?, offset? }
 export async function POST(req, { params }) {
-  const { orgId } = await params;
+  const { orgId, userId } = await params;
   const body = await req.json().catch(() => ({}));
 
   const res = await fetch(`${BASE}/projects/${orgId}/search`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-user-id": userId },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(30000), cache: "no-store",
   });

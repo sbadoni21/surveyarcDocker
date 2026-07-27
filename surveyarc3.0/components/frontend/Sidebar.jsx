@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   FolderOpen,
   Users,
+  CheckCheckIcon,
   Settings,
   LogOut,
   Menu,
@@ -13,99 +14,39 @@ import {
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { deleteCookie, getCookie } from "cookies-next";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "@/firebase/firebase";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
+import { useRBAC } from "@/providers/RBACProvider";
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user } = useUser(); // user from Postgres UserProvider
-
+  const { user } = useUser();
+  const {
+    loading: rbacLoading,
+    hasCapability,
+    permissionsLoaded,
+    effectivePermSet
+  } = useRBAC();
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [activeItem, setActiveItem] = useState("Dashboard");
   const [orgName, setOrgName] = useState("");
   const [orgHoverTitle, setOrgHoverTitle] = useState("");
-
-  // ===== Route-derived org + language =====
-  const { orgId, language } = useMemo(() => {
+    const { orgId, language } = useMemo(() => {
     const segs = pathname.split("/").filter(Boolean);
-    const lang = segs[0] || "en"; // /en/postgres-org/ORGID/...
-    const idFromPath = segs.at(2); // postgres-org / [2] = orgId
+    const lang = segs[0] || "en";
+    const idFromPath = segs.at(2);
     const id =
       idFromPath ||
       (getCookie("currentOrgId") ? String(getCookie("currentOrgId")) : "");
     return { orgId: id, language: lang };
   }, [pathname]);
 
-  // ===== DEBUG: see what user we actually have =====
-  useEffect(() => {
-    console.log("Sidebar user from provider:", user);
-  }, [user]);
 
-  // ===== Fetch org name from Firestore (for header) =====
-  useEffect(() => {
-    let cancelled = false;
-
-    async function fetchOrg() {
-      try {
-        if (!orgId) {
-          if (!cancelled) {
-            setOrgName("");
-            setOrgHoverTitle("");
-          }
-          return;
-        }
-        const snap = await getDoc(doc(db, "organizations", String(orgId)));
-        if (!cancelled) {
-          if (snap.exists()) {
-            const data = snap.data() || {};
-            const name = data?.name || String(orgId);
-            setOrgName(name);
-
-            const plan = (data?.subscription?.plan || "free").toUpperCase();
-            const trial = !!data?.subscription?.trial?.isActive;
-            const endSecs = data?.subscription?.endDate?.seconds;
-            const expiry = endSecs
-              ? new Date(endSecs * 1000).toLocaleDateString("en-GB", {
-                  day: "2-digit",
-                  month: "2-digit",
-                  year: "numeric",
-                })
-              : "";
-            const title = `${name} • ${trial ? "TRIAL " : ""}${plan}${
-              expiry ? ` • Expires ${expiry}` : ""
-            }`;
-            setOrgHoverTitle(title);
-          } else {
-            setOrgName("Organisation");
-            setOrgHoverTitle("");
-          }
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setOrgName("Organisation");
-          setOrgHoverTitle("");
-        }
-        console.error("Sidebar org load error:", e);
-      }
-    }
-
-    fetchOrg();
-    return () => {
-      cancelled = true;
-    };
-  }, [orgId]);
-
-  // ===== Compute userRole (with per-org override) =====
+  // ===== Compute userRole for tickets path =====
   const userRole = useMemo(() => {
-    if (!user) {
-      console.log("Sidebar: no user yet, not showing admin tabs");
-      return null;
-    }
+    if (!user) return "agent";
 
-    // Try org-specific role first if you are storing like meta_data.org_roles[orgId]
     const orgRoles =
       user.meta_data?.org_roles ||
       user.metaData?.org_roles ||
@@ -117,24 +58,24 @@ export default function Sidebar() {
       (orgId && (orgRoles[String(orgId)] || orgRoles[orgId])) || null;
 
     const baseRole = orgSpecificRole || user.role || "agent";
-    const normalized = String(baseRole).toLowerCase();
-
-    console.log("Sidebar: computed userRole", {
-      orgId,
-      baseRole,
-      normalized,
-      orgRoles,
-    });
-
-    return normalized;
+    return String(baseRole).toLowerCase();
   }, [user, orgId]);
 
-  const canSeeAdminSections = useMemo(
-    () => !!userRole && ["owner", "admin"].includes(userRole),
-    [userRole]
-  );
+  // Permission states
+  const permissions = useMemo(() => ({
+    canViewDashboard: hasCapability("project.read"),
+    canViewProjects: hasCapability("project.read"),
+    canViewTickets:
+      hasCapability("support.group.read") ||
+      hasCapability("support.team.read"),
+    canViewContacts: hasCapability("support.member.add"),
+    canViewTeam: hasCapability("rbac.view_assignments"),
+    canViewRolesandPermissions: hasCapability("rbac.view_permissions"),
+    canViewSettings: hasCapability("billing.view"),
+  }), [hasCapability, effectivePermSet]);
 
-  const getOrgTicketsPath = () => {
+  // Helper function to get tickets path based on role
+  const getOrgTicketsPath = useMemo(() => {
     const roleMap = {
       owner: "business-calendars",
       admin: "business-calendars",
@@ -144,83 +85,104 @@ export default function Sidebar() {
       user: "agent-tickets",
     };
     return `org-tickets/${roleMap[userRole] || "agent-tickets"}`;
-  };
-
-  const shouldShowOrgTickets =
-    !!userRole &&
-    ["owner", "admin", "manager", "team_lead", "agent", "user"].includes(
-      userRole
-    );
+  }, [userRole]);
 
   // =========================
-  //      MENU ITEMS LOGIC
+  //      MENU ITEMS LOGIC (RBAC-BASED)
   // =========================
+  const menuItems = useMemo(() => {
+    if (!permissionsLoaded) {
+      return [];
+    }
 
-  let menuItems = [];
+    const items = [];
 
-  if (!userRole) {
-    // While user is loading or no role yet -> keep empty menu, but sidebar still renders safely
-    menuItems = [];
-  } else if (userRole === "agent") {
-    // Agent: Tickets only
-    menuItems = shouldShowOrgTickets
-      ? [
-          {
-            icon: Building2,
-            label: "Tickets Management",
-            path: getOrgTicketsPath(),
-          },
-        ]
-      : [];
-  } else {
-    // owner/admin/manager/team_lead/user
-    menuItems = [
-      { icon: LayoutDashboard, label: "Dashboard", path: "" },
-      { icon: FolderOpen, label: "Survey Management", path: "projects" },
+    // Dashboard - show if user has any project read permission
+    if (permissions.canViewDashboard) {
+      items.push({
+        icon: LayoutDashboard,
+        label: "Dashboard",
+        path: "",
+      });
+    }
 
-      ...(shouldShowOrgTickets
-        ? [
-            {
-              icon: Building2,
-              label: "Tickets Management",
-              path: getOrgTicketsPath(),
-            },
-          ]
-        : []),
+    // Survey Management - project.read permission
+    if (permissions.canViewProjects) {
+      items.push({
+        icon: FolderOpen,
+        label: "Survey Management",
+        path: "projects",
+      });
+    }
 
-      ...(canSeeAdminSections
-        ? [{ icon: Contact2, label: "Contacts Management", path: "contacts" }]
-        : []),
+    // Tickets Management - support.group.read or support.team.read
+    if (permissions.canViewTickets) {
+      items.push({
+        icon: Building2,
+        label: "Tickets Management",
+        path: getOrgTicketsPath,
+      });
+    }
 
-      ...(canSeeAdminSections
-        ? [{ icon: Users, label: "Team", path: "team" }]
-        : []),
+    // Roles & Permissions
+    if (permissions.canViewRolesandPermissions) {
+      items.push({
+        icon: CheckCheckIcon,
+        label: "Roles & Permissions",
+        path: "roles-permissions",
+      });
+    }
 
-      ...(canSeeAdminSections
-        ? [{ icon: Settings, label: "Settings", path: "settings" }]
-        : []),
-    ];
-  }
+    // Contacts Management - support.member.add permission
+    if (permissions.canViewContacts) {
+      items.push({
+        icon: Contact2,
+        label: "Contacts Management",
+        path: "contacts",
+      });
+    }
 
-  const getActiveItemFromPath = (currentPath) => {
-    const parts = currentPath.split("/").filter(Boolean);
+    // Team - rbac.view_assignments permission
+    if (permissions.canViewTeam) {
+      items.push({
+        icon: Users,
+        label: "Team",
+        path: "team",
+      });
+    }
 
-    const dashboardIdx = parts.findIndex((p) => p === "dashboard");
-    if (dashboardIdx === -1) return "Dashboard";
+    // Settings - billing.view permission
+    if (permissions.canViewSettings) {
+      items.push({
+        icon: Settings,
+        label: "Settings",
+        path: "settings",
+      });
+    }
 
-    if (dashboardIdx === parts.length - 1) return "Dashboard";
+    return items;
+  }, [permissions, permissionsLoaded, getOrgTicketsPath]);
 
-    const segment = parts[dashboardIdx + 1];
+  const getActiveItemFromPath = useMemo(() => {
+    return (currentPath) => {
+      const parts = currentPath.split("/").filter(Boolean);
+      const dashboardIdx = parts.findIndex((p) => p === "dashboard");
+      
+      if (dashboardIdx === -1) return "Dashboard";
+      if (dashboardIdx === parts.length - 1) return "Dashboard";
 
-    if (segment === "org-tickets") return "Tickets Management";
+      const segment = parts[dashboardIdx + 1];
 
-    const match = menuItems.find((m) => m.path.startsWith(segment));
-    return match ? match.label : "Dashboard";
-  };
+      if (segment === "org-tickets") return "Tickets Management";
+
+      const match = menuItems.find((m) => m.path.startsWith(segment));
+      return match ? match.label : "Dashboard";
+    };
+  }, [menuItems]);
 
   useEffect(() => {
     setActiveItem(getActiveItemFromPath(pathname));
-  }, [pathname, userRole]); // also depend on userRole so it recalculates when role appears
+  }, [pathname, getActiveItemFromPath]);
 
   const toggleSidebar = () => setIsCollapsed((v) => !v);
   const toggleMobile = () => setIsMobileOpen((v) => !v);
@@ -238,6 +200,9 @@ export default function Sidebar() {
     router.push(path);
     setIsMobileOpen(false);
   };
+
+  // Show loading state while permissions are being checked
+  const isLoading = !user?.uid || !permissionsLoaded || rbacLoading;
 
   return (
     <>
@@ -274,7 +239,7 @@ export default function Sidebar() {
                   <div className="w-4 h-4 bg-white rounded-sm"></div>
                 </div>
                 <span
-                  className="font-semibold text-[#74727E] dark:text-gray-300 text-sm leading-4"
+                  className="font-semibold text-[#74727E] dark:text-gray-300 text-sm leading-4 truncate"
                   title={orgHoverTitle}
                 >
                   {orgName || "Organisation"}
@@ -285,6 +250,7 @@ export default function Sidebar() {
             <button
               onClick={toggleSidebar}
               className="hidden lg:flex p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-md transition-colors"
+              aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
               <Menu size={16} />
             </button>
@@ -292,19 +258,40 @@ export default function Sidebar() {
 
           {/* NAVIGATION */}
           <nav className="flex-1 px-2 pt-4 pb-2 overflow-y-auto max-h-[calc(100vh-4rem)]">
-            <ul className="space-y-1">
-              {menuItems.map((item, index) => {
-                const IconComp = item.icon;
-                const isActive = activeItem === item.label;
-                return (
-                  <li key={index} className="relative">
-                    {isActive && (
-                      <span className="absolute z-30 -left-2 top-1 bottom-1 w-1 bg-orange-500 rounded-r-md" />
-                    )}
+            {isLoading ? (
+              // Loading state
+              <div className="flex flex-col items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
+                {!isCollapsed && (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
+                    Loading permissions...
+                  </p>
+                )}
+              </div>
+            ) : menuItems.length === 0 ? (
+              // No permissions state
+              !isCollapsed && (
+                <div className="flex flex-col items-center justify-center py-8 px-4">
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
+                    No menu items available. Please contact your administrator.
+                  </p>
+                </div>
+              )
+            ) : (
+              // Menu items
+              <ul className="space-y-1">
+                {menuItems.map((item, index) => {
+                  const IconComp = item.icon;
+                  const isActive = activeItem === item.label;
+                  return (
+                    <li key={index} className="relative">
+                      {isActive && (
+                        <span className="absolute z-30 -left-2 top-1 bottom-1 w-1 bg-orange-500 rounded-r-md" />
+                      )}
 
-                    <button
-                      onClick={() => handleItemClick(item)}
-                      className={`
+                      <button
+                        onClick={() => handleItemClick(item)}
+                        className={`
                         relative z-10 flex w-[90%] mx-auto items-center space-x-3 rounded-lg p-3 pl-5 text-left transition-all duration-200
                         ${
                           isActive
@@ -313,44 +300,47 @@ export default function Sidebar() {
                         }
                         ${isCollapsed ? "justify-center px-2" : ""}
                       `}
-                      title={isCollapsed ? item.label : ""}
-                    >
-                      <IconComp
-                        size={20}
-                        className={`flex-shrink-0 ${
-                          isActive
-                            ? "text-orange-500 dark:text-orange-400"
-                            : ""
-                        }`}
-                      />
-                      {!isCollapsed && (
-                        <span className="font-semibold text-sm">
-                          {item.label}
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
+                        title={isCollapsed ? item.label : ""}
+                        aria-label={item.label}
+                      >
+                        <IconComp
+                          size={20}
+                          className={`flex-shrink-0 ${
+                            isActive
+                              ? "text-orange-500 dark:text-orange-400"
+                              : ""
+                          }`}
+                        />
+                        {!isCollapsed && (
+                          <span className="font-semibold text-sm">
+                            {item.label}
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
 
-              {/* LOGOUT BUTTON */}
-              <li className="pt-2 border-t border-gray-100 dark:border-gray-800 mt-2">
-                <button
-                  onClick={handleLogout}
-                  className={`
+                {/* LOGOUT BUTTON */}
+                <li className="pt-2 border-t border-gray-100 dark:border-gray-800 mt-2">
+                  <button
+                    onClick={handleLogout}
+                    className={`
                     w-[90%] mx-auto flex items-center space-x-3 p-3 rounded-lg transition-all duration-200 text-left
                     text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20
                     ${isCollapsed ? "justify-center px-2" : "pl-5"}
                   `}
-                  title={isCollapsed ? "Log out" : ""}
-                >
-                  <LogOut size={20} className="flex-shrink-0" />
-                  {!isCollapsed && (
-                    <span className="font-medium text-sm">Log out</span>
-                  )}
-                </button>
-              </li>
-            </ul>
+                    title={isCollapsed ? "Log out" : ""}
+                    aria-label="Log out"
+                  >
+                    <LogOut size={20} className="flex-shrink-0" />
+                    {!isCollapsed && (
+                      <span className="font-medium text-sm">Log out</span>
+                    )}
+                  </button>
+                </li>
+              </ul>
+            )}
           </nav>
         </div>
 

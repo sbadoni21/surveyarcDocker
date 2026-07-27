@@ -14,7 +14,7 @@ class QuestionBase(BaseModel):
     survey_id: str
     type: str
     label: str
-    serial_label: str  # ✅ NEW
+    serial_label: Optional[str] = None
     required: Optional[bool] = True
     description: Optional[str] = ""
     config: Dict[str, Any] = Field(default_factory=dict)
@@ -49,6 +49,10 @@ class QuestionOut(QuestionBase):
 class BulkQuestionsRequest(BaseModel):
     question_ids: List[str]
     locale: Optional[str] = None
+
+
+class BulkQuestionCreateRequest(BaseModel):
+    questions: List[QuestionCreate]
 
 
 class InitializeTranslationRequest(BaseModel):

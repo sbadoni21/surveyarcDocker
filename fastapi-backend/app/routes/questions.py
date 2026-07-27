@@ -12,7 +12,11 @@ from fastapi import UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm.attributes import flag_modified
 from io import BytesIO
-from ..services.question_label_service import generate_next_serial_label
+from ..services.question_label_service import (
+    generate_internal_question_id,
+    generate_next_serial_label,
+    normalize_and_validate_serial_label,
+)
 import re
 
 from ..db import get_db
@@ -24,6 +28,7 @@ from ..schemas.questions import (
     QuestionUpdate,
     QuestionOut,
     BulkQuestionsRequest,
+    BulkQuestionCreateRequest,
     InitializeTranslationRequest,
     InitializeTranslationResponse,
     ResyncTranslationResponse
@@ -215,35 +220,38 @@ def create_question(
     user: User = Depends(get_current_user),
 ):
     payload = data.dict(exclude_unset=True)
+    payload.pop("question_id", None)
     serial = payload.get("serial_label")
 
-    # 🔥 NORMALIZE EMPTY / UNDEFINED
-    if serial is not None:
-        serial = str(serial).strip()
-       
-
-    if serial is "":
-        payload["serial_label"] = generate_next_serial_label(
+    if not serial or not str(serial).strip():
+        serial = generate_next_serial_label(
             db=db,
             survey_id=payload["survey_id"],
-            prefix="Q",  
+            prefix="Q",
         )
     else:
-        payload["serial_label"] = serial
+        try:
+            serial = normalize_and_validate_serial_label(serial)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
 
-        exists = (
-            db.query(Question)
-            .filter(
-                Question.survey_id == payload["survey_id"],
-                Question.serial_label == serial,
-            )
-            .first()
+    exists = (
+        db.query(Question)
+        .filter(
+            Question.survey_id == payload["survey_id"],
+            Question.serial_label == serial,
         )
-        if exists:
-            raise HTTPException(
-                status_code=409,
-                detail="serial_label already exists in this survey",
-            )
+        .first()
+    )
+
+    if exists:
+        raise HTTPException(
+            status_code=409,
+            detail="serial_label already exists in this survey",
+        )
+
+    payload["serial_label"] = serial
+    payload["question_id"] = generate_internal_question_id()
 
     q = Question(**payload)
     db.add(q)
@@ -258,13 +266,98 @@ def create_question(
 
     return q.to_dict()
 
+
+@router.post("/bulk-create", response_model=List[QuestionOut])
+def create_questions_bulk(
+    data: BulkQuestionCreateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not data.questions:
+        return []
+
+    survey_ids = {q.survey_id for q in data.questions}
+    if len(survey_ids) != 1:
+        raise HTTPException(
+            status_code=400,
+            detail="All questions in a bulk create request must belong to the same survey",
+        )
+
+    survey_id = data.questions[0].survey_id
+    existing_rows = (
+        db.query(Question.serial_label)
+        .filter(
+            Question.survey_id == survey_id,
+            Question.serial_label.isnot(None),
+        )
+        .all()
+    )
+    used_serials = {str(label).strip() for (label,) in existing_rows if label}
+    created_questions: List[Question] = []
+
+    try:
+        for question in data.questions:
+            payload = question.dict(exclude_unset=True)
+            payload.pop("question_id", None)
+
+            serial = payload.get("serial_label")
+            if not serial or not str(serial).strip():
+                serial = generate_next_serial_label(
+                    db=db,
+                    survey_id=payload["survey_id"],
+                    prefix="Q",
+                )
+                while serial in used_serials:
+                    serial = generate_next_serial_label(
+                        db=db,
+                        survey_id=payload["survey_id"],
+                        prefix="Q",
+                    )
+            else:
+                try:
+                    serial = normalize_and_validate_serial_label(serial)
+                except ValueError as exc:
+                    raise HTTPException(status_code=422, detail=str(exc))
+
+            if serial in used_serials:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"serial_label already exists in this survey: {serial}",
+                )
+
+            payload["serial_label"] = serial
+            payload["question_id"] = generate_internal_question_id()
+            used_serials.add(serial)
+
+            q = Question(**payload)
+            db.add(q)
+            db.flush()
+            created_questions.append(q)
+
+        db.commit()
+
+        for q in created_questions:
+            db.refresh(q)
+            RedisQuestionService.invalidate_question(q.survey_id, q.question_id)
+
+        RedisQuestionService.remove_from_list(survey_id)
+        return [q.to_dict() for q in created_questions]
+
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise
+
 @router.get("/{question_id}", response_model=QuestionOut)
 def get_question(
     question_id: str,
     locale: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
-    q = db.query(Question).filter(Question.question_id == question_id).first()
+    q = db.query(Question).filter(
+        Question.question_id == question_id).first()
     if not q:
         raise HTTPException(404, "Question not found")
 
@@ -293,7 +386,10 @@ def update_question(
         if not serial or not serial.strip():
             updates["serial_label"] = None
         else:
-            serial = serial.strip()
+            try:
+                serial = normalize_and_validate_serial_label(serial)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc))
 
             exists = (
             db.query(Question)
@@ -871,4 +967,3 @@ async def validate_translation_csv(
         **result,
         "message": "Validation complete. Use /upload-csv with dry_run=false to apply changes."
     }
-

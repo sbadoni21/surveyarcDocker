@@ -1,21 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import SurveyForm from "@/components/SurveyForm";
 import { useQuestion } from "@/providers/questionPProvider";
 import { useSurvey } from "@/providers/surveyPProvider";
 import Loading from "@/app/[locale]/loading";
 import { useRule } from "@/providers/rulePProvider";
 import { useTheme } from "@/providers/postGresPorviders/themeProvider";
+import { useRouteParams } from "@/utils/getPaths";
 
 export default function SurveyDemoPage() {
   const router = useRouter();
-  const pathname = usePathname();
-  const parts = pathname.split("/");
-  const orgId = parts[3];
-  const projectId = parts[6];
-  const surveyId = parts[7];
+  const { orgId, projectId, surveyId } = useRouteParams();
 
   const [questions, setQuestions] = useState([]);
   const [blocks, setBlocks] = useState([]);

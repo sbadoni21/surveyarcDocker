@@ -1,6 +1,8 @@
 fastapi-backend/.venv/
 fastapi-backend/venv/
 fastapi-backend/app/_pycache_/
+fastapi-backend/app/credentials/*.json
+!fastapi-backend/app/credentials/*.example.json
 key-server/.venv/
 key-server/venv/
 key-server/app/_pycache_/
@@ -8,3 +10,6 @@ surveyarc3.0/.env
 .venv
 .env
 *.py[cod]
+fastapi-backend/dummy_error_*.png
+fastapi-backend/debug_screenshots/
+fastapi-backend/.DS_Store

@@ -41,8 +41,6 @@ async function forceDecryptResponse(res) {
     return NextResponse.json({ status: "error", raw: text }, { status: res.status });
   }
 }
-
-// GET /en/api/post-gres-apis/projects/:projectId/timeline?orgId=... (also accepts org_id)
 export async function GET(req, { params }) {
   try {
     const { projectId } = await params ?? {};
@@ -52,14 +50,15 @@ export async function GET(req, { params }) {
 
     const { searchParams } = new URL(req.url);
     const orgId = searchParams.get("orgId") || searchParams.get("org_id");
+    const userId = searchParams.get("userId") ; // ✅ FIXED
+    
     if (!orgId) {
       return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
     }
 
-    // forward any other query params (exclude orgId/org_id)
     const fwd = new URLSearchParams();
     for (const [k, v] of searchParams.entries()) {
-      if (k === "orgId" || k === "org_id") continue;
+      if (k === "orgId" || k === "org_id" || k === "userId") continue;
       if (v !== null && v !== undefined && v !== "") fwd.set(k, v);
     }
     const qs = fwd.toString();
@@ -69,6 +68,7 @@ export async function GET(req, { params }) {
       signal: AbortSignal.timeout(30000),
       cache: "no-store",
       headers: {
+        "x-user-id": userId,
         ...(ENC ? { "x-encrypted": "1" } : {}),
       },
     });

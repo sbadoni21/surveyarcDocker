@@ -45,7 +45,7 @@ async function forceDecryptResponse(res) {
 // POST /api/post-gres-apis/projects/:projectId/status
 export async function POST(req, { params }) {
   try {
-    const { projectId } = await params ?? {};
+    const { projectId, userId } = await params ?? {};
     if (!projectId) {
       return NextResponse.json({ detail: "projectId is required in the path" }, { status: 400 });
     }
@@ -63,6 +63,7 @@ export async function POST(req, { params }) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "x-user-id": userId ,
         ...(ENC ? { "x-encrypted": "1" } : {}),
       },
       body: JSON.stringify(payload),

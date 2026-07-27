@@ -48,7 +48,8 @@ class UserPermissionService:
         all_granted = set(role_perms + custom_grants)
         denied_set = set(denials)
         effective = list(all_granted - denied_set)
-        
+        scope = scope or "org"
+        resource_id = resource_id
         return {
             "user_uid": user_uid,
             "org_id": org_id,
@@ -276,52 +277,76 @@ class UserPermissionService:
         resource_id: str,
     ) -> Dict:
         """
-        Revoke a custom permission from a user
+        Revoke a custom permission from a user (SAFE + IDEMPOTENT)
         """
-        
-        # Get permission ID
+
+        # 1️⃣ Verify permission exists
         permission = (
             self.db.query(Permission)
             .filter(Permission.code == permission_code)
             .first()
         )
-        
+
         if not permission:
             raise HTTPException(
                 status_code=404,
                 detail=f"Permission '{permission_code}' not found"
             )
-        
-        # Delete grant
-        delete_query = text("""
-            DELETE FROM user_custom_permissions
-            WHERE user_uid = :user_uid
-            AND permission_id = :permission_id
-            AND scope = :scope
-            AND resource_id = :resource_id
-        """)
-        
-        result = self.db.execute(delete_query, {
-            "user_uid": user_uid,
-            "permission_id": permission.id,
-            "scope": scope,
-            "resource_id": resource_id,
-        })
-        
+
+        # 2️⃣ Check existence BEFORE delete
+        exists = self.db.execute(
+            text("""
+                SELECT 1 FROM user_custom_permissions
+                WHERE user_uid = :user_uid
+                AND permission_id = :permission_id
+                AND scope = :scope
+                AND resource_id = :resource_id
+                LIMIT 1
+            """),
+            {
+                "user_uid": user_uid,
+                "permission_id": permission.id,
+                "scope": scope,
+                "resource_id": resource_id,
+            }
+        ).fetchone()
+
+        if not exists:
+            return {
+                "status": "noop",
+                "message": "Permission already revoked",
+                "permission_code": permission_code,
+                "user_uid": user_uid,
+            }
+
+        # 3️⃣ Delete
+        self.db.execute(
+            text("""
+                DELETE FROM user_custom_permissions
+                WHERE user_uid = :user_uid
+                AND permission_id = :permission_id
+                AND scope = :scope
+                AND resource_id = :resource_id
+            """),
+            {
+                "user_uid": user_uid,
+                "permission_id": permission.id,
+                "scope": scope,
+                "resource_id": resource_id,
+            }
+        )
+
         self.db.commit()
-        
-        if result.rowcount == 0:
-            raise HTTPException(
-                status_code=404,
-                detail="Permission grant not found"
-            )
-        
+
         return {
             "status": "success",
-            "message": f"Permission '{permission_code}' revoked from user",
-            "permission_code": permission_code,
-            "user_uid": user_uid,
+            "message": f"Permission '{str(permission_code)}' denied for user",
+            "permission_code": str(permission_code),
+            "user_uid": str(user_uid),
+            "scope": str(scope),
+            "resource_id": str(resource_id),
         }
+
 
     # =====================================================
     # DENY PERMISSION
@@ -337,65 +362,72 @@ class UserPermissionService:
         reason: Optional[str] = None,
     ) -> Dict:
         """
-        Explicitly deny a permission for a user
+        Explicitly deny a permission for a user (SAFE + REDIS-PROTECTED)
         """
-        
-        # Check if already denied
-        check_query = text("""
-            SELECT id FROM permission_denies
-            WHERE user_uid = :user_uid
-            AND permission_code = :permission_code
-            AND scope = :scope
-            AND resource_id = :resource_id
-        """)
-        
-        existing = self.db.execute(check_query, {
-            "user_uid": user_uid,
-            "permission_code": permission_code,
-            "scope": scope,
-            "resource_id": resource_id,
-        }).fetchone()
-        
+
+        # 1️⃣ Check if already denied
+        existing = self.db.execute(
+            text("""
+                SELECT id FROM permission_denies
+                WHERE user_uid = :user_uid
+                AND permission_code = :permission_code
+                AND scope = :scope
+                AND resource_id = :resource_id
+                LIMIT 1
+            """),
+            {
+                "user_uid": user_uid,
+                "permission_code": permission_code,
+                "scope": scope,
+                "resource_id": resource_id,
+            }
+        ).fetchone()
+
         if existing:
             return {
-                "status": "already_exists",
+                "status": "noop",
                 "message": "Permission already denied",
-                "id": existing[0]
+                "id": existing[0],
+                "permission_code": permission_code,
+                "user_uid": user_uid,
             }
-        
-        # Insert denial
+
+        # 2️⃣ Insert denial
         denial_id = str(uuid4())
-        insert_query = text("""
-            INSERT INTO permission_denies
-            (id, user_uid, permission_code, scope, resource_id, denied_by, reason, created_at)
-            VALUES (:id, :user_uid, :permission_code, :scope, :resource_id, :denied_by, :reason, NOW())
-        """)
-        
-        self.db.execute(insert_query, {
-            "id": denial_id,
-            "user_uid": user_uid,
-            "permission_code": permission_code,
-            "scope": scope,
-            "resource_id": resource_id,
-            "denied_by": denied_by,
-            "reason": reason,
-        })
-        
+
+        self.db.execute(
+            text("""
+                INSERT INTO permission_denies
+                (id, user_uid, permission_code, scope, resource_id, denied_by, reason, created_at)
+                VALUES (:id, :user_uid, :permission_code, :scope, :resource_id, :denied_by, :reason, NOW())
+            """),
+            {
+                "id": denial_id,
+                "user_uid": user_uid,
+                "permission_code": permission_code,
+                "scope": scope,
+                "resource_id": resource_id,
+                "denied_by": denied_by,
+                "reason": reason,
+            }
+        )
+
         self.db.commit()
-        
+
         return {
             "status": "success",
-            "message": f"Permission '{permission_code}' denied for user",
-            "id": denial_id,
-            "permission_code": permission_code,
-            "user_uid": user_uid,
-            "scope": scope,
-            "resource_id": resource_id,
+            "message": f"Permission '{str(permission_code)}' denied for user",
+            "id": str(denial_id),
+            "permission_code": str(permission_code),
+            "user_uid": str(user_uid),
+            "scope": str(scope),
+            "resource_id": str(resource_id),
         }
 
-    # =====================================================
-    # REMOVE DENIAL
-    # =====================================================
+
+        # =====================================================
+        # REMOVE DENIAL
+        # =====================================================
 
     def remove_denial(
         self,
@@ -433,10 +465,13 @@ class UserPermissionService:
         
         return {
             "status": "success",
-            "message": f"Denial removed for permission '{permission_code}'",
-            "permission_code": permission_code,
-            "user_uid": user_uid,
+            "message": f"Permission '{str(permission_code)}' denied for user",
+            "permission_code": str(permission_code),
+            "user_uid": str(user_uid),
+            "scope": str(scope),
+            "resource_id": str(resource_id),
         }
+
 
     # =====================================================
     # LIST CUSTOM GRANTS
@@ -576,3 +611,76 @@ class UserPermissionService:
         except Exception as e:
             print(f"[WARN] Could not list denials: {e}")
             return []
+    def bulk_grant_permissions(
+        self,
+        user_uid: str,
+        permission_codes: list[str],
+        scope: str,
+        resource_id: str,
+        granted_by: str,
+    ) -> dict:
+        if not permission_codes:
+            return {"status": "noop", "added": 0}
+
+        # 1️⃣ Fetch permissions
+        permissions = (
+            self.db.query(Permission)
+            .filter(Permission.code.in_(permission_codes))
+            .all()
+        )
+
+        if len(permissions) != len(permission_codes):
+            raise HTTPException(404, "One or more permissions not found")
+
+        perm_map = {p.code: p.id for p in permissions}
+
+        # 2️⃣ Find existing grants
+        existing = self.db.execute(
+            text("""
+                SELECT permission_id FROM user_custom_permissions
+                WHERE user_uid = :user_uid
+                AND scope = :scope
+                AND resource_id = :resource_id
+                AND permission_id = ANY(:perm_ids)
+            """),
+            {
+                "user_uid": user_uid,
+                "scope": scope,
+                "resource_id": resource_id,
+                "perm_ids": list(perm_map.values()),
+            },
+        ).fetchall()
+
+        existing_ids = {row[0] for row in existing}
+
+        # 3️⃣ Prepare bulk inserts
+        rows = []
+        for code, perm_id in perm_map.items():
+            if perm_id not in existing_ids:
+                rows.append({
+                    "id": str(uuid4()),
+                    "user_uid": user_uid,
+                    "permission_id": perm_id,
+                    "scope": scope,
+                    "resource_id": resource_id,
+                    "granted_by": granted_by,
+                })
+
+        if rows:
+            self.db.execute(
+                text("""
+                    INSERT INTO user_custom_permissions
+                    (id, user_uid, permission_id, scope, resource_id, granted_by, created_at)
+                    VALUES (:id, :user_uid, :permission_id, :scope, :resource_id, :granted_by, NOW())
+                """),
+                rows,
+            )
+            self.db.commit()
+
+        return {
+            "status": "success",
+            "requested": len(permission_codes),
+            "added": len(rows),
+            "skipped": len(permission_codes) - len(rows),
+        }
+

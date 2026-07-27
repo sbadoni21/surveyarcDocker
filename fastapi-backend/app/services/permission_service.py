@@ -300,3 +300,4 @@ class PermissionService:
     def _get_scope_chain(self, scope: Optional[str]) -> List[str]:
         order = ["org", "group", "team", "project"]
         return order if not scope else order[: order.index(scope) + 1]
+

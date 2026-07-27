@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useMemo } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useSurvey } from "@/providers/surveyPProvider";
 import { useQuestion } from "@/providers/questionPProvider";
 import SurveyFormComponent from "@/components/SurveyFormComponent";
@@ -8,7 +8,8 @@ import SurveyResponsePopup from "@/components/SurveyResponsePopup";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import { TemplateSelectionPopup } from "@/components/surveys/TemplateSelectionPopup";
 import { createSurveyFromTemplate } from "@/utils/createSurveyFromTemplate";
-import { format, formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+import { useRouteParams } from "@/utils/getPaths";
 
 // Icons (using Lucide React or similar)
 import {
@@ -47,13 +48,11 @@ export default function SurveyPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showTemplatePopup, setShowTemplatePopup] = useState(false);
   const [surveyNameForTemplate, setSurveyNameForTemplate] = useState("");
+  const [surveyNameWarning, setSurveyNameWarning] = useState("");
 
   const { user, uid } = useUser();
   const router = useRouter();
-  const pathname = usePathname();
-  const pathParts = pathname.split("/");
-  const orgId = pathParts[3];
-  const projectId = pathParts[6];
+  const { orgId, projectId, dashboardBase } = useRouteParams();
   const [isEditing, setIsEditing] = useState(false);
   const [editSurveyId, setEditSurveyId] = useState(null);
 
@@ -76,6 +75,21 @@ export default function SurveyPage() {
   const [responseData, setResponseData] = useState([]);
   const [openPopup, setOpenPopup] = useState(false);
 
+  const normalizedSurveys = useMemo(
+    () =>
+      (surveys || []).map((s) => ({
+        ...s,
+        surveyId: s?.surveyId || s?.survey_id || s?.id || "",
+        survey_id: s?.survey_id || s?.surveyId || s?.id || "",
+        name: s?.name || "",
+        time: s?.time || "",
+        status: s?.status || "draft",
+        updatedAt: s?.updatedAt || s?.updated_at || null,
+        updated_at: s?.updated_at || s?.updatedAt || null,
+      })),
+    [surveys]
+  );
+
   // Fetch all surveys
   useEffect(() => {
     if (!orgId || !projectId) return;
@@ -85,24 +99,24 @@ export default function SurveyPage() {
   // Count responses
   useEffect(() => {
     const fetchCounts = async () => {
-      if (!surveys?.length) {
+      if (!normalizedSurveys.length) {
         setSurveysWithCounts([]);
         return;
       }
       const updated = await Promise.all(
-        surveys.map(async (s) => {
+        normalizedSurveys.map(async (s) => {
           try {
-            const { count } = await countResponses(s.survey_id || s.surveyId || s.id);
-            return { ...s, surveyId: s.survey_id || s.surveyId || s.id, responseCount: count || 0 };
+            const { count } = await countResponses(s.surveyId);
+            return { ...s, responseCount: count || 0 };
           } catch {
-            return { ...s, surveyId: s.survey_id || s.surveyId || s.id, responseCount: 0 };
+            return { ...s, responseCount: 0 };
           }
         })
       );
       setSurveysWithCounts(updated);
     };
     fetchCounts();
-  }, [surveys]);
+  }, [normalizedSurveys, countResponses]);
 
   const handleRequestSort = (property) => {
     const isAsc = orderBy === property && order === "asc";
@@ -113,13 +127,18 @@ export default function SurveyPage() {
   const filteredAndSortedSurveys = useMemo(() => {
     let filtered = surveysWithCounts.filter(
       (survey) =>
-        survey.name.toLowerCase().includes(searchText.toLowerCase()) ||
-        survey.time.toLowerCase().includes(searchText.toLowerCase())
+        String(survey.name || "").toLowerCase().includes(searchText.toLowerCase()) ||
+        String(survey.time || "").toLowerCase().includes(searchText.toLowerCase())
     );
 
     return filtered.sort((a, b) => {
       let aValue = a[orderBy];
       let bValue = b[orderBy];
+
+      if (orderBy === "updated_at") {
+        aValue = aValue || a.updatedAt;
+        bValue = bValue || b.updatedAt;
+      }
 
       if (typeof aValue === "string") {
         aValue = aValue.toLowerCase();
@@ -147,14 +166,21 @@ export default function SurveyPage() {
   }, [searchText]);
 
   const handleClick = (surveyId) => {
-    router.push(`/postgres-org/${orgId}/dashboard/projects/${projectId}/${surveyId}`);
+    if (!dashboardBase || !projectId || !surveyId) return;
+    router.push(`${dashboardBase}/projects/${projectId}/${surveyId}`);
+  };
+
+  const ensureSurveyName = () => {
+    if (surveyNameForTemplate.trim()) {
+      setSurveyNameWarning("");
+      return true;
+    }
+    setSurveyNameWarning("Please enter a survey name before continuing.");
+    return false;
   };
 
   const handleCreateFromScratch = async () => {
-    if (!surveyNameForTemplate.trim()) {
-      alert("Please enter a survey name");
-      return;
-    }
+    if (!ensureSurveyName()) return;
 
     setLoading(true);
     try {
@@ -173,7 +199,7 @@ export default function SurveyPage() {
       setShowCreateDialog(false);
       
       if (newSurvey?.survey_id || newSurvey?.surveyId) {
-        router.push(`/postgres-org/${orgId}/dashboard/projects/${projectId}/${newSurvey.survey_id || newSurvey.surveyId}`);
+        handleClick(newSurvey.survey_id || newSurvey.surveyId);
       }
       
       alert("Survey created successfully!");
@@ -191,10 +217,7 @@ export default function SurveyPage() {
       return;
     }
 
-    if (!surveyNameForTemplate.trim()) {
-      alert("Please enter a survey name");
-      return;
-    }
+    if (!ensureSurveyName()) return;
 
     setLoading(true);
     try {
@@ -219,7 +242,7 @@ export default function SurveyPage() {
       setShowCreateDialog(false);
 
       if (result?.survey_id) {
-        router.push(`/postgres-org/${orgId}/dashboard/projects/${projectId}/${result.survey_id}`);
+        handleClick(result.survey_id);
       }
 
       alert(`Survey "${surveyNameForTemplate}" created from template successfully!`);
@@ -233,14 +256,12 @@ export default function SurveyPage() {
 
   const handleOpenCreateDialog = () => {
     setSurveyNameForTemplate("");
+    setSurveyNameWarning("");
     setShowCreateDialog(true);
   };
 
   const handleUseTemplate = () => {
-    if (!surveyNameForTemplate.trim()) {
-      alert("Please enter a survey name first");
-      return;
-    }
+    if (!ensureSurveyName()) return;
     setShowCreateDialog(false);
     setShowTemplatePopup(true);
   };
@@ -378,7 +399,7 @@ export default function SurveyPage() {
         ) : (
           <>
             {/* Table */}
-            <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+            <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-x-scroll h-screen">
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -419,7 +440,7 @@ export default function SurveyPage() {
                       return (
                         <tr
                           key={survey.surveyId}
-                          className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                          className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors "
                         >
                           <td className="px-6 py-4">
                             <button
@@ -449,13 +470,13 @@ export default function SurveyPage() {
                           </td>
                           <td className="px-6 py-4">
                             <span className="text-sm text-gray-600 dark:text-gray-400">
-                              {survey.updated_at
-                                ? formatDistanceToNow(new Date(survey.updated_at), { addSuffix: true })
+                              {survey.updatedAt || survey.updated_at
+                                ? formatDistanceToNow(new Date(survey.updatedAt || survey.updated_at), { addSuffix: true })
                                 : "N/A"}
                             </span>
                           </td>
                           <td className="px-6 py-4">
-                            <div className="relative">
+                            <div >
                               <button
                                 onClick={() => setOpenMenuId(openMenuId === survey.surveyId ? null : survey.surveyId)}
                                 className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
@@ -570,11 +591,11 @@ export default function SurveyPage() {
                     Previous
                   </button>
                   <span className="text-sm text-gray-700 dark:text-gray-300">
-                    Page {page + 1} of {totalPages}
+                    Page {page + 1} of {Math.max(totalPages, 1)}
                   </span>
                   <button
-                    onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
-                    disabled={page >= totalPages - 1}
+                    onClick={() => setPage(Math.min(Math.max(totalPages - 1, 0), page + 1))}
+                    disabled={page >= Math.max(totalPages - 1, 0)}
                     className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Next
@@ -602,11 +623,25 @@ export default function SurveyPage() {
               <input
                 type="text"
                 value={surveyNameForTemplate}
-                onChange={(e) => setSurveyNameForTemplate(e.target.value)}
+                onChange={(e) => {
+                  setSurveyNameForTemplate(e.target.value);
+                  if (e.target.value.trim()) {
+                    setSurveyNameWarning("");
+                  }
+                }}
                 placeholder="Enter survey name..."
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 ${
+                  surveyNameWarning
+                    ? "border-red-400 dark:border-red-500 focus:ring-red-500"
+                    : "border-gray-300 dark:border-gray-700 focus:ring-orange-500"
+                }`}
                 autoFocus
               />
+              {surveyNameWarning && (
+                <p className="mt-2 text-sm text-red-600 dark:text-red-400">
+                  {surveyNameWarning}
+                </p>
+              )}
               <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                 Choose how you want to start your survey
               </p>
@@ -622,14 +657,14 @@ export default function SurveyPage() {
               <button
                 onClick={handleCreateFromScratch}
                 className="flex-1 px-4 py-2 border border-orange-600 text-orange-600 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-950/30"
-                disabled={loading || !surveyNameForTemplate.trim()}
+                disabled={loading}
               >
                 From Scratch
               </button>
               <button
                 onClick={handleUseTemplate}
                 className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
-                disabled={loading || !surveyNameForTemplate.trim()}
+                disabled={loading}
               >
                 Use Template
               </button>

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 const BASE = process.env.FASTAPI_BASE_URL;
 
 export async function POST(req, { params }) {
-  const { uid } = params;
+  const { uid } = await params;
   try {
     const res = await fetch(`${BASE}/users/${uid}/suspend`, {
       method: "POST",

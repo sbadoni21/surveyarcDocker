@@ -67,7 +67,8 @@ export default function LogicEditor({
 
   const { qMap, optMap } = useMemo(() => buildRegistry(questions), [questions]);
 
-  const currentOptions = optMap[currentQuestion.serial_label] || [];
+  const currentSerialLabel = currentQuestion?.serial_label || "";
+  const currentOptions = optMap[currentSerialLabel] || [];
 
   const updateRule = (index, path, value) => {
     const copy = [...rules];
@@ -91,7 +92,7 @@ export default function LogicEditor({
   };
 
   return (
-    <div className="space-y-4 mt-6 border-t pt-4">
+    <aside className="space-y-4 rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-[#2a2a2a] dark:bg-[#18181b] xl:sticky xl:top-6">
       <h3 className="font-semibold text-sm text-gray-700 dark:text-gray-300">
         Question Logic
       </h3>
@@ -110,7 +111,7 @@ export default function LogicEditor({
             <div className="flex items-center gap-2 text-xs">
               <strong>IF</strong>
               <span className="px-2 py-1 bg-gray-200 dark:bg-[#2a2a2a] rounded">
-                {currentQuestion.serial_label}
+                {currentSerialLabel}
               </span>
 
               <select
@@ -168,7 +169,7 @@ export default function LogicEditor({
                 <option value="">Target question</option>
                 {questions
                   .filter(
-                    (q) => q.serial_label !== currentQuestion.serial_label
+                    (q) => q.serial_label !== currentSerialLabel
                   )
                   .map((q) => (
                     <option key={q.serial_label} value={q.serial_label}>
@@ -232,6 +233,6 @@ export default function LogicEditor({
       >
         + Add Logic Rule
       </button>
-    </div>
+    </aside>
   );
 }

@@ -3,7 +3,9 @@
 # SCHEMAS - app/schemas/ticket_categories.py
 # ============================================
 
-from pydantic import BaseModel, Field
+from __future__ import annotations
+
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
@@ -37,11 +39,10 @@ class CategoryOut(CategoryBase):
     updated_at: datetime
     subcategory_count: int = 0
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class CategoryWithSubcategories(CategoryOut):
-    subcategories: List['SubcategoryOut'] = []
+    subcategories: List[SubcategoryOut] = Field(default_factory=list)
 
 # -------- Subcategory Schemas --------
 class SubcategoryBase(BaseModel):
@@ -76,8 +77,7 @@ class SubcategoryOut(SubcategoryBase):
     created_at: datetime
     updated_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # -------- Product Schemas --------
 class ProductBase(BaseModel):
@@ -110,6 +110,7 @@ class ProductOut(ProductBase):
     created_at: datetime
     updated_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
+
+CategoryWithSubcategories.model_rebuild()

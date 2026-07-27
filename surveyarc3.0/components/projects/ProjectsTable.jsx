@@ -18,6 +18,8 @@ export function ProjectsTable({
   projectOverrides,
   canEnter,
   canManageProject,
+  canDeleteProject, // ✅ New prop
+  canEditProject, // ✅ New prop
   onEnter,
   editingTags,
   tagInput,
@@ -90,10 +92,13 @@ export function ProjectsTable({
           </thead>
           <tbody className="divide-y divide-gray-200">
             {rows.map((p) => {
-              const pid = p.projectId;
+              console.log(p)
+              const pid = p?.projectId;
               const effective = projectOverrides[pid] ? { ...p, ...projectOverrides[pid] } : p;
               const allowed = canEnter(effective);
               const canManage = canManageProject(effective);
+              const canEdit = canEditProject ? canEditProject(effective) : canManage; // ✅ Use specific permission
+              const canDelete = canDeleteProject ? canDeleteProject(effective) : canManage; // ✅ Use specific permission
               const isFav = favorites.has(pid);
               const isEditing = editingTags === pid;
 
@@ -111,6 +116,7 @@ export function ProjectsTable({
                       checked={selectedIds.has(pid)}
                       onChange={() => onToggleSelect(pid)}
                       className="w-4 h-4 text-orange-600 rounded focus:ring-2 focus:ring-orange-500"
+                      disabled={!canEdit && !canDelete} // ✅ Only allow selection if can edit or delete
                     />
                   </td>
 
@@ -176,8 +182,8 @@ export function ProjectsTable({
                       </div>
                     ) : (
                       <div
-                        onClick={() => canManage && onStartEditTags(pid)}
-                        className={canManage ? "cursor-pointer" : ""}
+                        onClick={() => canEdit && onStartEditTags(pid)} // ✅ Only allow if can edit
+                        className={canEdit ? "cursor-pointer" : ""}
                       >
                         {(effective.tags || []).length > 0 ? (
                           <div className="flex flex-wrap gap-1">
@@ -194,13 +200,13 @@ export function ProjectsTable({
                                 +{(effective.tags?.length || 0) - 3}
                               </span>
                             )}
-                            {canManage && (
+                            {canEdit && (
                               <Tag className="w-4 h-4 text-gray-400" />
                             )}
                           </div>
                         ) : (
                           <span className="text-sm text-gray-400 italic">
-                            {canManage ? "Click to add tags" : "No tags"}
+                            {canEdit ? "Click to add tags" : "No tags"}
                           </span>
                         )}
                       </div>
@@ -224,10 +230,12 @@ export function ProjectsTable({
                     </span>
                   </td>
 
-                  <td className="px-4 py-3 text-right  z-20" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-4 py-3 text-right z-20" onClick={(e) => e.stopPropagation()}>
                     <ProjectActionsMenu
                       project={effective}
                       canManage={canManage}
+                      canEdit={canEdit} // ✅ Pass specific edit permission
+                      canDelete={canDelete} // ✅ Pass specific delete permission
                       onToggleFavorite={() => onToggleFavorite(pid)}
                       onOpenMembers={() => onOpenMembers(effective)}
                       onOpenTimeline={() => onOpenTimeline(effective)}

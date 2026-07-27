@@ -1,0 +1,1888 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>SurveyArc Technical Audit and Valuation Report</title>
+    <style>
+      :root {
+        --ink: #172033;
+        --muted: #5d6b82;
+        --line: #d9e1ee;
+        --soft: #f6f8fb;
+        --blue: #244d9b;
+        --green: #0f766e;
+        --amber: #a16207;
+        --red: #b42318;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 34px;
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        font-size: 13.5px;
+        line-height: 1.48;
+      }
+
+      h1,
+      h2,
+      h3,
+      h4 {
+        color: #0f172a;
+        margin: 0 0 8px;
+        break-after: avoid;
+        page-break-after: avoid;
+      }
+
+      h1 {
+        font-size: 28px;
+        letter-spacing: -0.03em;
+        padding-bottom: 14px;
+        border-bottom: 4px solid #e6edf7;
+      }
+
+      h2 {
+        margin-top: 30px;
+        padding-top: 8px;
+        font-size: 21px;
+        border-top: 1px solid #edf1f7;
+      }
+
+      h3 {
+        margin-top: 20px;
+        font-size: 16px;
+      }
+
+      h4 {
+        margin-top: 14px;
+        font-size: 14px;
+      }
+
+      p {
+        margin: 7px 0 11px;
+      }
+
+      ul {
+        margin: 7px 0 14px 18px;
+        padding: 0;
+      }
+
+      li {
+        margin: 3px 0;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 10px 0 18px;
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+
+      tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      th,
+      td {
+        border: 1px solid var(--line);
+        padding: 9px 10px;
+        vertical-align: top;
+      }
+
+      th {
+        background: #f2f5fa;
+        color: #0f172a;
+        text-align: left;
+      }
+
+      .meta {
+        color: var(--muted);
+        font-size: 12.5px;
+        margin-top: 10px;
+      }
+
+      .cover-grid {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 16px;
+        margin-top: 18px;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        background: #fff;
+        border-radius: 12px;
+        padding: 14px 16px;
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+
+      .note {
+        border-left: 4px solid var(--blue);
+        background: #eff6ff;
+        padding: 12px 14px;
+        margin: 16px 0;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .success {
+        border-left: 4px solid var(--green);
+        background: #ecfdf5;
+      }
+
+      .warning {
+        border-left: 4px solid var(--amber);
+        background: #fffbeb;
+      }
+
+      .risk {
+        border-left: 4px solid var(--red);
+        background: #fff5f5;
+      }
+
+      .pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #243c8f;
+        font-weight: 700;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .done {
+        background: #dcfce7;
+        color: #166534;
+      }
+
+      .partial {
+        background: #fef3c7;
+        color: #92400e;
+      }
+
+      .todo {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+
+      .money {
+        font-weight: 800;
+        color: #0f766e;
+      }
+
+      .small {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .section-break {
+        page-break-before: always;
+      }
+
+      .tight td,
+      .tight th {
+        padding: 7px 8px;
+      }
+
+      .score {
+        font-weight: 800;
+        color: #0f172a;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      code {
+        background: #f1f5f9;
+        padding: 1px 4px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+
+      @media print {
+        body {
+          margin: 22mm 16mm;
+          font-size: 12.5px;
+        }
+
+        .section-break {
+          page-break-before: always;
+        }
+
+        h1,
+        h2,
+        h3,
+        h4 {
+          break-after: avoid;
+          page-break-after: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>SurveyArc Technical Audit and Valuation Report</h1>
+    <p class="meta">
+      Prepared as an independent third-party style technical assessment<br />
+      Date: May 28, 2026<br />
+      Primary commercial focus: Survey creation, survey programming, survey management, response collection, quota, rules, campaign readiness, and internal handoff value<br />
+      Additional platform scope reviewed: ticket management, SLA management, RBAC, user management, organization/project management, contact/audience management, Salesforce, pricing/payment foundations, marketplace/integrations/webhooks, audit/archive/metrics, mail relay, key server, Redis-backed caching, and frontend/backend API layers
+    </p>
+
+    <div class="cover-grid">
+      <div class="card">
+        <h3>Executive Opinion</h3>
+        <p>
+          SurveyArc is not a small demo application. The repository contains a broad, multi-service
+          product foundation with survey authoring as the central business value, plus supporting
+          modules for organization management, project management, contacts, campaigns, quota,
+          translations, RBAC, ticketing, SLA operations, Salesforce, payments/pricing, marketplace,
+          integrations, webhooks, mail relay, and encryption-related services.
+        </p>
+        <p>
+          The survey product is the main asset being valued in this report. It already includes a
+          visual survey builder, a large question-type library, blocks and ordering, survey runtime
+          rendering, response handling, quota/rule infrastructure, translation support, templates,
+          theme support, campaign integration points, and an XML survey programming mode. These
+          features represent substantial development effort and give an acquiring internal team a
+          meaningful head start compared with starting from zero.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Recommended Price Position</h3>
+        <p>
+          Recommended opening pitch for complete code transfer:
+          <span class="money">INR 18,00,000 to INR 22,00,000</span>
+        </p>
+        <p>
+          Practical negotiation target:
+          <span class="money">INR 14,00,000 to INR 17,00,000</span>
+        </p>
+        <p>
+          Minimum sensible floor for the full repository with KT:
+          <span class="money">INR 11,00,000 to INR 12,50,000</span>
+        </p>
+        <p class="small">
+          The above assumes an as-is code transfer, documentation bundle, and reasonable knowledge
+          transfer support. It is not priced as a fully supported commercial SaaS.
+        </p>
+      </div>
+    </div>
+
+    <div class="note">
+      This assessment uses an internal-use acquisition lens. Since the buyer intends to use and
+      extend the tool internally, the valuation should not be judged only by public SaaS readiness.
+      Internal-use buyers can accept unfinished polish if the architecture, data model, and business
+      modules save significant development time.
+    </div>
+
+    <h2>1. Scope and Evidence Reviewed</h2>
+    <p>
+      The repository was reviewed across frontend, backend, service, model, route, schema, and
+      integration layers. The most important observation is that the survey module is not isolated:
+      it is connected to projects, organizations, users, contacts, campaigns, quotas, translations,
+      themes, responses, and permission surfaces. The ticket/SLA system is also a significant
+      secondary product line and should be mentioned in the sale story as additional platform value.
+    </p>
+
+    <table class="tight">
+      <tr>
+        <th>Evidence Area</th>
+        <th>Observed Scope</th>
+        <th>Business Meaning</th>
+      </tr>
+      <tr>
+        <td>Source size</td>
+        <td>Approximately 967 Python/JavaScript/React source files reviewed by inventory scan.</td>
+        <td>This is a multi-module platform, not a few screens or a prototype script.</td>
+      </tr>
+      <tr>
+        <td>Backend API surface</td>
+        <td>Approximately 501 FastAPI route decorators across backend modules.</td>
+        <td>Large API surface covering surveys, questions, projects, users, RBAC, campaigns, contacts, tickets, SLA, and support operations.</td>
+      </tr>
+      <tr>
+        <td>Frontend API proxy layer</td>
+        <td>Approximately 252 Next.js API proxy route files under the Postgres API route structure.</td>
+        <td>Frontend is already wired to backend-style service boundaries, reducing handoff friction.</td>
+      </tr>
+      <tr>
+        <td>Question configuration library</td>
+        <td>More than 40 dedicated question configuration components plus shared question editor and runtime forms.</td>
+        <td>Survey builder has broad market-research/questionnaire coverage.</td>
+      </tr>
+      <tr>
+        <td>Ticket/support UI</td>
+        <td>Ticket dashboard, ticket detail, agent workflow components, SLA admin, support groups, support teams, RBAC management.</td>
+        <td>Secondary operational platform exists and increases overall asset value.</td>
+      </tr>
+      <tr>
+        <td>Additional business modules</td>
+        <td>Pricing/payment/order/invoice foundations, marketplace, integrations, webhooks, domains, audit events/logs, archive, metrics, tags, Salesforce sync, export utilities, ownership transfer, email/WhatsApp UI surfaces.</td>
+        <td>These are additional product and handoff assets that were identified in the repo-wide rescan.</td>
+      </tr>
+      <tr>
+        <td>Build/compile status</td>
+        <td>Frontend build completed with warnings; backend compile check completed successfully in earlier verification.</td>
+        <td>The project is not fully hardened, but it is structurally executable and developable.</td>
+      </tr>
+      <tr>
+        <td>Testing status</td>
+        <td>No meaningful automated test suite was identified during this audit pass.</td>
+        <td>Buyer should budget stabilization and regression testing after acquisition.</td>
+      </tr>
+    </table>
+
+    <h2>2. Product Summary: What Has Been Built</h2>
+    <p>
+      The repository can be described as a survey-led internal research and operations platform. The
+      strongest and most relevant area for the buyer is the survey product. However, the surrounding
+      modules matter because they make the survey product usable in an organization: users can be
+      managed, projects can hold surveys, contacts can be imported, campaigns can send survey links,
+      quotas can control respondent segments, and operational tickets/SLA workflows can support
+      internal service management. A second full scan also identified commerce, subscription,
+      integration, audit, Salesforce, export, WhatsApp, and ownership-transfer foundations that should
+      be treated as additional included value, even if they are not the primary reason for acquisition.
+    </p>
+
+    <table>
+      <tr>
+        <th>Product Area</th>
+        <th>Status</th>
+        <th>What Is Done</th>
+        <th>What Still Needs Work</th>
+      </tr>
+      <tr>
+        <td>Survey builder and survey management</td>
+        <td><span class="pill done">Major foundation done</span></td>
+        <td>Survey CRUD, project-level survey listing, builder navigation, question creation/editing/deletion, ordering, blocks, page breaks, templates, XML mode, preview, runtime rendering, response collection.</td>
+        <td>UX polishing, validation consistency, autosave/save-state clarity, stronger tests, schema normalization, production-grade QA.</td>
+      </tr>
+      <tr>
+        <td>Question library</td>
+        <td><span class="pill done">Broad coverage done</span></td>
+        <td>Many research-grade question types including NPS, OSAT, matrix, ranking, MaxDiff, conjoint, semantic diff, price sensitivity, Gabor-Granger, monadic/sequential/forced exposure, contact fields, file upload, media, and screens.</td>
+        <td>Each advanced type needs respondent-side QA, analytics validation, export validation, and edge-case testing.</td>
+      </tr>
+      <tr>
+        <td>Survey runtime and responses</td>
+        <td><span class="pill partial">Functional but needs hardening</span></td>
+        <td>Survey form rendering, block progression, answer UI, response APIs, response overview pages, survey demo/preview areas.</td>
+        <td>End-to-end respondent journey should be tested across every question type and device size.</td>
+      </tr>
+      <tr>
+        <td>Rules, quota, translations</td>
+        <td><span class="pill partial">Important foundation present</span></td>
+        <td>Question logic fields, rules API, quota API with evaluate/increment, translation structures, translation CSV import/export/validation.</td>
+        <td>Needs stronger rule builder UX, logic engine completeness, quota reporting, and test coverage.</td>
+      </tr>
+      <tr>
+        <td>Contacts, audience, campaigns</td>
+        <td><span class="pill partial">Integration layer present</span></td>
+        <td>Contacts, lists, contact emails/phones/socials, audience files, campaign creation/scheduling, campaign result models, mail relay integration.</td>
+        <td>Provider integrations for SMS/WhatsApp/voice are placeholders; email relay and tracking need production configuration.</td>
+      </tr>
+      <tr>
+        <td>Project, organization, user, RBAC</td>
+        <td><span class="pill partial">Strong internal foundation</span></td>
+        <td>Organization/project CRUD, user management, roles, permissions, grants, denials, project members, favorites, milestones, attachments, cache invalidation.</td>
+        <td>Permission model needs final review, caching strategy cleanup, and clear admin documentation.</td>
+      </tr>
+      <tr>
+        <td>Ticket management and SLA</td>
+        <td><span class="pill partial">Large secondary module</span></td>
+        <td>Ticket CRUD, comments, attachments, collaborators, worklogs, assignments, SLA timers, pause/resume, support groups, teams, routing, categories, taxonomies, templates.</td>
+        <td>Should be treated as a second product line needing QA, migrations, and process documentation.</td>
+      </tr>
+      <tr>
+        <td>Infrastructure and services</td>
+        <td><span class="pill partial">Useful but needs ops polish</span></td>
+        <td>Docker-oriented structure, Redis services, encryption middleware, key server, mail relay, background processors.</td>
+        <td>Production secrets, environment docs, monitoring, migration discipline, and deployment runbooks are required.</td>
+      </tr>
+      <tr>
+        <td>Commerce, integrations, audit, Salesforce, exports</td>
+        <td><span class="pill partial">Additional foundation present</span></td>
+        <td>Pricing plan routes, order/payment/invoice models, Razorpay frontend utilities, marketplace and integration models/routes, webhooks, domains, audit logs/events, archive, metrics, Salesforce contact/account/sync/campaign routes, Excel/SPSS export utilities, analytics helpers.</td>
+        <td>These modules need business-rule validation, security review, and documentation before being positioned as production-ready.</td>
+      </tr>
+    </table>
+
+    <h2 class="section-break">3. Survey System Deep Dive</h2>
+    <p>
+      The survey system is the main value driver. It combines a visual builder, backend schema,
+      frontend state management, question configuration forms, survey runtime, response capture,
+      translation support, quota/rule foundations, template creation, and campaign-related delivery
+      surfaces. For an internal buyer, this survey foundation is the strongest reason to acquire the
+      repository instead of building from scratch.
+    </p>
+
+    <h3>3.1 Survey Data Model and Backend APIs</h3>
+    <p>
+      The backend survey model stores the survey as an organization/project-owned object with survey
+      identity, name, slug, version, status, settings, question order, theme association, blocks, and
+      block order. This is important because it supports both simple linear surveys and more complex
+      block-based survey programming.
+    </p>
+
+    <table>
+      <tr>
+        <th>Survey Capability</th>
+        <th>Evidence in Codebase</th>
+        <th>Assessment</th>
+      </tr>
+      <tr>
+        <td>Survey CRUD</td>
+        <td>Backend route supports create, get by survey ID, list, project-level list, update/patch, and delete.</td>
+        <td>Core survey lifecycle exists and can be extended by the buyer's engineering team.</td>
+      </tr>
+      <tr>
+        <td>Survey status</td>
+        <td>Survey schema/model carries status fields; frontend displays draft/live states.</td>
+        <td>Useful foundation, but status synchronization between inner builder and outside listing needs final consistency checks.</td>
+      </tr>
+      <tr>
+        <td>Question order</td>
+        <td>Survey payload supports <code>question_order</code> and frontend maps <code>questionOrder</code> to backend shape.</td>
+        <td>Necessary for stable survey rendering and survey programming.</td>
+      </tr>
+      <tr>
+        <td>Blocks and block order</td>
+        <td>Survey stores <code>blocks</code> and <code>block_order</code>; frontend builder supports selected blocks and per-block question order.</td>
+        <td>Important feature because complex surveys usually need sections, page breaks, randomized blocks, and grouping.</td>
+      </tr>
+      <tr>
+        <td>Responses count and response listing</td>
+        <td>Survey routes expose response count and response listing per survey.</td>
+        <td>Basic reporting and operational visibility are present.</td>
+      </tr>
+      <tr>
+        <td>Dummy response generation</td>
+        <td>Survey routes include generate-dummy, task status, cancel, and list dummy-generation tasks.</td>
+        <td>Useful for demo/testing, but generated dummy artifacts should be controlled and excluded from commits.</td>
+      </tr>
+      <tr>
+        <td>Locales</td>
+        <td>Survey route exposes survey locales and question translation APIs exist.</td>
+        <td>Translation architecture is present and valuable for multilingual internal survey work.</td>
+      </tr>
+    </table>
+
+    <h3>3.2 Question Data Model</h3>
+    <p>
+      Questions are modeled with both internal identity and human-facing labels. The backend stores
+      <code>question_id</code> as the primary key and <code>serial_label</code> as the reference label used
+      for programming, logic, exports, and human readable references such as Q1, Q2, Q3, etc. This is
+      the correct direction because internal IDs should not be exposed as the main survey-programming
+      reference.
+    </p>
+
+    <table>
+      <tr>
+        <th>Question Field</th>
+        <th>Purpose</th>
+        <th>Value</th>
+      </tr>
+      <tr>
+        <td><code>question_id</code></td>
+        <td>System-level unique identifier, primary key.</td>
+        <td>Prevents internal collisions and allows stable database references.</td>
+      </tr>
+      <tr>
+        <td><code>serial_label</code></td>
+        <td>Human-facing survey programming label such as Q1, Q2, S1, etc.</td>
+        <td>Better UX for logic, exports, XML mode, and analyst workflows.</td>
+      </tr>
+      <tr>
+        <td><code>type</code></td>
+        <td>Controls renderer/config editor behavior.</td>
+        <td>Supports broad question library and screen types.</td>
+      </tr>
+      <tr>
+        <td><code>label</code></td>
+        <td>The actual respondent-facing question text.</td>
+        <td>Core survey content field.</td>
+      </tr>
+      <tr>
+        <td><code>description</code></td>
+        <td>Helper text or subtext.</td>
+        <td>Supports richer survey authoring.</td>
+      </tr>
+      <tr>
+        <td><code>config</code></td>
+        <td>Question-type-specific JSON configuration.</td>
+        <td>Enables flexible advanced question types without changing the base table repeatedly.</td>
+      </tr>
+      <tr>
+        <td><code>logic</code></td>
+        <td>Per-question logic and branching actions.</td>
+        <td>Important for future survey programming maturity.</td>
+      </tr>
+      <tr>
+        <td><code>translations</code></td>
+        <td>Localized labels/descriptions/configs.</td>
+        <td>Important for multilingual internal deployments.</td>
+      </tr>
+    </table>
+
+    <h3>3.3 Question Backend APIs</h3>
+    <p>
+      The question backend is significantly more complete than a basic CRUD module. It includes list
+      questions for a survey, create, bulk create, get, update, delete, bulk fetch, translated question
+      retrieval, translation structures, locale initialization, resync, CSV upload, CSV export, and CSV
+      validation.
+    </p>
+
+    <table>
+      <tr>
+        <th>Question API Area</th>
+        <th>What Exists</th>
+        <th>Why It Matters</th>
+      </tr>
+      <tr>
+        <td>Question CRUD</td>
+        <td>Create, read, update, delete, and survey-level list APIs.</td>
+        <td>Minimum foundation for a real builder.</td>
+      </tr>
+      <tr>
+        <td>Bulk create</td>
+        <td><code>/bulk-create</code> endpoint and frontend model support.</td>
+        <td>Important performance improvement for survey templates and XML compiler output.</td>
+      </tr>
+      <tr>
+        <td>Bulk fetch</td>
+        <td>Bulk question retrieval by IDs.</td>
+        <td>Useful for runtime rendering and builder hydration.</td>
+      </tr>
+      <tr>
+        <td>Translations</td>
+        <td>Question translation coverage, blank translation structure, update all translations, update locale, initialize locale, delete locale, delete all.</td>
+        <td>Substantial enterprise/internal-use feature, especially for survey operations across languages.</td>
+      </tr>
+      <tr>
+        <td>CSV workflows</td>
+        <td>Translation CSV upload, export, and validation.</td>
+        <td>Matches how research teams often manage translations outside the app.</td>
+      </tr>
+      <tr>
+        <td>Logic schema</td>
+        <td>Logic condition/action/rule schemas reference serial labels or question IDs.</td>
+        <td>Provides the base for survey branching and rule authoring.</td>
+      </tr>
+    </table>
+
+    <h3>3.4 Question Type Library</h3>
+    <p>
+      The frontend question library is one of the most valuable parts of the survey system. The codebase
+      includes a large set of question types commonly needed by market research, CX, internal feedback,
+      and panel-style survey operations.
+    </p>
+
+    <table>
+      <tr>
+        <th>Question Category</th>
+        <th>Implemented/Represented Types</th>
+        <th>Business Value</th>
+      </tr>
+      <tr>
+        <td>Basic choice</td>
+        <td>Multiple choice, dropdown, checkbox, yes/no, picture choice, legal/consent.</td>
+        <td>Covers standard questionnaire needs.</td>
+      </tr>
+      <tr>
+        <td>Rating and CX</td>
+        <td>NPS, OSAT, rating, opinion scale, smiley rating, image click rating.</td>
+        <td>Supports customer satisfaction, feedback, and experience research.</td>
+      </tr>
+      <tr>
+        <td>Text and data capture</td>
+        <td>Short text, long text, number, date, contact email, phone, address, website.</td>
+        <td>Supports respondent profile, feedback, and operational data collection.</td>
+      </tr>
+      <tr>
+        <td>Media and files</td>
+        <td>Video, file upload, Google Drive, Calendly.</td>
+        <td>Useful for richer respondent interactions and appointment/file flows.</td>
+      </tr>
+      <tr>
+        <td>Matrix and grid</td>
+        <td>Matrix, table grid, multi grid, matrix rating, side-by-side, comparison grid.</td>
+        <td>Important for research surveys where multiple attributes/products are evaluated.</td>
+      </tr>
+      <tr>
+        <td>Research/advanced</td>
+        <td>MaxDiff, conjoint, semantic differential, Gabor-Granger, price sensitivity, Bayes acquisition, weighted multi.</td>
+        <td>These are high-value research features that are expensive to design and test from scratch.</td>
+      </tr>
+      <tr>
+        <td>Stimulus testing</td>
+        <td>Monadic test, sequential monadic, forced exposure, image click rating.</td>
+        <td>Relevant for product, ad, packaging, and concept testing.</td>
+      </tr>
+      <tr>
+        <td>Segmentation</td>
+        <td>Segmentation selector, persona quiz, Likert, ranking.</td>
+        <td>Supports respondent grouping and structured insight workflows.</td>
+      </tr>
+      <tr>
+        <td>Flow and screens</td>
+        <td>Welcome screen, end screen, redirect URL/page-break style structure through builder blocks.</td>
+        <td>Required for professional survey flows and respondent experience.</td>
+      </tr>
+    </table>
+
+    <p>
+      Dedicated configuration components observed include Address, AutoSum, BayesAcq, Calendly,
+      ComparisonGrid, Conjoint, Date, Email, EndScreen, FileUpload, ForcedExposure, GaborGranger,
+      GoogleDrive, ImageClickRating, Legal, Likert, Matrix, MatrixRating, MaxDiff, Monadic, MultiGrid,
+      Number, OSAT, Options, PersonaQuiz, PhoneNumber, PictureChoice, PriceSensitivity, Ranking,
+      Rating, Redirect, SegmentationSelector, SemanticDiff, SequentialMonadic, SideBySide, Slider,
+      SmileyRating, Statement, Submit, TableGrid, Text, Turf, Video, Website, WeightedMulti, Welcome,
+      and YesNo configuration components.
+    </p>
+
+    <h3>3.5 Survey Builder Frontend</h3>
+    <p>
+      The survey builder is not merely a form submission page. It includes the question maker page,
+      question editor panel, question list, tabs, survey toolbar, flow/quota/rule/theme/translation
+      sections, drag/drop ordering concepts, block handling, selected block state, optimistic question
+      creation, and backend refresh after saves.
+    </p>
+
+    <table>
+      <tr>
+        <th>Builder Area</th>
+        <th>Implemented Behavior</th>
+        <th>Assessment</th>
+      </tr>
+      <tr>
+        <td>Question creation</td>
+        <td>User can create questions with label, serial label, type, config, description, and required flags.</td>
+        <td>Core authoring path exists; validation warnings for missing names/labels are being improved.</td>
+      </tr>
+      <tr>
+        <td>Serial label UX</td>
+        <td>Serial labels are visible and editable while internal question IDs stay behind the scenes.</td>
+        <td>Correct for analyst-friendly workflows and future XML/logic references.</td>
+      </tr>
+      <tr>
+        <td>Question editing</td>
+        <td>Editor panel supports editing labels, serial labels, descriptions, config forms, and save/update behavior.</td>
+        <td>Functional and important, but needs final UX polish around save state and validation messages.</td>
+      </tr>
+      <tr>
+        <td>Blocks</td>
+        <td>Builder maintains block order and per-block question order.</td>
+        <td>Important for page breaks, sections, and future randomization.</td>
+      </tr>
+      <tr>
+        <td>Optimistic updates</td>
+        <td>Question creation uses temporary IDs and later replaces them with backend IDs.</td>
+        <td>Improves perceived speed, but must be carefully tested to avoid order mismatch.</td>
+      </tr>
+      <tr>
+        <td>Bulk/template creation</td>
+        <td>Template creation uses bulk question creation and then updates survey order.</td>
+        <td>Good improvement over one API call per question and useful for imported/XML surveys.</td>
+      </tr>
+      <tr>
+        <td>Survey status display</td>
+        <td>Builder and outer survey list both display status but have shown draft/live mismatch risk.</td>
+        <td>Needs final status-source-of-truth cleanup before handoff.</td>
+      </tr>
+    </table>
+
+    <h3>3.6 XML Survey Programming Mode</h3>
+    <p>
+      A major recent addition is XML survey programming mode. This is valuable because experienced
+      survey programmers often prefer a text/programming style for faster survey creation, especially
+      when building many similar surveys or importing from structured specs.
+    </p>
+
+    <table>
+      <tr>
+        <th>XML Capability</th>
+        <th>Observed Behavior</th>
+        <th>Value</th>
+      </tr>
+      <tr>
+        <td>Toggle entry point</td>
+        <td>XML mode can be toggled from the survey question section.</td>
+        <td>Allows normal visual-builder users and technical survey programmers to use the same screen.</td>
+      </tr>
+      <tr>
+        <td>XML editor</td>
+        <td>Editor accepts survey XML and displays compiled preview.</td>
+        <td>Gives programmers a faster authoring path.</td>
+      </tr>
+      <tr>
+        <td>Serialization</td>
+        <td>Survey blocks/questions can be serialized back to XML.</td>
+        <td>Supports round-tripping and hand-editing existing surveys.</td>
+      </tr>
+      <tr>
+        <td>Compilation preview</td>
+        <td>Compiled preview shows blocks, question count, labels, types, options, and serial labels.</td>
+        <td>Reduces risk before saving compiled survey output.</td>
+      </tr>
+      <tr>
+        <td>Persistence</td>
+        <td>XML output can be saved back through question and survey APIs, including deletion of stale questions by serial reference.</td>
+        <td>Strong foundation for a Fosta/Decipher-style programming workflow.</td>
+      </tr>
+      <tr>
+        <td>Remaining work</td>
+        <td>Formal XML grammar, validation messages, import/export docs, advanced logic syntax, and tests are still needed.</td>
+        <td>This should be treated as a high-potential feature, not yet a fully mature compiler product.</td>
+      </tr>
+    </table>
+
+    <h3>3.7 Survey Runtime and Response Collection</h3>
+    <p>
+      The frontend includes runtime components for rendering surveys and capturing answers. There are
+      answer UI components, survey form screens, demo survey page, response overview, and response
+      models/providers. This means the product has moved beyond authoring and into actual respondent
+      execution.
+    </p>
+
+    <table>
+      <tr>
+        <th>Runtime Area</th>
+        <th>Done</th>
+        <th>Remaining</th>
+      </tr>
+      <tr>
+        <td>Survey render flow</td>
+        <td>Survey form components render questions and support block/page progression.</td>
+        <td>Needs complete QA across all question types and edge cases.</td>
+      </tr>
+      <tr>
+        <td>Answer capture</td>
+        <td>Answer UI and response APIs are present.</td>
+        <td>Needs validation for required fields, partial responses, resume behavior, and analytics/export consistency.</td>
+      </tr>
+      <tr>
+        <td>Survey preview/demo</td>
+        <td>Demo survey page and preview-related flows exist.</td>
+        <td>Should be stabilized as a formal preview/test mode for survey programmers.</td>
+      </tr>
+      <tr>
+        <td>Responses dashboard</td>
+        <td>Response overview pages and response model calls are present.</td>
+        <td>Analytics depth and exports should be expanded for client operations.</td>
+      </tr>
+    </table>
+
+    <h3>3.8 Rules, Logic, and Quota</h3>
+    <p>
+      Survey logic and quota are key requirements for professional survey operations. The repository
+      already includes a rules route, rule models, quota models, quota APIs, quota frontend components,
+      and question-level logic fields. This is a meaningful foundation even if additional business
+      testing is required.
+    </p>
+
+    <table>
+      <tr>
+        <th>Area</th>
+        <th>Current Capability</th>
+        <th>Assessment</th>
+      </tr>
+      <tr>
+        <td>Rules API</td>
+        <td>Rule create, list, get, update, and delete by survey/question context.</td>
+        <td>Backend foundation for branching and skip/display logic exists.</td>
+      </tr>
+      <tr>
+        <td>Question logic schema</td>
+        <td>Logic condition/action/rule structures use question references and operators.</td>
+        <td>Good base for a visual logic builder and XML logic compilation.</td>
+      </tr>
+      <tr>
+        <td>Quota backend</td>
+        <td>Create quota, get quota, list by survey, evaluate quota, increment quota, update quota, delete quota.</td>
+        <td>Core quota lifecycle exists and is valuable for respondent balancing.</td>
+      </tr>
+      <tr>
+        <td>Quota models</td>
+        <td>SurveyQuota, SurveyQuotaCell, and SurveyQuotaEvent style modeling.</td>
+        <td>Indicates quota is modeled as more than a flat number.</td>
+      </tr>
+      <tr>
+        <td>Quota frontend</td>
+        <td>Quota tab, quota create form, and question quota modal patterns are present.</td>
+        <td>Good internal foundation; needs polish and analytics reporting.</td>
+      </tr>
+      <tr>
+        <td>Remaining work</td>
+        <td>End-to-end testing, cross-quota logic, respondent termination/over-quota pages, reporting, and XML syntax support.</td>
+        <td>Should be a focused hardening area before heavy production usage.</td>
+      </tr>
+    </table>
+
+    <h3>3.9 Translation and Localization</h3>
+    <p>
+      Multilingual support is present at the question level and is supported by translation coverage,
+      initialization, blank translation structure, update APIs, CSV import, CSV export, and CSV validation.
+      For survey work, this is a high-value feature because translation often happens in spreadsheets
+      and external workflows.
+    </p>
+
+    <table>
+      <tr>
+        <th>Translation Feature</th>
+        <th>Current State</th>
+        <th>Value</th>
+      </tr>
+      <tr>
+        <td>Translation storage</td>
+        <td>Question translations are stored as JSON with label, description, and config-level support.</td>
+        <td>Flexible enough for varied question types.</td>
+      </tr>
+      <tr>
+        <td>Coverage checks</td>
+        <td>Survey-level translation coverage route exists.</td>
+        <td>Helps operators identify incomplete translations.</td>
+      </tr>
+      <tr>
+        <td>CSV workflows</td>
+        <td>Upload, export, and validate CSV routes exist.</td>
+        <td>Practical for real survey operations.</td>
+      </tr>
+      <tr>
+        <td>Frontend translation page/components</td>
+        <td>Translation page/grid/model/provider components exist.</td>
+        <td>Shows translation workflow is intended as a product feature, not only backend storage.</td>
+      </tr>
+    </table>
+
+    <h3>3.10 Themes, Preview, and Survey Presentation</h3>
+    <p>
+      Theme models, theme routes, theme provider/model files, and frontend theme pages/components are
+      present. There are also survey demo and survey preview oriented screens. This gives the buyer a
+      base for branded internal surveys.
+    </p>
+
+    <table>
+      <tr>
+        <th>Presentation Area</th>
+        <th>Done</th>
+        <th>Needed</th>
+      </tr>
+      <tr>
+        <td>Themes</td>
+        <td>Theme CRUD/toggle/duplicate style backend support and frontend theme page.</td>
+        <td>Design QA, tenant defaults, preview consistency, and documented theme schema.</td>
+      </tr>
+      <tr>
+        <td>Demo survey</td>
+        <td>Demo page and survey runtime page exist.</td>
+        <td>Standardized preview mode and respondent-mode distinction.</td>
+      </tr>
+      <tr>
+        <td>Welcome/end/redirect screens</td>
+        <td>Question/screen types exist and have config components.</td>
+        <td>Final UX testing across builder, runtime, and XML.</td>
+      </tr>
+    </table>
+
+    <h3>3.11 Survey-Related Campaign, Contact, and Audience Support</h3>
+    <p>
+      The survey product is also connected to contact and campaign modules. This matters because a
+      survey tool is not only a builder; it also needs a way to distribute survey links and track
+      respondent/channel outcomes.
+    </p>
+
+    <table>
+      <tr>
+        <th>Distribution Area</th>
+        <th>What Exists</th>
+        <th>Assessment</th>
+      </tr>
+      <tr>
+        <td>Contacts</td>
+        <td>Contacts, contact emails, phone numbers, social channels, contact lists, list members, CSV/import-style flows.</td>
+        <td>Solid data foundation for survey audience management.</td>
+      </tr>
+      <tr>
+        <td>Audience files</td>
+        <td>Audience file upload/create/list/update/delete routes and frontend manager component.</td>
+        <td>Useful for research operations and campaign-based distribution.</td>
+      </tr>
+      <tr>
+        <td>Campaigns</td>
+        <td>Campaign CRUD, scheduler, sender service, outbox processor, campaign results, analytics routes, email/SMS/WhatsApp/voice channel fields.</td>
+        <td>Very useful extension to survey product; email is more concrete than SMS/WhatsApp/voice provider integrations.</td>
+      </tr>
+      <tr>
+        <td>Mail relay</td>
+        <td>Separate Node/Express relay supports generic send and kind-based templates for campaign email, SLA, ticket, and calendar messages.</td>
+        <td>Good architectural separation; needs production SMTP/provider configuration and monitoring.</td>
+      </tr>
+      <tr>
+        <td>Participant sources</td>
+        <td>Participant source CRUD, exit pages, error messages, stats, generate URL, click/start/complete tracking.</td>
+        <td>Important for panel/source tracking and survey operations.</td>
+      </tr>
+    </table>
+
+    <h2 class="section-break">4. Ticket Management and SLA System</h2>
+    <p>
+      Although the buyer may primarily want SurveyArc for surveys, the repository also contains a
+      significant ticket management and SLA system. This should be mentioned in the commercial story
+      as additional platform value. It can be positioned as an internal operations/helpdesk module that
+      the buyer may use immediately or later.
+    </p>
+
+    <h3>4.1 Ticket Backend</h3>
+    <p>
+      The ticket backend is broad. It includes ticket creation, list, get, update, delete, root cause
+      setting, counts, comments, attachments, collaborators, group/team/agent assignment, participants,
+      worklogs, SLA pause/resume, and SLA timers. The ticket model includes statuses, priority, severity,
+      platform, requester details, feature/impact/root-cause taxonomies, assignment fields, category and
+      product fields, SLA fields, timing fields, custom fields, metadata, follow-up data, and relationships
+      with comments, tags, attachments, watchers, events, collaborators, worklogs, and SLA status.
+    </p>
+
+    <table>
+      <tr>
+        <th>Ticket Feature</th>
+        <th>Status</th>
+        <th>Business Meaning</th>
+      </tr>
+      <tr>
+        <td>Ticket lifecycle</td>
+        <td><span class="pill done">Done foundation</span></td>
+        <td>New/open/pending/on-hold/resolved/closed/canceled style lifecycle exists.</td>
+      </tr>
+      <tr>
+        <td>Assignments</td>
+        <td><span class="pill done">Done foundation</span></td>
+        <td>Tickets can be associated with assignee, group, team, and agent.</td>
+      </tr>
+      <tr>
+        <td>Comments</td>
+        <td><span class="pill done">Done foundation</span></td>
+        <td>Public/internal comment workflows and notification hooks exist.</td>
+      </tr>
+      <tr>
+        <td>Attachments</td>
+        <td><span class="pill partial">Partial</span></td>
+        <td>Attachment models/routes exist, but storage/security policy should be production reviewed.</td>
+      </tr>
+      <tr>
+        <td>Collaborators and participants</td>
+        <td><span class="pill done">Done foundation</span></td>
+        <td>Supports multi-person operational resolution workflows.</td>
+      </tr>
+      <tr>
+        <td>Worklogs</td>
+        <td><span class="pill done">Done foundation</span></td>
+        <td>Useful for time tracking and internal accountability.</td>
+      </tr>
+      <tr>
+        <td>Ticket categories and taxonomies</td>
+        <td><span class="pill partial">Good foundation</span></td>
+        <td>Categories, subcategories, products, features, impact, and root causes are modeled.</td>
+      </tr>
+      <tr>
+        <td>Notifications</td>
+        <td><span class="pill partial">Integrated</span></td>
+        <td>Mail relay supports ticket comment, SLA assigned, warning, and breach email templates.</td>
+      </tr>
+    </table>
+
+    <h3>4.2 SLA System</h3>
+    <p>
+      The SLA module is unusually broad for an internal tool. It includes SLA CRUD, bulk operations,
+      activate/deactivate, duplicate, publish/archive, match/effective SLA lookup, stats, compliance,
+      validation, simulation, export/import, versioning, dependency checks, cleanup, objectives, credit
+      rules, and ticket-level SLA timers/pause/resume.
+    </p>
+
+    <table>
+      <tr>
+        <th>SLA Feature</th>
+        <th>Implemented Scope</th>
+        <th>Value</th>
+      </tr>
+      <tr>
+        <td>SLA configuration</td>
+        <td>SLA model stores target matrix, pause rules, reminder policy, escalation policy, KPI targets, exclusions, penalties, aggregation, scope, precedence, lifecycle, versioning, effective dates.</td>
+        <td>Strong enterprise-style SLA foundation.</td>
+      </tr>
+      <tr>
+        <td>Objectives</td>
+        <td>SLA objectives have their own model and API lifecycle.</td>
+        <td>Allows multiple SLA dimensions such as response/resolution style targets.</td>
+      </tr>
+      <tr>
+        <td>Credit rules</td>
+        <td>Credit rule model and APIs exist.</td>
+        <td>Supports contractual/compliance-style penalty or credit behavior.</td>
+      </tr>
+      <tr>
+        <td>Simulation and validation</td>
+        <td>Validate and simulate endpoints exist.</td>
+        <td>Useful for admin confidence before publishing SLA changes.</td>
+      </tr>
+      <tr>
+        <td>Compliance and stats</td>
+        <td>Stats and compliance routes exist.</td>
+        <td>Basis for SLA reporting dashboards.</td>
+      </tr>
+      <tr>
+        <td>Frontend admin</td>
+        <td>SLA admin panel, dialog form, objective form, credit rule form, select, table.</td>
+        <td>Large amount of frontend work already completed.</td>
+      </tr>
+    </table>
+
+    <h3>4.3 Support Groups, Teams, Routing, Categories, Templates</h3>
+    <table>
+      <tr>
+        <th>Module</th>
+        <th>What Is Done</th>
+        <th>Remaining Work</th>
+      </tr>
+      <tr>
+        <td>Support groups</td>
+        <td>Group CRUD and group member CRUD with roles/proficiency concepts.</td>
+        <td>User-stub implementation should be cleaned and documented.</td>
+      </tr>
+      <tr>
+        <td>Support teams</td>
+        <td>Team CRUD, calendar assignment/removal/get, member CRUD, stats.</td>
+        <td>Calendar and capacity logic need full operational QA.</td>
+      </tr>
+      <tr>
+        <td>Routing policies</td>
+        <td>Routing policy CRUD and evaluate route.</td>
+        <td>Routing behavior needs business-rule signoff.</td>
+      </tr>
+      <tr>
+        <td>Business calendars</td>
+        <td>Calendar CRUD, hours and holidays support.</td>
+        <td>Timezone, holiday, and SLA interaction testing required.</td>
+      </tr>
+      <tr>
+        <td>Ticket templates</td>
+        <td>Template CRUD, toggle, duplicate, regenerate API key, create-ticket from template, usage logs, stats.</td>
+        <td>Security and API-key usage policy should be documented.</td>
+      </tr>
+      <tr>
+        <td>Ticket frontend</td>
+        <td>Ticket dashboard, ticket list, detail screen, raise ticket form, filters, assignee/group/team/tag selectors, agent panels, worklog/comment components.</td>
+        <td>Needs UX pass, role-based visibility checks, and end-to-end testing.</td>
+      </tr>
+    </table>
+
+    <h2 class="section-break">5. Organization, Project, User Management, and RBAC</h2>
+    <p>
+      The platform includes a meaningful internal administration foundation. This matters for SurveyArc
+      because survey operations need organizations, users, roles, projects, access control, member
+      management, and project-based survey ownership.
+    </p>
+
+    <h3>5.1 User and Organization Management</h3>
+    <table>
+      <tr>
+        <th>Area</th>
+        <th>Current Capability</th>
+        <th>Assessment</th>
+      </tr>
+      <tr>
+        <td>Users</td>
+        <td>Create, get, update, soft delete/suspend/activate, track login, list by org, session get/delete, get by email, admin create, batch fetch.</td>
+        <td>Good internal user-management base.</td>
+      </tr>
+      <tr>
+        <td>Organizations</td>
+        <td>Create, update, get, soft delete, list by owner, settings get/update, members, activate, suspend.</td>
+        <td>Supports multi-organization ownership and admin controls.</td>
+      </tr>
+      <tr>
+        <td>Redis caching</td>
+        <td>Org/user/session related Redis cache helpers and invalidation logic exist.</td>
+        <td>Useful for performance, but serialization errors and cache consistency should be cleaned.</td>
+      </tr>
+    </table>
+
+    <h3>5.2 Project Management</h3>
+    <p>
+      Project management is important because surveys are nested under projects. The project route is
+      large and includes creation, listing, get/update/delete, members, bulk members, access checks,
+      user accessible projects, progress recompute, milestones, tags, attachments, survey patching,
+      status management, search, bulk operations, favorites, recent activity, stats, and cache refresh.
+    </p>
+
+    <table>
+      <tr>
+        <th>Project Feature</th>
+        <th>Status</th>
+        <th>Why It Matters</th>
+      </tr>
+      <tr>
+        <td>Project CRUD and listing</td>
+        <td>Implemented</td>
+        <td>Required foundation for organizing surveys internally.</td>
+      </tr>
+      <tr>
+        <td>Project members and access</td>
+        <td>Implemented with RBAC assignment helper logic.</td>
+        <td>Supports team collaboration and access scoping.</td>
+      </tr>
+      <tr>
+        <td>Milestones, tags, attachments</td>
+        <td>Implemented foundation.</td>
+        <td>Adds project-management maturity beyond basic folder structure.</td>
+      </tr>
+      <tr>
+        <td>Project status and progress</td>
+        <td>Status set/allowed and progress recompute features exist.</td>
+        <td>Helps internal tracking of survey/project delivery.</td>
+      </tr>
+      <tr>
+        <td>Favorites and recent activity</td>
+        <td>Implemented.</td>
+        <td>Improves internal user productivity.</td>
+      </tr>
+    </table>
+
+    <h3>5.3 RBAC and Permissions</h3>
+    <p>
+      RBAC is present across backend models/services/routes and frontend screens. The repository includes
+      roles, permissions, role-permission mappings, user role assignments, custom grants, explicit denials,
+      effective permission resolution, permission management services, and frontend RBAC management tabs.
+    </p>
+
+    <table>
+      <tr>
+        <th>RBAC Area</th>
+        <th>What Is Done</th>
+        <th>Remaining Work</th>
+      </tr>
+      <tr>
+        <td>Roles</td>
+        <td>Role assignment service, role assignment routes, frontend role management.</td>
+        <td>Seed data and role naming should be documented clearly.</td>
+      </tr>
+      <tr>
+        <td>Permissions</td>
+        <td>Permission CRUD, module grouping, role-permission add/remove/list, permission checking.</td>
+        <td>Permission matrix should be finalized for survey-only buyer workflows.</td>
+      </tr>
+      <tr>
+        <td>Custom grants</td>
+        <td>User custom permission grant/revoke/bulk grant services exist.</td>
+        <td>Admin UX and audit trail need final hardening.</td>
+      </tr>
+      <tr>
+        <td>Explicit denials</td>
+        <td>Permission deny model/service logic exists.</td>
+        <td>Conflict resolution behavior should be documented and tested.</td>
+      </tr>
+      <tr>
+        <td>Frontend RBAC</td>
+        <td>RBACManagement, RolesTab, PermissionsTab, MappingsTab, UserAccessManager, ProtectedAction, RoleBadge components.</td>
+        <td>Needs final QA for sidebar reload/performance and permission caching behavior.</td>
+      </tr>
+    </table>
+
+    <h2 class="section-break">6. Mail Relay, Key Server, Redis, and Infrastructure</h2>
+    <p>
+      The repository includes supporting services that are relevant for an internal handoff. They are
+      not fully production-polished, but they demonstrate that the architecture already considered
+      messaging, key management, encrypted payload handling, background jobs, and caching.
+    </p>
+
+    <table>
+      <tr>
+        <th>Infrastructure Area</th>
+        <th>Current State</th>
+        <th>Assessment</th>
+      </tr>
+      <tr>
+        <td>Mail relay</td>
+        <td>Separate Node/Express service with health endpoint, bearer-token auth, generic email send, kind-based templates for SLA, ticket, calendar, and campaign email.</td>
+        <td>Good service separation. SMS/WhatsApp/voice are currently placeholders and should be integrated with real providers if needed.</td>
+      </tr>
+      <tr>
+        <td>Campaign outbox</td>
+        <td>Backend outbox processor and scheduler concepts exist; relay health check controls batch sending.</td>
+        <td>Correct architectural direction, but production monitoring/retry policy is needed.</td>
+      </tr>
+      <tr>
+        <td>Key server</td>
+        <td>FastAPI key server returns encrypted AES key material by key ID.</td>
+        <td>Useful encryption architecture, but secrets/key rotation and deployment docs are required.</td>
+      </tr>
+      <tr>
+        <td>Decrypt middleware</td>
+        <td>Middleware handles encrypted payloads and passes through unencrypted/multipart requests.</td>
+        <td>Useful for secure client/server flows, but should be reviewed before production exposure.</td>
+      </tr>
+      <tr>
+        <td>Encrypt GET middleware</td>
+        <td>GET JSON response encryption hooks exist and call remote key service.</td>
+        <td>Hardcoded remote URL and fallback behavior should be cleaned for handoff.</td>
+      </tr>
+      <tr>
+        <td>Redis services</td>
+        <td>Redis wrappers exist for surveys, questions, projects, contacts, campaigns, tickets, SLA, support, themes, responses, RBAC, rules, and taxonomies.</td>
+        <td>Performance-oriented work is present, but cache invalidation and serialization require QA.</td>
+      </tr>
+      <tr>
+        <td>Docker/local orchestration</td>
+        <td>Docker-related structure exists for local multi-service operation.</td>
+        <td>Needs clean setup docs, environment variables list, and deployment runbook.</td>
+      </tr>
+    </table>
+
+    <h2 class="section-break">6A. Additional Modules Found in Full Repository Scan</h2>
+    <p>
+      A second repo-wide scan identified additional modules that were not emphasized enough in the
+      earlier report version. These should not replace the survey-first valuation story, but they should
+      be mentioned as included platform assets because they add future optional value for the buyer's
+      internal team.
+    </p>
+
+    <table>
+      <tr>
+        <th>Additional Area</th>
+        <th>Files/Capabilities Observed</th>
+        <th>Commercial Meaning</th>
+        <th>Readiness Note</th>
+      </tr>
+      <tr>
+        <td>Pricing, orders, payments, invoices</td>
+        <td>Pricing plan APIs, payment/order/invoice models and routes, frontend PricingPage, create-order and verify-payment API routes, Razorpay utilities and script loader.</td>
+        <td>Provides a foundation for subscriptions, billing records, plan display, payment verification, and future monetization.</td>
+        <td>Useful foundation, but payment flows need production payment-gateway QA, invoice rules, tax/GST validation, and secrets cleanup.</td>
+      </tr>
+      <tr>
+        <td>Marketplace and integrations</td>
+        <td>Marketplace model/routes, integration model/routes, marketplaceModel, integrationModel, provider templates, email provider configuration surfaces.</td>
+        <td>Supports the idea of installable/configurable integrations per organization.</td>
+        <td>Currently best described as a foundation. Actual third-party app lifecycle and permission review need more work.</td>
+      </tr>
+      <tr>
+        <td>Webhooks and domains</td>
+        <td>Webhook model/routes with active state, secret, events array, URL; domain model/routes; campaign webhooks for email, SMS, and survey responses.</td>
+        <td>Important for connecting SurveyArc events to external systems and branded/custom domain workflows.</td>
+        <td>Needs webhook signing, retry policy, delivery logs, domain verification, and security documentation before production use.</td>
+      </tr>
+      <tr>
+        <td>Audit, archive, and metrics</td>
+        <td>Audit event routes by entity/org, audit log CRUD, audit services/helpers, archive model/routes, metric model/routes.</td>
+        <td>Useful for compliance, admin review, operational history, and internal reporting.</td>
+        <td>Needs consistent audit coverage across all important mutations and a clear retention policy.</td>
+      </tr>
+      <tr>
+        <td>Salesforce integration</td>
+        <td>Salesforce contacts/accounts/leads routes, account-with-contacts route, update/delete contact, sync contacts, add Salesforce contacts to list, sync accounts as lists, campaign preview/create-send/bulk-send flows, frontend Salesforce contacts/accounts pages and providers.</td>
+        <td>Strong additional value for B2B audience sourcing and survey campaign distribution from CRM data.</td>
+        <td>Should be treated as an integration module requiring credential setup, API limit handling, retry/error handling, and field mapping documentation.</td>
+      </tr>
+      <tr>
+        <td>Panel, anonymous link, QR, embed, participant sources</td>
+        <td>PanelManager, panel integration/overview components, AnonymousLinkPage, QrCodePage, EmbedPage, participant source APIs for generate URL, click/start/complete tracking, custom exit pages, and error messages.</td>
+        <td>Important for survey distribution outside email campaigns, including public links, embedded surveys, panel/source tracking, and respondent-source analytics.</td>
+        <td>Valuable for surveys, but needs final end-to-end validation with live respondent traffic.</td>
+      </tr>
+      <tr>
+        <td>Email and WhatsApp distribution surfaces</td>
+        <td>EmailPage, EmailListUploader, EmailTabsNav, email settings/provider cards, email templates editor/list/preview/variables, WhatsApp distribution page, WhatsApp config/contacts/lists/templates/template editor, WABA utilities.</td>
+        <td>Adds campaign/distribution UI beyond backend campaign APIs and mail relay.</td>
+        <td>Email is more concrete; WhatsApp requires provider/WABA credentials, template approval handling, and production send flow validation.</td>
+      </tr>
+      <tr>
+        <td>Analytics and exports</td>
+        <td>SurveyAnalyticsPanel, AnalyticsCard, response aggregation utilities, NPS analytics, checkbox aggregation, duplicate detection, graph helpers, Excel export, SPSS export, response formatting utilities.</td>
+        <td>Important for the post-survey value chain: not only collecting responses, but analyzing and exporting them.</td>
+        <td>Needs verification against real data and questionnaire edge cases before relying on it for client reporting.</td>
+      </tr>
+      <tr>
+        <td>Tags and taxonomy operations</td>
+        <td>Tag CRUD, counts, stats, categories, bulk create/delete, ticket tag usage recalculation, merge, cleanup unused, tag frontend page/form.</td>
+        <td>Useful for support/ticket organization and future project/survey categorization.</td>
+        <td>Mostly operational support value, with final QA required around usage counts and merge behavior.</td>
+      </tr>
+      <tr>
+        <td>Advanced support routing, capacity, and ML routing</td>
+        <td>Robust routing engine with policy/skills/capacity/SLA/geography/fallback layers, routing analytics, capacity overview, agent/team capacity, ML routing optimizer, optimization status, A/B test manager, routing health endpoints.</td>
+        <td>High optional value for the ticket/SLA side of the platform and a strong example of advanced internal operations thinking.</td>
+        <td>Should be sold as experimental/advanced foundation unless proven with live routing data.</td>
+      </tr>
+      <tr>
+        <td>Ownership transfer, settings, team administration</td>
+        <td>Accept ownership/ownership transfer API routes and components, organization settings, team invite/team components, policy/subscription setting components, group pages.</td>
+        <td>Supports internal administration and organization lifecycle beyond basic user CRUD.</td>
+        <td>Needs admin workflow documentation and role-based access review.</td>
+      </tr>
+      <tr>
+        <td>Security/auth/frontend utilities</td>
+        <td>Firebase admin core, auth routes, secure CRUD route, crypto client utilities, encryption helpers, request context middleware, locale-aware app routing, English/Hindi message files.</td>
+        <td>Shows work has been done on authenticated and internationalized platform behavior.</td>
+        <td>All secrets, service account files, private keys, and environment files should be removed from sale package or rotated before transfer.</td>
+      </tr>
+    </table>
+
+    <div class="note warning">
+      Repo hygiene note: the working tree includes development/runtime artifacts such as <code>node_modules</code>,
+      virtual environment folders, <code>.next</code>, <code>.env</code> files, key files, server certificates,
+      and a Firebase service account credential. These should not be treated as product value. Before
+      final handoff, the repository should be cleaned, secrets should be removed from history where
+      practical, and all exposed credentials/keys should be rotated.
+    </div>
+
+    <h2>7. Current Technical Quality Assessment</h2>
+    <p>
+      The codebase is large and valuable, but it is not finished as a polished commercial product. The
+      best framing is "substantial internal platform foundation requiring final engineering handoff and
+      hardening." That framing is fair and helps justify a meaningful price without overclaiming.
+    </p>
+
+    <table>
+      <tr>
+        <th>Quality Area</th>
+        <th>Score</th>
+        <th>Reason</th>
+      </tr>
+      <tr>
+        <td>Feature breadth</td>
+        <td class="score">9.2 / 10</td>
+        <td>Survey, project, users, contacts, campaigns, quota, translation, XML, ticketing, SLA, RBAC, mail relay, support, Salesforce, integrations, webhooks, pricing/payment foundations, audit/archive/metrics, analytics, exports, and distribution surfaces are all present.</td>
+      </tr>
+      <tr>
+        <td>Survey product foundation</td>
+        <td class="score">8.4 / 10</td>
+        <td>Survey builder, question library, blocks, runtime, responses, quota, rules, translations, templates, and XML mode are materially developed.</td>
+      </tr>
+      <tr>
+        <td>Ticket/SLA foundation</td>
+        <td class="score">7.5 / 10</td>
+        <td>Large support/ticketing/SLA system exists, but it should be treated as a secondary module needing QA.</td>
+      </tr>
+      <tr>
+        <td>Maintainability</td>
+        <td class="score">6.5 / 10</td>
+        <td>Large files, route sprawl, repeated patterns, and incomplete cleanup create maintenance cost, but module boundaries are understandable.</td>
+      </tr>
+      <tr>
+        <td>Documentation and handoff readiness</td>
+        <td class="score">7.5 / 10</td>
+        <td>Can be brought to 7-8 level if accompanied by the audit report, KT documentation, setup notes, module map, environment list, and known-issues list.</td>
+      </tr>
+      <tr>
+        <td>Automated quality coverage</td>
+        <td class="score">3.5 / 10</td>
+        <td>No meaningful automated test suite was identified; regression risk remains.</td>
+      </tr>
+      <tr>
+        <td>Production hardening</td>
+        <td class="score">5.8 / 10</td>
+        <td>Good internal foundation, but deployment, secrets, monitoring, migrations, provider integrations, and tests need work.</td>
+      </tr>
+      <tr>
+        <td>Internal-use acquisition suitability</td>
+        <td class="score">8.0 / 10</td>
+        <td>For an internal team that can continue development, this is a strong code asset with meaningful time savings.</td>
+      </tr>
+    </table>
+
+    <h2 class="section-break">8. Development Effort Already Invested</h2>
+    <p>
+      Based on the product breadth, module count, and visible complexity, the stated development effort
+      of approximately six months of continuous work at around five to six hours per day is consistent
+      with the amount of code and feature surface present in the repository.
+    </p>
+
+    <table>
+      <tr>
+        <th>Effort Basis</th>
+        <th>Estimate</th>
+        <th>Comment</th>
+      </tr>
+      <tr>
+        <td>Calendar duration</td>
+        <td>Approximately 6 months continuous development</td>
+        <td>Consistent with a broad platform build rather than a small MVP.</td>
+      </tr>
+      <tr>
+        <td>Daily effort</td>
+        <td>Approximately 5 to 6 hours per day</td>
+        <td>Assumes sustained solo/founding engineer effort.</td>
+      </tr>
+      <tr>
+        <td>Total invested hours</td>
+        <td class="money">Approximately 900 to 1,080 hours</td>
+        <td>Useful for explaining why the price may look high but is grounded in real effort.</td>
+      </tr>
+      <tr>
+        <td>Replacement effort from scratch</td>
+        <td class="money">Approximately 1,100 to 1,600 engineering hours</td>
+        <td>A new team would spend additional time understanding requirements, rebuilding architecture, and rediscovering edge cases.</td>
+      </tr>
+      <tr>
+        <td>Stabilization effort after acquisition</td>
+        <td>Approximately 180 to 320 hours for survey-first handoff; 220 to 390 hours if every secondary module is production-hardened</td>
+        <td>Needed for tests, production hardening, bug cleanup, docs, deployment, final UX polish, integration validation, and credential cleanup.</td>
+      </tr>
+    </table>
+
+    <h2>9. Replacement Cost and Commercial Valuation</h2>
+    <p>
+      There are two different numbers to communicate: replacement cost and acquisition price. Replacement
+      cost is what it would cost the buyer to build the same foundation from zero. Acquisition price is
+      what is fair for transferring an incomplete but valuable existing code asset.
+    </p>
+
+    <h3>9.1 Replacement Cost Estimate</h3>
+    <table>
+      <tr>
+        <th>Rate Scenario</th>
+        <th>Hours Assumed</th>
+        <th>Cost Range</th>
+        <th>Use Case</th>
+      </tr>
+      <tr>
+        <td>Conservative independent/small-studio blended rate</td>
+        <td>1,100 to 1,600 hours</td>
+        <td class="money">INR 6,60,000 to INR 14,40,000</td>
+        <td>Conservative labor-only estimate at roughly INR 600 to INR 900 per hour.</td>
+      </tr>
+      <tr>
+        <td>Professional agency/internal engineering replacement</td>
+        <td>1,100 to 1,600 hours</td>
+        <td class="money">INR 13,20,000 to INR 32,00,000</td>
+        <td>More realistic if handled by a formal development team with PM, QA, backend, frontend, and DevOps overhead.</td>
+      </tr>
+      <tr>
+        <td>Commercial SaaS-level rebuild</td>
+        <td>1,800+ hours</td>
+        <td class="money">INR 35,00,000+</td>
+        <td>Would include production QA, compliance, analytics, documentation, cloud hardening, and support tooling.</td>
+      </tr>
+    </table>
+
+    <h3>9.2 Recommended Acquisition Pricing</h3>
+    <table>
+      <tr>
+        <th>Offer Type</th>
+        <th>Recommended Price</th>
+        <th>Includes</th>
+        <th>Comment</th>
+      </tr>
+      <tr>
+        <td>Survey-focused code transfer only</td>
+        <td class="money">INR 8,00,000 to INR 11,00,000</td>
+        <td>Survey builder, question library, runtime, responses, XML mode, quotas/rules, translations, themes, survey/project integration.</td>
+        <td>Use only if ticketing/SLA/support modules are excluded or treated as non-commercial bonus.</td>
+      </tr>
+      <tr>
+        <td>Full repository as-is transfer</td>
+        <td class="money">INR 12,00,000 to INR 15,00,000</td>
+        <td>Survey product plus ticket/SLA/RBAC/user/project/contact/campaign/mail/key/Redis modules.</td>
+        <td>Best balanced ask for internal-use acquisition.</td>
+      </tr>
+      <tr>
+        <td>Full repository with KT and documentation bundle</td>
+        <td class="money">INR 18,00,000 to INR 22,00,000</td>
+        <td>Full codebase, setup support, architecture walkthrough, module documentation, known issue list, environment guide, and 2-4 weeks of limited handoff support.</td>
+        <td>Recommended opening pitch because the buyer is asking for something their internal team can continue.</td>
+      </tr>
+      <tr>
+        <td>Strategic transfer plus extended support</td>
+        <td class="money">INR 20,00,000 to INR 25,00,000</td>
+        <td>Everything above plus extended bug-fix support, deployment help, and first stabilization sprint.</td>
+        <td>Only pitch if they want you actively involved after handoff.</td>
+      </tr>
+    </table>
+
+    <div class="note success">
+      Recommended practical pitch: quote <strong>INR 18,00,000</strong> for the full repository with
+      documentation and KT. Mention that you are open to discussion and can adjust the amount if they
+      only want the survey portion or want reduced handoff support.
+    </div>
+
+    <h3>9.3 Individual Module Costing</h3>
+    <p>
+      The table below breaks the total value into individual module estimates. These are not separate
+      mandatory sale prices; they are valuation components used to justify the overall ask.
+    </p>
+
+    <table>
+      <tr>
+        <th>Module</th>
+        <th>Estimated Standalone Value</th>
+        <th>Reasoning</th>
+      </tr>
+      <tr>
+        <td>Survey builder and survey management</td>
+        <td class="money">INR 3,25,000 to INR 4,75,000</td>
+        <td>Survey CRUD, builder navigation, blocks, ordering, editor workflows, status, project integration.</td>
+      </tr>
+      <tr>
+        <td>Question type library and config UI</td>
+        <td class="money">INR 2,50,000 to INR 4,00,000</td>
+        <td>Large set of basic, CX, matrix, pricing, research, media, and flow question types with dedicated configuration components.</td>
+      </tr>
+      <tr>
+        <td>Survey runtime and response collection</td>
+        <td class="money">INR 1,50,000 to INR 2,50,000</td>
+        <td>Respondent-facing survey rendering, answer UI, response APIs, response screens, demo/preview support.</td>
+      </tr>
+      <tr>
+        <td>XML survey programming mode</td>
+        <td class="money">INR 1,00,000 to INR 1,75,000</td>
+        <td>XML editor, serializer, compiler-style preview, save-to-survey flow, serial-label based references.</td>
+      </tr>
+      <tr>
+        <td>Rules, logic, quota</td>
+        <td class="money">INR 1,50,000 to INR 2,50,000</td>
+        <td>Rule APIs, logic schema, quota APIs, quota models, quota frontend components, evaluate/increment lifecycle.</td>
+      </tr>
+      <tr>
+        <td>Translations and localization</td>
+        <td class="money">INR 90,000 to INR 1,50,000</td>
+        <td>Translation structures, coverage, initialize/resync, CSV upload/export/validation, frontend translation workflow.</td>
+      </tr>
+      <tr>
+        <td>Themes, preview, templates</td>
+        <td class="money">INR 80,000 to INR 1,25,000</td>
+        <td>Theme backend/frontend, survey preview/demo surfaces, template-based survey creation and bulk question creation.</td>
+      </tr>
+      <tr>
+        <td>Contacts, audience files, campaigns</td>
+        <td class="money">INR 1,75,000 to INR 2,75,000</td>
+        <td>Contacts, lists, channels, audience upload, campaign CRUD/scheduling/results, participant source tracking.</td>
+      </tr>
+      <tr>
+        <td>Project, organization, user management</td>
+        <td class="money">INR 1,75,000 to INR 2,75,000</td>
+        <td>Organizations, projects, users, members, statuses, milestones, tags, attachments, favorites, recent activity.</td>
+      </tr>
+      <tr>
+        <td>RBAC and permission management</td>
+        <td class="money">INR 1,50,000 to INR 2,25,000</td>
+        <td>Roles, permissions, role mappings, custom grants, denials, effective permission logic, frontend RBAC screens.</td>
+      </tr>
+      <tr>
+        <td>Ticket management and SLA system</td>
+        <td class="money">INR 2,75,000 to INR 4,50,000</td>
+        <td>Ticket CRUD, comments, attachments, collaborators, worklogs, assignment, SLA admin, support groups/teams/routing/templates.</td>
+      </tr>
+      <tr>
+        <td>Mail relay, key server, Redis, background services</td>
+        <td class="money">INR 1,25,000 to INR 2,25,000</td>
+        <td>Dedicated mail relay, key server, encryption middleware, Redis service layer, scheduler/outbox processors.</td>
+      </tr>
+      <tr>
+        <td>Salesforce, panel, and external distribution foundations</td>
+        <td class="money">INR 1,25,000 to INR 2,25,000</td>
+        <td>Salesforce contacts/accounts/sync/campaign routes, panel/source tracking, anonymous link, QR, embed, participant source tracking.</td>
+      </tr>
+      <tr>
+        <td>Commerce, integrations, webhooks, audit, exports</td>
+        <td class="money">INR 1,50,000 to INR 2,75,000</td>
+        <td>Pricing/payment/order/invoice foundations, marketplace/integration/webhook/domain routes, audit/archive/metric models, analytics/export utilities.</td>
+      </tr>
+      <tr>
+        <td>Documentation and KT package</td>
+        <td class="money">INR 75,000 to INR 1,25,000</td>
+        <td>Architecture notes, setup guide, environment guide, module walkthrough, known issue register, transition sessions.</td>
+      </tr>
+    </table>
+
+    <h3>9.4 Costing Summary</h3>
+    <table>
+      <tr>
+        <th>Valuation View</th>
+        <th>Amount</th>
+        <th>Comment</th>
+      </tr>
+      <tr>
+        <td>Sum of individual module value ranges</td>
+        <td class="money">Approximately INR 24,00,000 to INR 39,00,000</td>
+        <td>This is a replacement/component value view, not the suggested as-is sale price.</td>
+      </tr>
+      <tr>
+        <td>Adjusted as-is internal-use acquisition value</td>
+        <td class="money">INR 12,00,000 to INR 15,00,000</td>
+        <td>Accounts for incomplete testing, polish, documentation, and production hardening.</td>
+      </tr>
+      <tr>
+        <td>Opening quote with KT/documentation</td>
+        <td class="money">INR 18,00,000 to INR 22,00,000</td>
+        <td>Good opening position because it includes knowledge transfer value.</td>
+      </tr>
+      <tr>
+        <td>Negotiation floor</td>
+        <td class="money">INR 11,00,000 to INR 12,50,000</td>
+        <td>Below this, the effort and code asset value are not properly recognized.</td>
+      </tr>
+      <tr>
+        <td>Advance adjustment mentioned by buyer</td>
+        <td class="money">INR 22,500</td>
+        <td>This can be adjusted from the final accepted amount if both parties agree.</td>
+      </tr>
+    </table>
+
+    <h2 class="section-break">10. What Is Still Left To Do</h2>
+    <p>
+      The remaining work should be presented clearly so the buyer understands the acquisition is an
+      as-is foundation, not a fully packaged finished SaaS. This transparency makes the valuation more
+      credible.
+    </p>
+
+    <table>
+      <tr>
+        <th>Priority</th>
+        <th>Workstream</th>
+        <th>Details</th>
+        <th>Estimated Effort</th>
+      </tr>
+      <tr>
+        <td>High</td>
+        <td>Survey QA and regression testing</td>
+        <td>Test create/edit/delete/order/save/preview/runtime for every question type, including templates and XML generated surveys.</td>
+        <td>45 to 75 hours</td>
+      </tr>
+      <tr>
+        <td>High</td>
+        <td>Survey save/status consistency</td>
+        <td>Finalize draft/live status source of truth, save button behavior, dirty-state indicator, and builder/list synchronization.</td>
+        <td>20 to 35 hours</td>
+      </tr>
+      <tr>
+        <td>High</td>
+        <td>XML compiler hardening</td>
+        <td>Define XML grammar, validation messages, duplicate serial checks, logic syntax, quota syntax, docs, and tests.</td>
+        <td>35 to 70 hours</td>
+      </tr>
+      <tr>
+        <td>High</td>
+        <td>RBAC cleanup and permission matrix</td>
+        <td>Finalize roles/permissions for survey-only buyer workflows, sidebar permission caching, admin access, and project scope behavior.</td>
+        <td>25 to 45 hours</td>
+      </tr>
+      <tr>
+        <td>Medium</td>
+        <td>Campaign/mail provider hardening</td>
+        <td>Finalize SMTP config, retry behavior, relay health monitoring, unsubscribe/tracking, and real SMS/WhatsApp provider integration if required.</td>
+        <td>30 to 60 hours</td>
+      </tr>
+      <tr>
+        <td>Medium</td>
+        <td>Quota and logic end-to-end flow</td>
+        <td>Connect quota/rules deeply into runtime survey flow with over-quota termination, respondent state, and reporting.</td>
+        <td>35 to 70 hours</td>
+      </tr>
+      <tr>
+        <td>Medium</td>
+        <td>Ticket/SLA stabilization</td>
+        <td>QA ticket creation, assignment, comments, SLA timers, pause/resume, notifications, support teams, routing, templates.</td>
+        <td>40 to 80 hours</td>
+      </tr>
+      <tr>
+        <td>Medium</td>
+        <td>Deployment and documentation</td>
+        <td>Environment variables, Docker runbook, service map, database/migration setup, seed data, known issues, KT videos/notes.</td>
+        <td>25 to 45 hours</td>
+      </tr>
+      <tr>
+        <td>Medium</td>
+        <td>Automated tests</td>
+        <td>Add backend unit/integration tests and frontend smoke/E2E tests for critical flows.</td>
+        <td>50 to 100 hours</td>
+      </tr>
+      <tr>
+        <td>Medium</td>
+        <td>Salesforce, payments, webhooks, audit, exports validation</td>
+        <td>Validate Salesforce credentials/mappings, payment verification, invoice/order state, webhook signing/retries, audit coverage, analytics/export correctness.</td>
+        <td>35 to 70 hours</td>
+      </tr>
+      <tr>
+        <td>High</td>
+        <td>Repository hygiene and credential rotation</td>
+        <td>Remove runtime/vendor/build artifacts from the transfer package, exclude environment files, rotate Firebase/service keys/certificates, and document required secrets.</td>
+        <td>10 to 20 hours</td>
+      </tr>
+      <tr>
+        <td>Low</td>
+        <td>Code cleanup</td>
+        <td>Remove generated dummy assets, reduce large-file complexity, clean duplicate route patterns, improve logs, standardize naming.</td>
+        <td>20 to 40 hours</td>
+      </tr>
+    </table>
+
+    <h2>11. Key Risks for Buyer</h2>
+    <table>
+      <tr>
+        <th>Risk</th>
+        <th>Severity</th>
+        <th>Explanation</th>
+        <th>Mitigation</th>
+      </tr>
+      <tr>
+        <td>Lack of automated tests</td>
+        <td>High</td>
+        <td>Large feature surface without formal tests creates regression risk during handoff.</td>
+        <td>Run a stabilization sprint focused on survey create/edit/runtime/campaign flows.</td>
+      </tr>
+      <tr>
+        <td>Large module complexity</td>
+        <td>Medium</td>
+        <td>Some files and routes are large, which makes onboarding slower.</td>
+        <td>Provide module map, KT sessions, and refactor only after buyer understands flows.</td>
+      </tr>
+      <tr>
+        <td>Provider integrations incomplete</td>
+        <td>Medium</td>
+        <td>SMS/WhatsApp/voice in mail relay are placeholders; email is more concrete.</td>
+        <td>Scope providers separately based on buyer needs.</td>
+      </tr>
+      <tr>
+        <td>Deployment/secrets hardening</td>
+        <td>Medium</td>
+        <td>Key server, encryption, relay, Redis, database, and external URLs need production configuration.</td>
+        <td>Create environment and deployment checklist before go-live.</td>
+      </tr>
+      <tr>
+        <td>Repository contains local artifacts and credentials</td>
+        <td>High</td>
+        <td>The repo tree includes development artifacts and sensitive-looking files such as env files, service-account credentials, keys, certificates, build folders, dependency folders, and virtual environments.</td>
+        <td>Clean the transfer package, rotate keys, move secrets to environment management, and document only safe placeholders.</td>
+      </tr>
+      <tr>
+        <td>Survey advanced question validation</td>
+        <td>Medium</td>
+        <td>Advanced question types are valuable but require edge-case QA.</td>
+        <td>Prioritize the question types the buyer actually needs for internal use.</td>
+      </tr>
+      <tr>
+        <td>RBAC/cache inconsistencies</td>
+        <td>Medium</td>
+        <td>Permission checks and Redis cache behavior need final cleanup to avoid repeated sidebar loads or stale permissions.</td>
+        <td>Document permission model and stabilize cache invalidation.</td>
+      </tr>
+    </table>
+
+    <h2>12. Recommended Sale Narrative</h2>
+    <p>
+      The recommended narrative is not "this is a finished SaaS." The stronger and more credible
+      narrative is:
+    </p>
+
+    <div class="note">
+      "This is a six-month, survey-first internal platform foundation. The survey module is already
+      substantially built with a visual builder, many research question types, runtime flow, responses,
+      translations, quota/rules, templates, XML programming mode, and project/user/campaign integration.
+      Along with that, the repository includes additional operational modules such as ticketing, SLA,
+      RBAC, user management, Salesforce, pricing/payment foundations, marketplace/integrations,
+      webhooks, audit/archive/metrics, analytics/export utilities, mail relay, and Redis-backed
+      services. It is being offered as-is for an internal engineering team to continue, with
+      documentation and KT included."
+    </div>
+
+    <h3>12.1 Suggested Client Position</h3>
+    <table>
+      <tr>
+        <th>Point To Communicate</th>
+        <th>Suggested Wording</th>
+      </tr>
+      <tr>
+        <td>Why price is meaningful</td>
+        <td>The price may look high at first, but the repository represents around 900 to 1,080 hours of concentrated development and a replacement effort of 1,100 to 1,600 hours.</td>
+      </tr>
+      <tr>
+        <td>Why it is still fair</td>
+        <td>The ask is below a full replacement cost because the product still needs internal hardening, tests, final documentation, and buyer-specific customization.</td>
+      </tr>
+      <tr>
+        <td>Why survey value is central</td>
+        <td>The survey builder and question library alone represent substantial reusable value, especially with XML mode, quota, rules, translation, and campaign readiness.</td>
+      </tr>
+      <tr>
+        <td>Why ticketing should be mentioned</td>
+        <td>Ticketing/SLA/RBAC/user management are additional internal-platform assets included in the repository, even if the buyer initially focuses on surveys.</td>
+      </tr>
+      <tr>
+        <td>How to remain flexible</td>
+        <td>Offer full repository pricing first, then provide reduced scope options if they only want the survey module or less KT support.</td>
+      </tr>
+    </table>
+
+    <h2 class="section-break">13. Recommended Handoff Package</h2>
+    <p>
+      To make the transaction smoother, the code sale should include a structured handoff package. This
+      makes the price easier to justify and reduces buyer anxiety.
+    </p>
+
+    <table>
+      <tr>
+        <th>Deliverable</th>
+        <th>Details</th>
+      </tr>
+      <tr>
+        <td>Repository transfer</td>
+        <td>Full cleaned source code including frontend, backend, key server, mail relay, Docker/config files, and current audit deliverables. Runtime/vendor/build artifacts and secrets should be excluded from the final transfer package.</td>
+      </tr>
+      <tr>
+        <td>Setup guide</td>
+        <td>Local development setup, services required, env variables, database/Redis/mail/key-server notes.</td>
+      </tr>
+      <tr>
+        <td>Architecture map</td>
+        <td>Survey, project, user/RBAC, contacts, campaigns, ticket/SLA, Salesforce, pricing/payment/order/invoice, marketplace/integrations/webhooks, audit/archive/metrics, mail relay, and key server module map.</td>
+      </tr>
+      <tr>
+        <td>Survey module guide</td>
+        <td>Question lifecycle, serial labels, internal IDs, blocks, question order, XML mode, templates, runtime flow, responses, quota/rules, translations.</td>
+      </tr>
+      <tr>
+        <td>Known issues list</td>
+        <td>Current bugs, warnings, incomplete integrations, generated files to ignore, credential rotation notes, and suggested first stabilization sprint.</td>
+      </tr>
+      <tr>
+        <td>KT sessions</td>
+        <td>2 to 4 sessions covering setup, survey builder, backend schema/API, RBAC/project/user management, and optional ticket/SLA module.</td>
+      </tr>
+      <tr>
+        <td>Post-handoff support</td>
+        <td>Optional limited support window for setup clarifications and first-run blockers.</td>
+      </tr>
+    </table>
+
+    <h2>14. Final Conclusion</h2>
+    <p>
+      SurveyArc should be valued primarily as a survey platform foundation with a substantial supporting
+      internal operations layer. The survey portion alone contains enough built functionality to justify
+      a meaningful acquisition price: visual builder, broad question library, XML programming mode,
+      question/serial-label architecture, templates, survey runtime, responses, translations, quota,
+      rules, themes, campaigns, and project/user integration.
+    </p>
+    <p>
+      The ticket management, SLA, RBAC, user management, organization/project management, contacts,
+      campaigns, Salesforce, pricing/payment/order/invoice foundations, marketplace/integrations,
+      webhooks/domains, audit/archive/metrics, analytics/export utilities, email/WhatsApp distribution
+      surfaces, mail relay, Redis services, and key server should be presented as additional platform
+      assets included in the transfer. They increase the buyer's optional future value even if their
+      immediate use case is only internal survey management.
+    </p>
+    <p>
+      Recommended commercial position: open with <strong>INR 18,00,000 to INR 22,00,000</strong> for
+      the full repository including documentation and KT. Expect realistic closure around
+      <strong>INR 14,00,000 to INR 17,00,000</strong>. Avoid going below
+      <strong>INR 11,00,000 to INR 12,50,000</strong> for full transfer because the codebase represents
+      approximately six months of concentrated engineering work and a large replacement effort.
+    </p>
+  </body>
+</html>

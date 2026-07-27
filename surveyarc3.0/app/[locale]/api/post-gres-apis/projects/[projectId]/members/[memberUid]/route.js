@@ -38,11 +38,13 @@ export async function GET(req, { params }) {
   const { projectId, memberUid } = params;
   const { searchParams } = new URL(req.url);
   const orgId = searchParams.get("orgId");
+  const userId = searchParams.get("userId") ;
   if (!orgId) return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
 
   const res = await fetch(`${BASE}/projects/${orgId}/${projectId}?use_cache=false`, {
     signal: AbortSignal.timeout(30000),
     cache: "no-store",
+    headers: { "x-user-id": userId },
   });
   const { status, json } = await jsonOrError(res);
   if (status >= 400) return NextResponse.json(json, { status });
@@ -55,7 +57,7 @@ export async function GET(req, { params }) {
 
 // PATCH upsert updates for a single member (merge only)
 export async function PATCH(req, { params }) {
-  const { projectId, memberUid } = params;
+  const { projectId, memberUid, userId } = params;
   const raw = await req.json().catch(() => ({}));
   const { orgId, ...memberUpdate } = raw;
   if (!orgId) return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
@@ -63,6 +65,7 @@ export async function PATCH(req, { params }) {
   const getRes = await fetch(`${BASE}/projects/${orgId}/${projectId}?use_cache=false`, {
     signal: AbortSignal.timeout(30000),
     cache: "no-store",
+    headers: { "x-user-id": userId },
   });
   const getPayload = await jsonOrError(getRes);
   if (!getPayload.ok) return NextResponse.json(getPayload.json, { status: getPayload.status });
@@ -77,7 +80,7 @@ export async function PATCH(req, { params }) {
   const payload = ENC ? await encryptPayload({ members: merged }) : { members: merged };
   const res = await fetch(`${BASE}/projects/${orgId}/${projectId}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", ...(ENC ? { "x-encrypted": "1" } : {}) },
+    headers: { "Content-Type": "application/json", "x-user-id": userId, ...(ENC ? { "x-encrypted": "1" } : {}) },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(30000),
     cache: "no-store",
@@ -91,11 +94,13 @@ export async function DELETE(req, { params }) {
   const { projectId, memberUid } = await params;
   const { searchParams } = new URL(req.url);
   const orgId = searchParams.get("orgId");
+  const userId = searchParams.get("userId") ;
   if (!orgId) return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
 
   const res = await fetch(`${BASE}/projects/${orgId}/${projectId}/members/${memberUid}`, {
     method: "DELETE",
     signal: AbortSignal.timeout(30000),
+    headers: { "x-user-id": userId },
     cache: "no-store",
   });
 

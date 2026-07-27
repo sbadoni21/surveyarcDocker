@@ -20,12 +20,18 @@ from ..schemas.group import (
     GroupUserOut,
     GroupWithUsersOut,
 )
+from app.dependencies.permissions import require_permission, AssignmentScope
 from ..policies.auth import get_current_user  # same as your users router
 
 router = APIRouter(prefix="/groups", tags=["Groups"])
 
 
 # ===== Helper functions =====
+def _ensure_group_exists(db: Session, group_id: str) -> Group:
+    group = db.query(Group).filter(Group.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return group
 
 def _ensure_org_access(current_user: dict, org_id: str):
     """
@@ -72,7 +78,17 @@ def _ensure_group_access(db: Session, current_user: dict, group_id: str) -> Grou
 
 # ===== Group CRUD =====
 
-@router.post("/", response_model=GroupOut)
+@router.post(
+    "/",
+    response_model=GroupOut,
+    dependencies=[
+        Depends(require_permission(
+            "group.create",
+            scope=AssignmentScope.org,
+            resource_param="org_id",
+        ))
+    ],
+)
 def create_group(
     group_in: GroupCreate,
     db: Session = Depends(get_db),
@@ -107,18 +123,24 @@ def create_group(
     return group
 
 
-@router.get("/org/{org_id}", response_model=List[GroupOut])
+@router.get(
+    "/org/{org_id}",
+    response_model=List[GroupOut],
+    dependencies=[
+        Depends(
+            require_permission(
+                "group.read",
+                scope=AssignmentScope.org,   # ✅ ORG scope
+                resource_param="org_id",    # ✅ path param
+            )
+        )
+    ],
+)
 def list_groups_by_org(
     org_id: str,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """
-    List all groups in an organisation.
-    - Requires membership + owner/admin/manager role.
-    """
-    _ensure_org_access(current_user, org_id)
-
     groups = (
         db.query(Group)
         .filter(Group.org_id == org_id)
@@ -127,24 +149,35 @@ def list_groups_by_org(
     )
     return groups
 
-
-@router.get("/{group_id}", response_model=GroupWithUsersOut)
+@router.get(
+    "/{group_id}",
+    response_model=GroupWithUsersOut,
+    dependencies=[
+        Depends(require_permission(
+            "group.read",
+            scope=AssignmentScope.org,
+            resource_param="group_id",
+        ))
+    ],
+)
 def get_group(
     group_id: str,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """
-    Get a single group with users.
-    """
-    group = _ensure_group_access(db, current_user, group_id)
-
-    # Ensure users relationship is loaded
-    _ = group.users  # trigger lazy load if needed
+    group = _ensure_group_exists(db, group_id)
+    _ = group.users
     return group
 
 
-@router.patch("/{group_id}", response_model=GroupOut)
+
+@router.patch("/{group_id}", response_model=GroupOut, dependencies=[
+        Depends(require_permission(
+            "group.update",
+            scope=AssignmentScope.org,
+            resource_param="group_id",
+        ))
+    ],)
 def update_group(
     group_id: str,
     data: GroupUpdate,
@@ -169,7 +202,16 @@ def update_group(
     return group
 
 
-@router.delete("/{group_id}")
+@router.delete(
+    "/{group_id}",
+    dependencies=[
+        Depends(require_permission(
+            "group.delete",
+            scope=AssignmentScope.org,
+            resource_param="group_id",
+        ))
+    ],
+)
 def delete_group(
     group_id: str,
     db: Session = Depends(get_db),
@@ -190,7 +232,17 @@ def delete_group(
 
 # ===== Group Users (members) =====
 
-@router.get("/{group_id}/members", response_model=List[GroupUserOut])
+@router.get(
+    "/{group_id}/members",
+    response_model=List[GroupUserOut],
+    dependencies=[
+        Depends(require_permission(
+            "group.member.read",
+            scope=AssignmentScope.org,
+            resource_param="group_id",
+        ))
+    ],
+)
 def list_group_members(
     group_id: str,
     db: Session = Depends(get_db),
@@ -210,7 +262,17 @@ def list_group_members(
     return users
 
 
-@router.post("/{group_id}/members", response_model=GroupUserOut)
+@router.post(
+    "/{group_id}/members",
+    response_model=GroupUserOut,
+    dependencies=[
+        Depends(require_permission(
+            "group.member.add",
+            scope=AssignmentScope.org,
+            resource_param="group_id",
+        ))
+    ],
+)
 def add_group_member(
     group_id: str,
     user_in: GroupUserCreate,
@@ -271,7 +333,17 @@ def add_group_member(
     return gu
 
 
-@router.patch("/{group_id}/members/{user_uid}", response_model=GroupUserOut)
+@router.patch(
+    "/{group_id}/members/{user_uid}",
+    response_model=GroupUserOut,
+    dependencies=[
+        Depends(require_permission(
+            "group.member.update",
+            scope=AssignmentScope.org,
+            resource_param="group_id",
+        ))
+    ],
+)
 def update_group_member(
     group_id: str,
     user_uid: str,
@@ -308,7 +380,13 @@ def update_group_member(
     return gu
 
 
-@router.delete("/{group_id}/members/{user_uid}")
+@router.delete("/{group_id}/members/{user_uid}",  dependencies=[
+        Depends(require_permission(
+            "group.member.delete",
+            scope=AssignmentScope.org,
+            resource_param="group_id",
+        ))
+    ],)
 def remove_group_member(
     group_id: str,
     user_uid: str,
@@ -337,7 +415,17 @@ def remove_group_member(
 
     return {"detail": "User removed from group"}
 
-@router.post("/{group_id}/members/bulk", response_model=List[GroupUserOut])
+@router.post(
+    "/{group_id}/members/bulk",
+    response_model=List[GroupUserOut],
+    dependencies=[
+        Depends(require_permission(
+            "group.member.add",
+            scope=AssignmentScope.org,
+            resource_param="group_id",
+        ))
+    ],
+)
 def bulk_add_group_members(
     group_id: str,
     payload: BulkGroupUserCreate,
@@ -413,7 +501,16 @@ def bulk_add_group_members(
     return results
 
 
-@router.post("/{group_id}/members/bulk-remove")
+@router.post(
+    "/{group_id}/members/bulk-remove",
+    dependencies=[
+        Depends(require_permission(
+            "group.member.remove",
+            scope=AssignmentScope.org,
+            resource_param="group_id",
+        ))
+    ],
+)
 def bulk_remove_group_members(
     group_id: str,
     payload: BulkGroupUserRemove,

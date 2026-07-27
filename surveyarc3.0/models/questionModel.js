@@ -65,6 +65,19 @@ const toCamel = (q) => ({
   updatedAt: q.updated_at,
 });
 
+const toCreatePayload = (orgId, surveyId, data) => ({
+  org_id: orgId,
+  survey_id: surveyId,
+  project_id: data.projectId,
+  type: data.type,
+  label: data.label,
+  serial_label: data.serial_label,
+  required: data.required ?? true,
+  description: data.description || "",
+  config: data.config || {},
+  logic: data.logic || [],
+});
+
 // ============================================================
 // MODEL (DO NOT RENAME FUNCTIONS)
 // ============================================================
@@ -75,25 +88,7 @@ const QuestionModel = {
   // ==========================================================
 
   async create(orgId, surveyId, data) {
-    console.log("first", data);
-    const payload = {
-      org_id: orgId,
-      survey_id: surveyId,
-      project_id: data.projectId,
-      question_id: data.questionId,
-      type: data.type,
-      label: data.label,
-      serial_label: data.serial_label,
-      required: data.required ?? true,
-      description: data.description || "",
-      config: data.config || {},
-      logic: data.logic || [],
-    };
-    // if (data.serial_label && data.serial_label.trim()) {
-    //   payload.serial_label = data.serial_label.trim();
-    // }
-
-    console.log("target", payload);
+    const payload = toCreatePayload(orgId, surveyId, data);
 
     const res = await fetch(`${BASE}`, {
       method: "POST",
@@ -103,6 +98,23 @@ const QuestionModel = {
     });
 
     return toCamel(await json(res));
+  },
+
+  async createBulk(orgId, surveyId, questions) {
+    const payload = {
+      questions: (questions || []).map((data) =>
+        toCreatePayload(orgId, surveyId, data)
+      ),
+    };
+
+    const res = await fetch(`${BASE}/bulk-create`, {
+      method: "POST",
+      headers: headersWithUser(),
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+
+    return (await json(res)).map(toCamel);
   },
 
   async getAll(orgId, surveyId) {
