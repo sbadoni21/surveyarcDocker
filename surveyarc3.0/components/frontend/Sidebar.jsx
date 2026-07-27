@@ -16,11 +16,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { deleteCookie, getCookie } from "cookies-next";
 import { useUser } from "@/providers/postGresPorviders/UserProvider";
 import { useRBAC } from "@/providers/RBACProvider";
+import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user } = useUser();
+  const { organisation } = useOrganisation();
   const {
     loading: rbacLoading,
     hasCapability,
@@ -47,6 +49,21 @@ export default function Sidebar() {
   const userRole = useMemo(() => {
     if (!user) return "agent";
 
+    const currentUid = String(user?.uid || user?.user_id || user?.id || "");
+    const currentEmail = String(user?.email || "").toLowerCase();
+    const orgMembers = Array.isArray(organisation?.team_members)
+      ? organisation.team_members
+      : [];
+
+    const orgMember = orgMembers.find((member) => {
+      const memberUid = String(member?.uid || member?.user_id || member?.id || "");
+      const memberEmail = String(member?.email || "").toLowerCase();
+      return (
+        (currentUid && memberUid === currentUid) ||
+        (currentEmail && memberEmail === currentEmail)
+      );
+    });
+
     const orgRoles =
       user.meta_data?.org_roles ||
       user.metaData?.org_roles ||
@@ -57,22 +74,45 @@ export default function Sidebar() {
     const orgSpecificRole =
       (orgId && (orgRoles[String(orgId)] || orgRoles[orgId])) || null;
 
-    const baseRole = orgSpecificRole || user.role || "agent";
+    const baseRole = orgMember?.role || orgSpecificRole || user.role || "agent";
     return String(baseRole).toLowerCase();
-  }, [user, orgId]);
+  }, [user, orgId, organisation]);
+
+  const hasAnyEffectivePermissions = effectivePermSet?.size > 0;
+  const useLegacyRoleFallback =
+    permissionsLoaded && !rbacLoading && !hasAnyEffectivePermissions;
 
   // Permission states
   const permissions = useMemo(() => ({
-    canViewDashboard: hasCapability("project.read"),
-    canViewProjects: hasCapability("project.read"),
+    canViewDashboard:
+      hasCapability("project.read") ||
+      (useLegacyRoleFallback &&
+        ["owner", "admin", "manager", "member", "team_lead", "agent", "user"].includes(userRole)),
+    canViewProjects:
+      hasCapability("project.read") ||
+      (useLegacyRoleFallback &&
+        ["owner", "admin", "manager", "member"].includes(userRole)),
     canViewTickets:
       hasCapability("support.group.read") ||
-      hasCapability("support.team.read"),
-    canViewContacts: hasCapability("support.member.add"),
-    canViewTeam: hasCapability("rbac.view_assignments"),
-    canViewRolesandPermissions: hasCapability("rbac.view_permissions"),
-    canViewSettings: hasCapability("billing.view"),
-  }), [hasCapability, effectivePermSet]);
+      hasCapability("support.team.read") ||
+      (useLegacyRoleFallback &&
+        ["owner", "admin", "manager", "team_lead", "agent", "user"].includes(
+          userRole
+        )),
+    canViewContacts:
+      hasCapability("support.member.add") ||
+      (useLegacyRoleFallback &&
+        ["owner", "admin", "manager"].includes(userRole)),
+    canViewTeam:
+      hasCapability("rbac.view_assignments") ||
+      (useLegacyRoleFallback && ["owner", "admin"].includes(userRole)),
+    canViewRolesandPermissions:
+      hasCapability("rbac.view_permissions") ||
+      (useLegacyRoleFallback && ["owner", "admin"].includes(userRole)),
+    canViewSettings:
+      hasCapability("billing.view") ||
+      (useLegacyRoleFallback && ["owner", "admin"].includes(userRole)),
+  }), [hasCapability, useLegacyRoleFallback, userRole]);
 
   // Helper function to get tickets path based on role
   const getOrgTicketsPath = useMemo(() => {

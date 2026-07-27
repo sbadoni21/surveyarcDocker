@@ -2,12 +2,14 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
 import { getCookie } from "cookies-next";
 import projectModel from "@/models/postGresModels/projectModel";
+import { useUser } from "@/providers/postGresPorviders/UserProvider";
 
 const ProjectContext = createContext(undefined);
 
 export const ProjectProvider = ({ children }) => {
   const [projects, setProjects] = useState([]);
   const [selectedProject, setSelectedProject] = useState(null);
+  const { user, loading: userLoading } = useUser();
 
   const orgId = useMemo(() => {
     if (typeof window === "undefined") return null;
@@ -16,10 +18,13 @@ export const ProjectProvider = ({ children }) => {
   }, [typeof window !== "undefined" ? getCookie("currentOrgId") : null]);
 
   const userId = useMemo(() => {
+    const fromUser = user?.uid || user?.user_id || user?.id;
+    if (fromUser) return String(fromUser);
     if (typeof window === "undefined") return null;
     const v = getCookie("currentUserId");
-    return v ? String(v) : null;
-  }, [typeof window !== "undefined" ? getCookie("currentUserId") : null]);
+    if (!v || v === "undefined" || v === "null") return null;
+    return String(v);
+  }, [user]);
 
   // ===== LOAD ALL =====
   const fetchProjects = async () => {
@@ -30,7 +35,10 @@ export const ProjectProvider = ({ children }) => {
     return data;
   };
 
-  useEffect(() => { fetchProjects(); }, [orgId, userId]);
+  useEffect(() => {
+    if (userLoading || !orgId || !userId) return;
+    fetchProjects();
+  }, [orgId, userId, userLoading]);
 
   // ===== CORE =====
   const getAllProjects = fetchProjects;

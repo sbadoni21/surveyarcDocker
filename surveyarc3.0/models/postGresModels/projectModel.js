@@ -112,6 +112,7 @@ const projectModel = {
   },
 
   async getAll(orgId, userId) {
+    if (!orgId || !userId || userId === "undefined") return [];
     const url = new URL(`${BASE}`, window.location.origin);
     url.searchParams.set("orgId", String(orgId));
     url.searchParams.set("userId", String(userId)); // adjust as needed
@@ -121,7 +122,7 @@ const projectModel = {
   },
 
   async getById(orgId, projectId, userId) {
-    
+    if (!orgId || !projectId || !userId || userId === "undefined") return null;
     const url = new URL(`${BASE}/${projectId}`, window.location.origin);
     url.searchParams.set("orgId", String(orgId));
     url.searchParams.set("userId", String(userId)); // adjust as needed

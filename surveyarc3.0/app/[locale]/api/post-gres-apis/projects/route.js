@@ -44,6 +44,9 @@ export async function GET(req) {
   if (!orgId) {
     return NextResponse.json({ detail: "orgId is required" }, { status: 400 });
   }
+  if (!userId || userId === "undefined") {
+    return NextResponse.json({ detail: "userId is required" }, { status: 400 });
+  }
 
   const qs = new URLSearchParams();
   const useCache = searchParams.get("use_cache");

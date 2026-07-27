@@ -1,7 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import { ChevronDown, Sun, Moon } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 const productsLinks = [
   "Product A",
@@ -26,12 +26,15 @@ export default function Navbar() {
   const [showMobileDropdown, setShowMobileDropdown] = useState("");
   const [isDark, setIsDark] = useState(false);
   const router = useRouter();
+  const params = useParams();
+  const locale = params?.locale || "en";
+
    const handleClick = (value) => {
     if (value === "login") {
-      router.push("/login");
+      router.push(`/${locale}/login`);
     }
     if (value === "register") {
-      router.push("/register");
+      router.push(`/${locale}/postgres-register`);
     }
   };
   const toggleMobileDropdown = (menu) => {
@@ -211,18 +214,18 @@ onClick={() => handleClick("register")}
             </a>
 
             <div className="pt-4 space-y-3 border-t border-yellow-300 dark:border-orange-500">
-              <a
-                href="#"
+              <button
+                onClick={() => handleClick("login")}
                 className="block text-gray-900 dark:text-yellow-100 hover:text-orange-500 dark:hover:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-100 transition-colors duration-300 py-2 px-3 rounded-lg"
               >
                 Log in
-              </a>
-              <a
-                href="#"
+              </button>
+              <button
+                onClick={() => handleClick("register")}
                 className="block px-6 py-3 rounded-full text-center bg-orange-500 dark:bg-orange-400 text-orange-50 dark:text-gray-900 hover:bg-orange-400 dark:hover:bg-orange-300 transition-all duration-300 transform hover:scale-105 shadow-lg"
               >
                 Sign up
-              </a>
+              </button>
             </div>
           </div>
         </div>

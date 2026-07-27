@@ -11,67 +11,99 @@ export const ProjectProvider = ({ children }) => {
   const [projects, setProjects] = useState([]);
   const [selectedProject, setSelectedProject] = useState(null);
 
-  const fetchProjects = async () => {
-    const orgId =
-      typeof window !== "undefined" ? getCookie("currentOrgId") : null;
-
-    if (orgId) {
-      const data = await model.getAll(orgId);
-      setProjects(data || []);
+  const getIds = () => {
+    if (typeof window === "undefined") {
+      return { orgId: null, userId: null };
     }
+    const orgId = getCookie("currentOrgId") || null;
+    const rawUserId = getCookie("currentUserId");
+    const userId =
+      rawUserId && rawUserId !== "undefined" && rawUserId !== "null"
+        ? String(rawUserId)
+        : null;
+    return { orgId, userId };
+  };
+
+  const fetchProjects = async () => {
+    const { orgId, userId } = getIds();
+
+    if (orgId && userId) {
+      const data = await model.getAll(orgId, userId);
+      setProjects(data || []);
+      return data;
+    }
+    return [];
   };
   useEffect(() => {
     fetchProjects();
   }, []);
+
   const getAllProjects = async () => {
-    const orgId = getCookie("currentOrgId") || null;
-    const data = await model.getAll(orgId);
+    const { orgId, userId } = getIds();
+    if (!orgId || !userId) return [];
+    const data = await model.getAll(orgId, userId);
     setProjects(data || []);
     return data;
   };
 
   const getProjectById = async (projectId) => {
-    const data = await model.getById(projectId);
+    const { orgId, userId } = getIds();
+    if (!orgId || !userId) return null;
+    const data = await model.getById(orgId, projectId, userId);
     setSelectedProject(data || null);
     return data;
   };
 
   const createProject = async (data) => {
-    await model.create(data);
+    const { userId } = getIds();
+    if (!userId) return null;
+    await model.create(data, userId);
     const newProject = model.defaultData(data);
     setProjects((prev) => [...prev, newProject]);
+    return newProject;
   };
 
   const updateProject = async (projectId, updateData) => {
-    const orgId = getCookie("currentOrgId") || null;
-    await model.update(orgId, projectId, updateData);
+    const { orgId, userId } = getIds();
+    if (!orgId || !userId) return null;
+    await model.update(orgId, projectId, updateData, userId);
     setProjects((prev) =>
       prev.map((p) => (p.projectId === projectId ? { ...p, ...updateData } : p))
     );
   };
 
   const deleteProject = async (orgId, projectId) => {
-    await model.delete(orgId, projectId);
+    const { userId } = getIds();
+    if (!orgId || !projectId || !userId) return;
+    await model.deleteProject(orgId, projectId, userId);
     setProjects((prev) => prev.filter((p) => p.projectId !== projectId));
   };
 
   const addMember = async (projectId, member) => {
-    await model.addMember(projectId, member);
+    const { orgId, userId } = getIds();
+    if (!orgId || !userId) return;
+    await model.addMember(orgId, projectId, member, userId);
     await getProjectById(projectId);
   };
 
   const removeMember = async (projectId, memberUid) => {
-    await model.removeMember(projectId, memberUid);
+    const { orgId, userId } = getIds();
+    if (!orgId || !userId) return;
+    await model.removeMember(orgId, projectId, memberUid, userId);
     await getProjectById(projectId);
   };
 
   const addSurveyId = async (projectId, surveyId) => {
-    await model.addSurveyId(projectId, surveyId);
+    const { orgId, userId } = getIds();
+    if (!orgId || !userId) return;
+    await model.addSurveyId(orgId, projectId, surveyId, userId);
     await getProjectById(projectId);
   };
 
   const removeSurveyId = async (projectId, surveyId) => {
-    await model.removeSurveyId(projectId, surveyId);
+    const { orgId, userId } = getIds();
+    if (!orgId || !userId) return;
+    await model.removeSurveyId(orgId, projectId, surveyId, userId);
     await getProjectById(projectId);
   };
 

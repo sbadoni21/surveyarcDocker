@@ -1,14 +1,17 @@
 "use client";
 import Sidebar from "@/components/frontend/Sidebar";
+import { OrganisationProvider } from "@/providers/postGresPorviders/organisationProvider";
+import { ProjectProvider } from "@/providers/postGresPorviders/projectProvider";
 import { GroupProvider } from "@/providers/postGresPorviders/GroupProvider";
-import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
 import { QuotaProvider } from "@/providers/postGresPorviders/quotaProvider";
-import { useUser } from "@/providers/postGresPorviders/UserProvider";
+import { ThemeProvider } from "@/providers/postGresPorviders/themeProvider";
+import { UserProvider, useUser } from "@/providers/postGresPorviders/UserProvider";
 import { useRBAC } from "@/providers/RBACProvider";
 import { SLAProvider } from "@/providers/slaProvider";
 import React, { useEffect, useState, useRef } from "react";
+import { useOrganisation } from "@/providers/postGresPorviders/organisationProvider";
 
-export default function Layout({ children }) {
+function DashboardShell({ children }) {
   const [isCollapsed, setIsCollapsed] = useState(true);
   const { loadEffectivePermissions, permissionsLoaded } = useRBAC();
   const { user } = useUser();
@@ -42,23 +45,37 @@ export default function Layout({ children }) {
     <div className="flex w-full bg-[#F5F5F5] dark:bg-[#121214]">
       <GroupProvider>
         <QuotaProvider>
-          <Sidebar
-            isCollapsed={isCollapsed}
-            setIsCollapsed={setIsCollapsed}
-          />
-          <SLAProvider>
-            <main
-              className={`transition-all duration-300 ${
-                isCollapsed
-                  ? "w-[calc(100%-30px)]"
-                  : "w-[calc(100%-200px)]"
-              }`}
-            >
-              {children}
-            </main>
-          </SLAProvider>
+          <ThemeProvider>
+            <Sidebar
+              isCollapsed={isCollapsed}
+              setIsCollapsed={setIsCollapsed}
+            />
+            <SLAProvider>
+              <main
+                className={`transition-all duration-300 ${
+                  isCollapsed
+                    ? "w-[calc(100%-30px)]"
+                    : "w-[calc(100%-200px)]"
+                }`}
+              >
+                {children}
+              </main>
+            </SLAProvider>
+          </ThemeProvider>
         </QuotaProvider>
       </GroupProvider>
     </div>
+  );
+}
+
+export default function Layout({ children }) {
+  return (
+    <OrganisationProvider>
+      <UserProvider>
+        <ProjectProvider>
+          <DashboardShell>{children}</DashboardShell>
+        </ProjectProvider>
+      </UserProvider>
+    </OrganisationProvider>
   );
 }
